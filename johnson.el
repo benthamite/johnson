@@ -1134,6 +1134,112 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
           (special-mode)))
       (pop-to-buffer buf))))
 
+;;;; Dictionary reordering
+
+(defvar johnson-reorder-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "M-<up>") #'johnson-reorder-move-up)
+    (define-key map (kbd "M-<down>") #'johnson-reorder-move-down)
+    (define-key map (kbd "C-c C-c") #'johnson-reorder-save)
+    (define-key map "q" #'quit-window)
+    map)
+  "Keymap for `johnson-reorder-mode'.")
+
+(define-derived-mode johnson-reorder-mode special-mode "Johnson-Reorder"
+  "Major mode for reordering dictionary priorities.
+\\{johnson-reorder-mode-map}")
+
+(defvar-local johnson-reorder--names nil
+  "Ordered list of dictionary names in the reorder buffer.")
+
+(defun johnson-reorder--refresh ()
+  "Redraw the reorder buffer from `johnson-reorder--names'."
+  (let ((inhibit-read-only t)
+        (line (line-number-at-pos)))
+    (erase-buffer)
+    (insert "Reorder dictionaries (M-up/M-down to move, C-c C-c to save, q to quit)\n\n")
+    (let ((i 0))
+      (dolist (name johnson-reorder--names)
+        (insert (propertize (format "%3d  %s\n" i name)
+                            'johnson-reorder-name name))
+        (cl-incf i)))
+    (goto-char (point-min))
+    (forward-line (1- (min line (+ 2 (length johnson-reorder--names)))))))
+
+;;;###autoload
+(defun johnson-reorder-dictionaries ()
+  "Open a buffer for reordering dictionary priorities."
+  (interactive)
+  (johnson--ensure-dictionaries)
+  (let* ((sorted (sort (copy-sequence johnson--dictionaries)
+                       (lambda (a b)
+                         (< (or (plist-get a :priority) 0)
+                            (or (plist-get b :priority) 0)))))
+         (names (mapcar (lambda (d) (plist-get d :name)) sorted))
+         (buf (get-buffer-create "*johnson-reorder*")))
+    (with-current-buffer buf
+      (johnson-reorder-mode)
+      (setq johnson-reorder--names names)
+      (johnson-reorder--refresh))
+    (pop-to-buffer buf)))
+
+(defun johnson-reorder--current-name ()
+  "Return the dictionary name on the current line, or nil."
+  (get-text-property (line-beginning-position) 'johnson-reorder-name))
+
+(defun johnson-reorder-move-up ()
+  "Move the current entry up."
+  (interactive)
+  (let* ((name (johnson-reorder--current-name))
+         (idx (and name (cl-position name johnson-reorder--names :test #'equal))))
+    (when (and idx (> idx 0))
+      (setf (nth idx johnson-reorder--names)
+            (nth (1- idx) johnson-reorder--names))
+      (setf (nth (1- idx) johnson-reorder--names) name)
+      (johnson-reorder--refresh)
+      (forward-line -1))))
+
+(defun johnson-reorder-move-down ()
+  "Move the current entry down."
+  (interactive)
+  (let* ((name (johnson-reorder--current-name))
+         (idx (and name (cl-position name johnson-reorder--names :test #'equal))))
+    (when (and idx (< idx (1- (length johnson-reorder--names))))
+      (setf (nth idx johnson-reorder--names)
+            (nth (1+ idx) johnson-reorder--names))
+      (setf (nth (1+ idx) johnson-reorder--names) name)
+      (johnson-reorder--refresh)
+      (forward-line 1))))
+
+(defun johnson-reorder-save ()
+  "Save the current ordering as dictionary priorities."
+  (interactive)
+  (let* ((priorities (let ((i 0))
+                       (mapcar (lambda (name)
+                                 (prog1 (cons name i)
+                                   (cl-incf i)))
+                               johnson-reorder--names)))
+         (choice (completing-read
+                  "Save method: "
+                  '("Customize (persistent)" "Session only" "Copy to kill ring")
+                  nil t)))
+    (pcase choice
+      ("Customize (persistent)"
+       (customize-save-variable 'johnson-dictionary-priorities priorities)
+       (message "Saved via Customize"))
+      ("Session only"
+       (setq johnson-dictionary-priorities priorities)
+       (message "Set for current session"))
+      ("Copy to kill ring"
+       (kill-new (format "(setq johnson-dictionary-priorities\n      '%S)" priorities))
+       (message "Copied setq form to kill ring — paste into your init file")))
+    ;; Update in-memory priorities.
+    (setq johnson-dictionary-priorities priorities)
+    (dolist (dict johnson--dictionaries)
+      (plist-put dict :priority
+                 (or (cdr (assoc (plist-get dict :name) priorities)) 0)))
+    (quit-window)))
+
 ;;;; CAPF
 
 (defun johnson-completion-at-point-function ()
