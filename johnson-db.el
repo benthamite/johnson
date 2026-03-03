@@ -182,6 +182,18 @@ the actual file modification time."
         (sqlite-close db)
         (not (equal stored-mtime actual-mtime))))))
 
+(defun johnson-db-stale-quick-p (dict-path)
+  "Fast filesystem-only staleness check for DICT-PATH.
+Returns non-nil if the index file does not exist or the dictionary
+file has been modified after the index was last written.  Unlike
+`johnson-db-stale-p', this never opens a sqlite database."
+  (let ((index-path (johnson-db--index-path dict-path)))
+    (or (not (file-exists-p index-path))
+        (time-less-p (file-attribute-modification-time
+                      (file-attributes index-path))
+                     (file-attribute-modification-time
+                      (file-attributes dict-path))))))
+
 ;;;; Reset
 
 (defun johnson-db-reset (db)
