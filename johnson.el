@@ -317,7 +317,7 @@ Returns non-nil on success."
                   (insert (format " done (%s entries)\n"
                                   (johnson--format-number count))))))
             t))
-      (error
+      ((error quit)
        (when (buffer-live-p buf)
          (with-current-buffer buf
            (let ((inhibit-read-only t))
@@ -348,7 +348,14 @@ Schedules itself via timer for cooperative multitasking."
   (if (null johnson--indexing-queue)
       (johnson--index-finish buf)
     (let ((dict (pop johnson--indexing-queue)))
-      (johnson--index-one-dict dict buf)
+      (condition-case err
+          (johnson--index-one-dict dict buf)
+        ((error quit)
+         (when (buffer-live-p buf)
+           (with-current-buffer buf
+             (let ((inhibit-read-only t))
+               (goto-char (point-max))
+               (insert (format " FATAL: %s\n" (error-message-string err))))))))
       (cl-incf johnson--indexing-done)
       (setq johnson--indexing-timer
             (run-with-timer 0 nil #'johnson--index-next buf)))))
