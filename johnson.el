@@ -690,33 +690,34 @@ Called by a timer scheduled from `johnson--display-results'."
     (when (and (buffer-live-p buf)
                (buffer-local-value 'johnson--pending-results buf))
       (with-current-buffer buf
-        (let* ((inhibit-read-only t)
-               (batch (seq-take johnson--pending-results
-                                johnson-render-batch-size))
-               (remaining (seq-drop johnson--pending-results
-                                    johnson-render-batch-size)))
-          ;; Delete the "Loading..." line
-          (goto-char johnson--render-marker)
-          (delete-region johnson--render-marker (point-max))
-          ;; Render this batch
-          (dolist (result batch)
-            (johnson--render-one-result result))
-          ;; Update state
-          (setq johnson--pending-results remaining)
-          (if remaining
-              (progn
-                (set-marker johnson--render-marker (point))
-                (insert (propertize
-                         (format "Loading %d more results...\n"
-                                 (length remaining))
-                         'face 'shadow))
-                (setq johnson--render-timer
-                      (run-with-timer 0 nil
-                                      #'johnson--render-next-batch)))
-            ;; All done — clean up
-            (set-marker johnson--render-marker nil)
-            (setq johnson--render-marker nil)
-            (setq johnson--render-timer nil)))))))
+        (save-excursion
+          (let* ((inhibit-read-only t)
+                 (batch (seq-take johnson--pending-results
+                                  johnson-render-batch-size))
+                 (remaining (seq-drop johnson--pending-results
+                                      johnson-render-batch-size)))
+            ;; Delete the "Loading..." line
+            (goto-char johnson--render-marker)
+            (delete-region johnson--render-marker (point-max))
+            ;; Render this batch
+            (dolist (result batch)
+              (johnson--render-one-result result))
+            ;; Update state
+            (setq johnson--pending-results remaining)
+            (if remaining
+                (progn
+                  (set-marker johnson--render-marker (point))
+                  (insert (propertize
+                           (format "Loading %d more results...\n"
+                                   (length remaining))
+                           'face 'shadow))
+                  (setq johnson--render-timer
+                        (run-with-timer 0 nil
+                                        #'johnson--render-next-batch)))
+              ;; All done — clean up
+              (set-marker johnson--render-marker nil)
+              (setq johnson--render-marker nil)
+              (setq johnson--render-timer nil))))))))
 
 (defun johnson--display-results (word results)
   "Display lookup RESULTS for WORD in the *johnson* buffer."
