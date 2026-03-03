@@ -64,6 +64,14 @@ queries against the full headword index."
   :type 'natnum
   :group 'johnson)
 
+(defcustom johnson-render-batch-size 5
+  "Number of dictionary results to render per batch.
+The first batch is rendered synchronously when results are
+displayed; remaining results are rendered in the background
+during idle time."
+  :type 'natnum
+  :group 'johnson)
+
 (defcustom johnson-history-max 100
   "Maximum number of entries in lookup history."
   :type 'integer
@@ -118,6 +126,15 @@ Each element has keys :path, :format-name, :name,
 
 (defvar-local johnson--nav-position -1
   "Current position in navigation history.")
+
+(defvar-local johnson--pending-results nil
+  "List of (DICT . MATCHES) results awaiting deferred rendering.")
+
+(defvar-local johnson--render-timer nil
+  "Timer for deferred rendering of remaining results.")
+
+(defvar-local johnson--render-marker nil
+  "Marker at the insertion point for the next deferred batch.")
 
 ;;;; Format registry
 
@@ -630,6 +647,77 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
 
 ;;;; Results buffer
 
+(defun johnson--render-one-result (result)
+  "Render a single dictionary RESULT into the current buffer.
+RESULT is a cons (DICT-PLIST . MATCHES).  Inserts the section
+header, rendered entries, section overlay, and trailing newline
+at point.  Caller must bind `inhibit-read-only'."
+  (let* ((dict (car result))
+         (matches (cdr result))
+         (name (plist-get dict :name))
+         (path (plist-get dict :path))
+         (format-name (plist-get dict :format-name))
+         (fmt (johnson--get-format format-name)))
+    (johnson--insert-section-header name)
+    (let ((section-start (point)))
+      (dolist (match matches)
+        (let* ((byte-offset (nth 1 match))
+               (byte-length (nth 2 match))
+               (raw (funcall (plist-get fmt :retrieve-entry)
+                             path byte-offset byte-length)))
+          (funcall (plist-get fmt :render-entry) raw)
+          (unless (bolp) (insert "\n"))))
+      (let ((ov (make-overlay section-start (point))))
+        (overlay-put ov 'johnson-section name)
+        (overlay-put ov 'johnson-section-content t)
+        (overlay-put ov 'evaporate t)))
+    (insert "\n")))
+
+(defun johnson--cancel-pending-render ()
+  "Cancel any in-progress deferred rendering."
+  (when johnson--render-timer
+    (cancel-timer johnson--render-timer)
+    (setq johnson--render-timer nil))
+  (setq johnson--pending-results nil)
+  (when johnson--render-marker
+    (set-marker johnson--render-marker nil)
+    (setq johnson--render-marker nil)))
+
+(defun johnson--render-next-batch ()
+  "Render the next batch of deferred results.
+Called by a timer scheduled from `johnson--display-results'."
+  (when-let* ((buf (get-buffer "*johnson*")))
+    (when (and (buffer-live-p buf)
+               (buffer-local-value 'johnson--pending-results buf))
+      (with-current-buffer buf
+        (let* ((inhibit-read-only t)
+               (batch (seq-take johnson--pending-results
+                                johnson-render-batch-size))
+               (remaining (seq-drop johnson--pending-results
+                                    johnson-render-batch-size)))
+          ;; Delete the "Loading..." line
+          (goto-char johnson--render-marker)
+          (delete-region johnson--render-marker (point-max))
+          ;; Render this batch
+          (dolist (result batch)
+            (johnson--render-one-result result))
+          ;; Update state
+          (setq johnson--pending-results remaining)
+          (if remaining
+              (progn
+                (set-marker johnson--render-marker (point))
+                (insert (propertize
+                         (format "Loading %d more results...\n"
+                                 (length remaining))
+                         'face 'shadow))
+                (setq johnson--render-timer
+                      (run-with-timer 0 nil
+                                      #'johnson--render-next-batch)))
+            ;; All done — clean up
+            (set-marker johnson--render-marker nil)
+            (setq johnson--render-marker nil)
+            (setq johnson--render-timer nil)))))))
+
 (defun johnson--display-results (word results)
   "Display lookup RESULTS for WORD in the *johnson* buffer."
   (let ((buf (get-buffer-create "*johnson*")))
@@ -639,6 +727,7 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
             (nav-pos johnson--nav-position))
         (unless (derived-mode-p 'johnson-mode)
           (johnson-mode))
+        (johnson--cancel-pending-render)
         (erase-buffer)
         (setq johnson--nav-history nav-hist)
         (setq johnson--nav-position nav-pos)
@@ -647,27 +736,20 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
           (johnson--nav-push word))
         (if (null results)
             (insert (format "No results found for \"%s\".\n" word))
-          (dolist (result results)
-            (let* ((dict (car result))
-                   (matches (cdr result))
-                   (name (plist-get dict :name))
-                   (path (plist-get dict :path))
-                   (format-name (plist-get dict :format-name))
-                   (fmt (johnson--get-format format-name)))
-              (johnson--insert-section-header name)
-              (let ((section-start (point)))
-                (dolist (match matches)
-                  (let* ((byte-offset (nth 1 match))
-                         (byte-length (nth 2 match))
-                         (raw (funcall (plist-get fmt :retrieve-entry)
-                                       path byte-offset byte-length)))
-                    (funcall (plist-get fmt :render-entry) raw)
-                    (unless (bolp) (insert "\n"))))
-                (let ((ov (make-overlay section-start (point))))
-                  (overlay-put ov 'johnson-section name)
-                  (overlay-put ov 'johnson-section-content t)
-                  (overlay-put ov 'evaporate t)))
-              (insert "\n"))))
+          (let ((immediate (seq-take results johnson-render-batch-size))
+                (deferred (seq-drop results johnson-render-batch-size)))
+            (dolist (result immediate)
+              (johnson--render-one-result result))
+            (when deferred
+              (setq johnson--pending-results deferred)
+              (setq johnson--render-marker (point-marker))
+              (insert (propertize
+                       (format "Loading %d more results...\n"
+                               (length deferred))
+                       'face 'shadow))
+              (setq johnson--render-timer
+                    (run-with-timer 0 nil
+                                    #'johnson--render-next-batch)))))
         (setq mode-line-buffer-identification
               (format "johnson: %s" word))
         (goto-char (point-min))))
@@ -704,7 +786,8 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
   "Major mode for displaying dictionary lookup results.
 \\{johnson-mode-map}"
   (setq truncate-lines nil)
-  (setq word-wrap t))
+  (setq word-wrap t)
+  (add-hook 'kill-buffer-hook #'johnson--cancel-pending-render nil t))
 
 ;;;; Section navigation
 
