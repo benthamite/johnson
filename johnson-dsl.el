@@ -375,16 +375,26 @@ If no `{/}' is found, returns (HEADWORD)."
         (or (nreverse result) (list headword)))
     (list headword)))
 
+(defconst johnson-dsl--max-headword-variants 64
+  "Maximum number of expanded variants per headword.
+Limits combinatorial blowup from malformed data.")
+
 (defun johnson-dsl--expand-headword (headword)
   "Expand HEADWORD into a list of all variant headwords.
 Handles split markers ({/}), alternation ({alt1/alt2}), optional
 parts ((opt)), and escaped characters.  Returns a list of strings."
-  (let* (;; First split on {/} markers.
-         (split (johnson-dsl--split-on-slash headword))
+  ;; Strip DSL media/link markers ({{...}}) which should never appear
+  ;; in headwords but may if body text lacks proper indentation.
+  (let* ((cleaned (replace-regexp-in-string "{{[^}]*}}" "" headword))
+         ;; First split on {/} markers.
+         (split (johnson-dsl--split-on-slash cleaned))
          ;; Then expand alternations and optionals on each part.
          (expanded (cl-mapcan #'johnson-dsl--expand-alternations split))
          (expanded (cl-mapcan #'johnson-dsl--expand-optionals expanded))
          (expanded (mapcar #'johnson-dsl--unescape-headword expanded)))
+    ;; Cap to prevent exponential blowup from pathological input.
+    (when (> (length expanded) johnson-dsl--max-headword-variants)
+      (setq expanded (seq-take expanded johnson-dsl--max-headword-variants)))
     (or expanded (list (johnson-dsl--unescape-headword headword)))))
 
 ;;;; Index building
