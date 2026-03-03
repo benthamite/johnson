@@ -957,9 +957,27 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
 :ID:       A1B2C3D4-E5F6-7890-ABCD-EF1234567890
 :END:
 
-Version 0.1 (current) supports the DSL (ABBYY Lingvo) format.  The
-following versions will add support for additional dictionary formats
-and features.
+** Version 0.1 (current) --- DSL
+:PROPERTIES:
+:CUSTOM_ID: h:roadmap-v01
+:ID:       A2B3C4D5-E6F7-8901-ABCD-EF2345678901
+:END:
+
+- [X] =johnson-dsl.el= backend for =.dsl= files.
+- [X] Auto-discovery and indexing of uncompressed DSL dictionaries.
+- [X] Encoding auto-detection (UTF-8, UTF-16LE, UTF-16BE).
+- [X] Headword alternation (={/}=), optional parts (=(...)=), and
+  multi-headword entries.
+- [X] Case-insensitive and accent-insensitive search via NFKD
+  normalization.
+- [X] Dynamic =completing-read= with sqlite-backed prefix matching.
+- [X] Full DSL markup rendering with text properties and faces.
+- [X] Cross-reference navigation with back/forward history.
+- [X] Dictionary groups by language pair, with configurable scope.
+- [X] Collapsible dictionary sections in the results buffer.
+- [X] Dictionary list buffer (=tabulated-list-mode=).
+- [X] Completion-at-point (CAPF) backend.
+- [X] Plain-text entry copying.
 
 ** Version 0.2 --- StarDict and compressed DSL
 :PROPERTIES:
@@ -967,11 +985,11 @@ and features.
 :ID:       B2C3D4E5-F6A7-8901-BCDE-F12345678901
 :END:
 
-- =johnson-stardict.el= backend for =.ifo=, =.idx=, =.dict=, and
+- [ ] =johnson-stardict.el= backend for =.ifo=, =.idx=, =.dict=, and
   =.syn= files.
-- Dictzip random-access support for compressed =.dict.dz= and
+- [ ] Dictzip random-access support for compressed =.dict.dz= and
   =.dsl.dz= files.
-- StarDict content types: plain text, HTML, Pango markup, phonetic.
+- [ ] StarDict content types: plain text, HTML, Pango markup, phonetic.
 
 ** Version 0.3 --- MDict and DSL abbreviations
 :PROPERTIES:
@@ -979,10 +997,10 @@ and features.
 :ID:       C3D4E5F6-A7B8-9012-CDEF-123456789012
 :END:
 
-- =johnson-mdict.el= backend for =.mdx= and =.mdd= files.
-- Support for MDict's HTML+CSS content.
-- =_abrv.dsl= abbreviation table support for DSL dictionaries (=[p]=
-  tag expansion).
+- [ ] =johnson-mdict.el= backend for =.mdx= and =.mdd= files.
+- [ ] Support for MDict's HTML+CSS content.
+- [ ] =_abrv.dsl= abbreviation table support for DSL dictionaries
+  (=[p]= tag expansion).
 
 ** Version 0.4 --- BGL (Babylon)
 :PROPERTIES:
@@ -990,7 +1008,7 @@ and features.
 :ID:       D4E5F6A7-B8C9-0123-DEFA-234567890123
 :END:
 
-- =johnson-bgl.el= backend for =.bgl= files.
+- [ ] =johnson-bgl.el= backend for =.bgl= files.
 
 ** Future features
 :PROPERTIES:
@@ -1001,16 +1019,16 @@ and features.
 The following features are planned but not yet scheduled for a specific
 version:
 
-- Media support (images, audio pronunciation).
-- EPWING format.
-- DICT protocol (RFC 2229) for remote dictionary servers.
-- Wildcard search (=?=/=*= patterns).
-- Fuzzy/approximate matching.
-- Full-text search within definitions.
-- Eldoc integration.
-- Scan-popup mode (auto-lookup on selection).
-- Bookmarking entries.
-- Full browsable history buffer with timestamps.
+- [ ] Media support (images, audio pronunciation).
+- [ ] EPWING format.
+- [ ] DICT protocol (RFC 2229) for remote dictionary servers.
+- [ ] Wildcard search (=?=/=*= patterns).
+- [ ] Fuzzy/approximate matching.
+- [ ] Full-text search within definitions.
+- [ ] Eldoc integration.
+- [ ] Scan-popup mode (auto-lookup on selection).
+- [ ] Bookmarking entries.
+- [ ] Full browsable history buffer with timestamps.
 
 * Indices
 :PROPERTIES:

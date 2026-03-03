@@ -133,6 +133,7 @@ Faces
 
 Roadmap
 
+* Version 0.1 (current) --- DSL: Version 01 (current) --- DSL. 
 * Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL. 
 * Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations. 
 * Version 0.4 --- BGL (Babylon): Version 04 --- BGL (Babylon). 
@@ -1004,16 +1005,47 @@ Any unrecognized color name falls back to @code{johnson-color-default-face}.
 @node Roadmap
 @chapter Roadmap
 
-Version 0.1 (current) supports the DSL (ABBYY Lingvo) format.  The
-following versions will add support for additional dictionary formats
-and features.
-
 @menu
+* Version 0.1 (current) --- DSL: Version 01 (current) --- DSL. 
 * Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL. 
 * Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations. 
 * Version 0.4 --- BGL (Babylon): Version 04 --- BGL (Babylon). 
 * Future features::
 @end menu
+
+@node Version 01 (current) --- DSL
+@section Version 0.1 (current) --- DSL
+
+@itemize
+@item
+@samp{johnson-dsl.el} backend for @samp{.dsl} files.
+@item
+Auto-discovery and indexing of uncompressed DSL dictionaries.
+@item
+Encoding auto-detection (UTF-8, UTF-16LE, UTF-16BE).
+@item
+Headword alternation (@samp{@{/@}}), optional parts (@samp{(...)}), and
+multi-headword entries.
+@item
+Case-insensitive and accent-insensitive search via NFKD
+normalization.
+@item
+Dynamic @samp{completing-read} with sqlite-backed prefix matching.
+@item
+Full DSL markup rendering with text properties and faces.
+@item
+Cross-reference navigation with back/forward history.
+@item
+Dictionary groups by language pair, with configurable scope.
+@item
+Collapsible dictionary sections in the results buffer.
+@item
+Dictionary list buffer (@samp{tabulated-list-mode}).
+@item
+Completion-at-point (CAPF) backend.
+@item
+Plain-text entry copying.
+@end itemize
 
 @node Version 02 --- StarDict and compressed DSL
 @section Version 0.2 --- StarDict and compressed DSL
@@ -1038,8 +1070,8 @@ StarDict content types: plain text, HTML, Pango markup, phonetic.
 @item
 Support for MDict's HTML+CSS content.
 @item
-@samp{_abrv.dsl} abbreviation table support for DSL dictionaries (@samp{[p]}
-tag expansion).
+@samp{_abrv.dsl} abbreviation table support for DSL dictionaries
+(@samp{[p]} tag expansion).
 @end itemize
 
 @node Version 04 --- BGL (Babylon)
