@@ -421,8 +421,10 @@ Returns non-nil if dictionaries are ready for querying."
              johnson--indexing-done johnson--indexing-total)
     nil)
    (t
+    ;; Use the fast filesystem-only check (no sqlite opens) to avoid
+    ;; blocking Emacs when there are hundreds of dictionaries.
     (let ((stale (cl-remove-if-not
-                  (lambda (d) (johnson-db-stale-p (plist-get d :path)))
+                  (lambda (d) (johnson-db-stale-quick-p (plist-get d :path)))
                   johnson--dictionaries)))
       (if (null stale)
           (progn (setq johnson--indexed-p t) t)
