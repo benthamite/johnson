@@ -1,0 +1,348 @@
+#+title: johnson-dsl: DSL format backend for johnson
+#+author: Pablo Stafforini
+#+email: pablo@stafforini.com
+#+language: en
+#+options: ':t toc:t author:t email:t num:t
+#+startup: content
+#+export_file_name: johnson-dsl.info
+#+texinfo_filename: johnson-dsl.info
+#+texinfo_dir_category: Emacs misc features
+#+texinfo_dir_title: Johnson DSL: (johnson-dsl)
+#+texinfo_dir_desc: DSL format backend for johnson
+
+This manual describes the features and customization options for the Emacs Lisp file =johnson-dsl.el=.
+
+* Overview
+:PROPERTIES:
+:CUSTOM_ID: h:overview
+:END:
+
+The =johnson-dsl.el= module provides the DSL (ABBYY Lingvo) format
+backend for the =johnson= dictionary package.  DSL is a widely used
+dictionary format created by ABBYY for the Lingvo dictionary software,
+and many freely available bilingual and monolingual dictionaries are
+distributed in this format.
+
+This module handles all aspects of DSL file processing.  It detects the
+file encoding (UTF-16LE, UTF-16BE, UTF-8 with BOM, or plain UTF-8),
+parses the metadata headers (=#NAME=, =#INDEX_LANGUAGE=,
+=#CONTENTS_LANGUAGE=), expands headword variants (alternation and
+optional parts), builds character-offset indices via a decoded buffer
+cache, retrieves entry bodies, and renders the full set of DSL markup
+tags into Emacs text properties and faces.
+
+The module registers itself with the =johnson= core via the plist-based
+format registry system, using ~with-eval-after-load~ to defer
+registration until =johnson.el= is loaded.  This means the DSL backend
+is only activated when the core module is actually required.
+
+A key design decision is the use of /decoded buffers/ rather than raw
+byte access.  Dictionary files are opened with their detected encoding
+and cached as multibyte Emacs buffers.  The index stores character
+positions (1-based) rather than byte offsets, which ensures that UTF-16
+encoded files work correctly for both indexing and retrieval.
+
+* Faces
+:PROPERTIES:
+:CUSTOM_ID: h:faces
+:END:
+
+All faces defined in =johnson-dsl.el= belong to the ~johnson-dsl-faces~
+customization group.  You can customize them via =M-x customize-group
+RET johnson-dsl-faces RET= to match your preferred color theme.
+
+** Text styling faces
+:PROPERTIES:
+:CUSTOM_ID: h:text-styling-faces
+:END:
+
+#+vindex: johnson-bold-face
+#+vindex: johnson-italic-face
+#+vindex: johnson-underline-face
+#+vindex: johnson-stress-face
+The face ~johnson-bold-face~ renders text enclosed in =[b]...[/b]= tags.
+It inherits from ~bold~.
+
+The face ~johnson-italic-face~ renders text enclosed in =[i]...[/i]=
+tags.  It inherits from ~italic~.
+
+The face ~johnson-underline-face~ renders text enclosed in
+=[u]...[/u]= tags.  It sets the =:underline= attribute to ~t~.
+
+The face ~johnson-stress-face~ renders stress marks enclosed in
+=[']=...=[/']=  tags.  It inherits from ~bold~, making accented
+syllables visually prominent in pronunciation guides.
+
+** Content type faces
+:PROPERTIES:
+:CUSTOM_ID: h:content-type-faces
+:END:
+
+#+vindex: johnson-example-face
+#+vindex: johnson-optional-face
+#+vindex: johnson-comment-face
+The face ~johnson-example-face~ renders example sentences enclosed in
+=[ex]...[/ex]= tags.  It inherits from ~italic~ with a =dim gray=
+foreground, visually distinguishing examples from definitions.
+
+The face ~johnson-optional-face~ renders optional or secondary text
+enclosed in =[*]...[/*]= tags.  It uses a muted gray foreground that
+adapts to the background: =gray50= on light backgrounds and =gray60=
+on dark backgrounds.
+
+The face ~johnson-comment-face~ renders comment annotations enclosed in
+=[com]...[/com]= tags.  It inherits from ~font-lock-comment-face~,
+giving comments a consistent appearance with the rest of Emacs.
+
+** Link faces
+:PROPERTIES:
+:CUSTOM_ID: h:link-faces
+:END:
+
+#+vindex: johnson-ref-face
+#+vindex: johnson-url-face
+The face ~johnson-ref-face~ renders cross-reference links enclosed in
+=[ref]...[/ref]= tags or =<<...>>= markers.  It inherits from ~link~.
+Cross-references are rendered as clickable buttons that invoke
+~johnson-lookup~ for the referenced word.
+
+The face ~johnson-url-face~ renders external URL links enclosed in
+=[url]...[/url]= tags.  It inherits from ~link~.  URL links are rendered
+as clickable buttons that open the URL via ~browse-url~.
+
+** Section header face
+:PROPERTIES:
+:CUSTOM_ID: h:section-header-face
+:END:
+
+#+vindex: johnson-section-header-face
+The face ~johnson-section-header-face~ renders dictionary section
+headers in the results buffer (the lines using Unicode box-drawing
+character =━=).  It inherits from ~bold~ with the =:extend= attribute
+set to ~t~, ensuring the face extends to the edge of the window.
+
+** Color faces
+:PROPERTIES:
+:CUSTOM_ID: h:color-faces
+:END:
+
+#+vindex: johnson-color-default-face
+#+vindex: johnson-color-green-face
+#+vindex: johnson-color-red-face
+#+vindex: johnson-color-blue-face
+#+vindex: johnson-color-gray-face
+#+vindex: johnson-color-brown-face
+#+vindex: johnson-color-violet-face
+#+vindex: johnson-color-orange-face
+DSL dictionaries use =[c]...[/c]= and =[c NAME]...[/c]= tags to apply
+color to text.  The module maps DSL color names (case-insensitively) to
+a fixed set of customizable Emacs faces.  All color faces define
+separate foreground colors for light and dark backgrounds.
+
+The face ~johnson-color-default-face~ is used when no color name is
+specified (i.e., a bare =[c]= tag).  It defaults to green (=dark green=
+on light backgrounds, =green3= on dark backgrounds).
+
+The face ~johnson-color-green-face~ is used for the DSL color names
+=green= and =darkgreen=.
+
+The face ~johnson-color-red-face~ is used for =red=, =darkred=, and
+=crimson=.
+
+The face ~johnson-color-blue-face~ is used for =blue=, =darkblue=, and
+=steelblue=.
+
+The face ~johnson-color-gray-face~ is used for =gray=, =darkgray=, and
+=dimgray=.
+
+The face ~johnson-color-brown-face~ is used for =brown= and
+=saddlebrown=.
+
+The face ~johnson-color-violet-face~ is used for =violet=, =purple=,
+and =darkviolet=.
+
+The face ~johnson-color-orange-face~ is used for =orange= and
+=darkorange=.
+
+Any unrecognized color name falls back to ~johnson-color-default-face~.
+
+* Functions
+:PROPERTIES:
+:CUSTOM_ID: h:functions
+:END:
+
+** Format detection
+:PROPERTIES:
+:CUSTOM_ID: h:format-detection
+:END:
+
+#+findex: johnson-dsl-detect
+The function ~johnson-dsl-detect~ determines whether a given file path
+is a DSL dictionary file.  It checks for the =.dsl= extension
+(case-insensitively) and then verifies that the first non-BOM content in
+the file starts with =#=, which indicates a DSL metadata header.
+
+The detection handles all supported encodings: it reads the BOM to
+determine the encoding, skips the appropriate number of BOM bytes, and
+decodes the initial content to check for the =#= character.  For UTF-16
+files, it reads enough bytes (64) to ensure it captures the first
+decoded characters.
+
+This function is registered as the =:detect= handler in the format
+registry and is called during dictionary discovery to identify DSL files
+among all files found in the configured dictionary directories.
+
+** Metadata parsing
+:PROPERTIES:
+:CUSTOM_ID: h:metadata-parsing
+:END:
+
+#+findex: johnson-dsl-parse-metadata
+The function ~johnson-dsl-parse-metadata~ extracts metadata headers from
+a DSL dictionary file.  It reads only the first few kilobytes of the
+file (4 KB for UTF-8, 8 KB for UTF-16) since headers always appear at
+the top, making this operation efficient even for large files.
+
+The function parses three header fields: =#NAME= (the dictionary's
+display name), =#INDEX_LANGUAGE= (the source language), and
+=#CONTENTS_LANGUAGE= (the target language).  Header values are enclosed
+in double quotes in the file.
+
+It returns a plist with keys ~:name~, ~:source-lang~, and
+~:target-lang~.  If a header is absent, the corresponding value defaults
+to an empty string.  The core module uses these values for dictionary
+display names and for auto-detecting language-pair groups.
+
+** Index building
+:PROPERTIES:
+:CUSTOM_ID: h:index-building
+:END:
+
+#+findex: johnson-dsl-build-index
+The function ~johnson-dsl-build-index~ parses an entire DSL dictionary
+file and calls a CALLBACK function for each headword entry found.  The
+callback receives three arguments: the headword string, the character
+offset of the entry body in the decoded buffer (1-based), and the
+character length of the body.
+
+The parsing proceeds in a single pass through the decoded buffer cache.
+It first skips metadata header lines (beginning with =#=), then
+identifies entries by their structure: flush-left lines are headwords,
+and indented lines (beginning with a tab or spaces) are the entry body.
+Multiple consecutive flush-left lines before an indented body are treated
+as multiple headwords for the same entry.
+
+Each raw headword is expanded via the internal headword expansion
+pipeline, which handles three kinds of variants:
+
+- *Split markers*: =colour{/}color= produces two separate headwords,
+  =colour= and =color=.
+
+- *Alternation*: =pre{a/b}suf= expands to =preasuf= and =prebsuf=.
+
+- *Optional parts*: =go(es)= expands to both =go= and =goes=.
+
+Escaped characters (=\[=, =\]=, =\{=, =\}=, =\(=, =\)=) are stripped
+after expansion.  Each expanded variant becomes a separate row in the
+database, all pointing to the same entry body.
+
+If a headword fails to parse, it is skipped and a count of skipped
+entries is logged as a warning message at the end of the indexing run.
+
+** Entry retrieval
+:PROPERTIES:
+:CUSTOM_ID: h:entry-retrieval
+:END:
+
+#+findex: johnson-dsl-retrieve-entry
+The function ~johnson-dsl-retrieve-entry~ retrieves the raw entry body
+from a DSL dictionary file.  It takes the file path, a character offset
+(CHAR-OFFSET, 1-based), and a character count (NCHARS), and returns the
+corresponding substring from the decoded buffer cache.
+
+Because the index stores character positions rather than byte offsets,
+this function works correctly with all supported encodings, including
+UTF-16 files where byte positions would not align with character
+boundaries.
+
+The decoded buffer cache ([[#h:buffer-cache][Buffer cache]]) keeps dictionary files open
+as Emacs buffers for fast repeated lookups.
+
+** Entry rendering
+:PROPERTIES:
+:CUSTOM_ID: h:entry-rendering
+:END:
+
+#+findex: johnson-dsl-render-entry
+The function ~johnson-dsl-render-entry~ transforms raw DSL entry text
+into richly formatted content in the current buffer.  It inserts the
+rendered text at point using Emacs text properties and faces rather than
+HTML or shr rendering.
+
+The rendering proceeds in several steps.  First, leading indentation
+(tab or spaces) is stripped from each line.  Media references
+(={{...}}=) are removed.  Then the text is inserted into the buffer and
+processed in two passes.
+
+The first pass handles =<<...>>= cross-reference markers, converting
+them into clickable buttons with ~johnson-ref-face~
+([[#h:link-faces][Link faces]]).  Each button invokes ~johnson-lookup~ for the
+referenced word when activated.
+
+The second pass processes DSL tags using a stack-based parser.  The
+parser scans for tag patterns matching =[tag]= and =[/tag]=, maintaining
+a stack of active tags.  When a closing tag is encountered, the
+corresponding face or text property is applied to the enclosed region.
+The supported tags include:
+
+- =[b]=, =[i]=, =[u]=: text styling ([[#h:text-styling-faces][Text styling faces]])
+- =[c]= and =[c NAME]=: color ([[#h:color-faces][Color faces]])
+- =[sup]=, =[sub]=: superscript and subscript via ~display~ properties
+- =[ex]=: examples ([[#h:content-type-faces][Content type faces]])
+- =[*]=: optional/secondary text
+- =[ref]=: cross-reference buttons ([[#h:link-faces][Link faces]])
+- =[url]=: external URL buttons
+- =[lang id=N]=: language identifier (stored as text property)
+- =[trn]=, =[!trn]=: translation blocks (blank line separation)
+- =[com]=: comments
+- =[m]= and =[m0]=-=[m9]=: indentation levels via ~line-prefix~ and
+  ~wrap-prefix~ display properties
+- =[p]=: abbreviation markers (rendered as-is)
+- =[']=: stress marks ([[#h:text-styling-faces][Text styling faces]])
+- =[s]=: media references (content is suppressed)
+
+** Buffer cache
+:PROPERTIES:
+:CUSTOM_ID: h:buffer-cache
+:END:
+
+The DSL backend maintains a cache of decoded dictionary file buffers for
+efficient repeated lookups.  When a dictionary file is first accessed
+(during indexing or lookup), it is opened with its detected encoding and
+stored in a hidden buffer named =" *johnson-cache: PATH"=.  The leading
+space in the buffer name hides it from the standard buffer list.
+
+Subsequent accesses to the same dictionary reuse the existing buffer,
+avoiding repeated file I/O and encoding detection.  The BOM character,
+if present, is stripped from the buffer contents so that character
+positions are clean and consistent.
+
+All cache buffers can be killed by running ~johnson-close-caches~ from
+the core module, which also closes all open database connections.
+
+* Indices
+:PROPERTIES:
+:CUSTOM_ID: h:indices
+:END:
+
+** Function index
+:PROPERTIES:
+:INDEX: fn
+:CUSTOM_ID: h:function-index
+:END:
+
+** Variable index
+:PROPERTIES:
+:INDEX: vr
+:CUSTOM_ID: h:variable-index
+:END:
