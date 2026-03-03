@@ -24,6 +24,7 @@ provides the functionality of programs such as GoldenDict and StarDict,
 allowing you to look up words across multiple dictionaries simultaneously
 and view formatted definitions in a dedicated Emacs buffer.
 
+#+CAPTION: Dr Johnson
 [[file:johnson.jpg]]
 
 The package is implemented entirely in Emacs Lisp with no external
