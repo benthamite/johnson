@@ -871,6 +871,21 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
     (message "Closed %d cache buffer%s and all database connections"
              count (if (= count 1) "" "s"))))
 
+;;;###autoload
+(defun johnson-clear-index ()
+  "Trash all sqlite index files and reset state.
+Dictionaries will be re-indexed on next lookup."
+  (interactive)
+  (when (yes-or-no-p "Trash all johnson index files? ")
+    (johnson-close-caches)
+    (let ((dir (expand-file-name johnson-cache-directory))
+          (count 0))
+      (when (file-directory-p dir)
+        (dolist (file (directory-files dir t "\\.sqlite\\'"))
+          (move-file-to-trash file)
+          (cl-incf count)))
+      (message "Trashed %d index file%s" count (if (= count 1) "" "s")))))
+
 ;;;; Load built-in format backends
 
 (require 'johnson-dsl nil t)
