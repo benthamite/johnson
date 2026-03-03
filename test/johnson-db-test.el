@@ -247,5 +247,65 @@ Also binds `dict-path' to a dummy path.  Cleans up afterwards."
     (johnson-db-reset db)
     (should (equal (johnson-db-get-metadata db "name") "TestDict"))))
 
+;;;; Unified completion index
+
+(ert-deftest johnson-db-test-completion-index-path ()
+  "Completion index path is inside the cache directory."
+  (johnson-db-test--with-temp-cache
+    (should (string-prefix-p (expand-file-name johnson-cache-directory)
+                             (johnson-db-completion-index-path)))))
+
+(ert-deftest johnson-db-test-get-completion-db-nil-when-missing ()
+  "Returns nil when no completion index exists yet."
+  (johnson-db-test--with-temp-cache
+    (let ((johnson-db--completion-db nil))
+      (should (null (johnson-db-get-completion-db))))))
+
+(ert-deftest johnson-db-test-rebuild-completion-index ()
+  "Rebuilding aggregates headwords from multiple dictionaries."
+  (johnson-db-test--with-temp-cache
+    (let* ((dict1 "/tmp/johnson-comp-test-1.dsl")
+           (dict2 "/tmp/johnson-comp-test-2.dsl")
+           (db1 (johnson-db-open dict1))
+           (db2 (johnson-db-open dict2)))
+      (unwind-protect
+          (progn
+            (johnson-db-insert-entries-batch
+             db1 '(("apple" 100 50) ("banana" 200 60)))
+            (johnson-db-insert-entries-batch
+             db2 '(("apple" 300 50) ("cherry" 400 70)))
+            (let ((count (johnson-db-rebuild-completion-index
+                          (list dict1 dict2))))
+              (should (= count 3))  ; apple, banana, cherry
+              ;; Open and query the built index.
+              (let ((comp-db (johnson-db-get-completion-db)))
+                (unwind-protect
+                    (let ((results (johnson-db-query-completion comp-db "app")))
+                      (should (= (length results) 1))
+                      (should (equal (caar results) "apple"))
+                      ;; apple appears in 2 dictionaries.
+                      (should (= (cadr (car results)) 2)))
+                  (johnson-db-close-completion-db)))))
+        (johnson-db-close db1)
+        (johnson-db-close db2)))))
+
+(ert-deftest johnson-db-test-rebuild-completion-index-empty ()
+  "Rebuilding with no dictionaries produces zero headwords."
+  (johnson-db-test--with-temp-cache
+    (let ((count (johnson-db-rebuild-completion-index nil)))
+      (should (= count 0))
+      (let ((comp-db (johnson-db-get-completion-db)))
+        (unwind-protect
+            (should (null (johnson-db-query-completion comp-db "a")))
+          (johnson-db-close-completion-db))))))
+
+(ert-deftest johnson-db-test-close-completion-db ()
+  "Closing clears the cached connection."
+  (johnson-db-test--with-temp-cache
+    (johnson-db-rebuild-completion-index nil)
+    (should (johnson-db-get-completion-db))
+    (johnson-db-close-completion-db)
+    (should (null johnson-db--completion-db))))
+
 (provide 'johnson-db-test)
 ;;; johnson-db-test.el ends here
