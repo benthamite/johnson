@@ -84,6 +84,11 @@ during idle time."
   "Face for dictionary section headers in the results buffer."
   :group 'johnson)
 
+(defface johnson-toc-face
+  '((t :inherit link))
+  "Face for table-of-contents entries in the results buffer."
+  :group 'johnson)
+
 ;;;; Internal variables
 
 (defvar johnson--formats nil
@@ -719,6 +724,43 @@ Called by a timer scheduled from `johnson--display-results'."
               (setq johnson--render-marker nil)
               (setq johnson--render-timer nil))))))))
 
+(defun johnson--jump-to-section (name)
+  "Jump to the section header for dictionary NAME."
+  (let ((pos (point-min))
+        (found nil))
+    (while (and pos (< pos (point-max)) (not found))
+      (when (and (get-text-property pos 'johnson-section-header)
+                 (equal (get-text-property pos 'johnson-section-header) name)
+                 (not (equal name "Contents")))
+        (goto-char pos)
+        (setq found t))
+      (setq pos (next-single-property-change pos 'johnson-section-header)))
+    (unless found
+      (message "Section \"%s\" not yet loaded" name))))
+
+(defun johnson--insert-toc (results)
+  "Insert a table of contents at point for RESULTS.
+RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
+  (when (> (length results) 1)
+    (johnson--insert-section-header "Contents")
+    (let ((toc-start (point)))
+      (dolist (result results)
+        (let ((name (plist-get (car result) :name)))
+          (insert "  \u2022 ")
+          (let ((link-start (point)))
+            (insert name)
+            (make-text-button link-start (point)
+                              'face 'johnson-toc-face
+                              'action (lambda (_btn)
+                                        (johnson--jump-to-section name))
+                              'help-echo (format "Jump to %s" name)))
+          (insert "\n")))
+      (let ((ov (make-overlay toc-start (point))))
+        (overlay-put ov 'johnson-section "Contents")
+        (overlay-put ov 'johnson-section-content t)
+        (overlay-put ov 'evaporate t))
+      (insert "\n"))))
+
 (defun johnson--display-results (word results)
   "Display lookup RESULTS for WORD in the *johnson* buffer."
   (let ((buf (get-buffer-create "*johnson*")))
@@ -737,6 +779,8 @@ Called by a timer scheduled from `johnson--display-results'."
           (johnson--nav-push word))
         (if (null results)
             (insert (format "No results found for \"%s\".\n" word))
+          ;; Insert TOC with all result names upfront.
+          (johnson--insert-toc results)
           (let ((immediate (seq-take results johnson-render-batch-size))
                 (deferred (seq-drop results johnson-render-batch-size)))
             (dolist (result immediate)
@@ -778,6 +822,7 @@ Called by a timer scheduled from `johnson--display-results'."
     (define-key map "r" #'johnson-history-forward)
     (define-key map "s" #'johnson-new-search)
     (define-key map "g" #'johnson-refresh)
+    (define-key map "o" #'johnson-ace-link)
     (define-key map "w" #'johnson-copy-entry)
     (define-key map "q" #'quit-window)
     map)
@@ -821,6 +866,35 @@ Called by a timer scheduled from `johnson--display-results'."
   "Move to the previous dictionary section header."
   (interactive)
   (johnson-prev-section))
+
+;;;; Ace-link integration
+
+(declare-function avy-process "avy")
+
+(defun johnson-ace-link ()
+  "Jump to a visible link using avy."
+  (interactive)
+  (unless (require 'avy nil t)
+    (user-error "The `avy' package is required for ace-link"))
+  (let ((candidates nil))
+    (save-excursion
+      (let ((pos (window-start))
+            (wend (window-end nil t)))
+        (while (and pos (< pos wend))
+          (when (button-at pos)
+            (push (cons pos (selected-window)) candidates))
+          (setq pos (next-single-property-change pos 'button nil wend)))))
+    (if candidates
+        (let ((pt (avy-process (nreverse candidates))))
+          (when (numberp pt)
+            (goto-char pt)
+            (let ((btn (button-at pt)))
+              (when btn (button-activate btn)))))
+      (message "No links visible"))))
+
+(with-eval-after-load 'ace-link
+  (when (boundp 'ace-link-major-mode-actions)
+    (push '(johnson-mode . johnson-ace-link) ace-link-major-mode-actions)))
 
 ;;;; Section collapsing
 
