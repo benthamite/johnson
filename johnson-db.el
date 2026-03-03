@@ -200,5 +200,86 @@ file has been modified after the index was last written.  Unlike
   "Delete all entries from DB for re-indexing."
   (sqlite-execute db "DELETE FROM entries"))
 
+;;;; Unified completion index
+
+(defvar johnson-db--completion-db nil
+  "Cached sqlite connection for the unified completion index.")
+
+(defun johnson-db-completion-index-path ()
+  "Return the path to the unified completion index database."
+  (expand-file-name "completion.sqlite" johnson-cache-directory))
+
+(defun johnson-db-get-completion-db ()
+  "Return the cached completion index connection, opening on first use.
+Returns nil if the completion index file does not exist."
+  (cond
+   (johnson-db--completion-db
+    johnson-db--completion-db)
+   ((file-exists-p (johnson-db-completion-index-path))
+    (setq johnson-db--completion-db
+          (sqlite-open (johnson-db-completion-index-path))))))
+
+(defun johnson-db-close-completion-db ()
+  "Close the cached completion index connection."
+  (when johnson-db--completion-db
+    (condition-case nil
+        (sqlite-close johnson-db--completion-db)
+      (error nil))
+    (setq johnson-db--completion-db nil)))
+
+(defun johnson-db-rebuild-completion-index (dict-paths)
+  "Rebuild the unified completion index from per-dictionary databases.
+DICT-PATHS is a list of dictionary file paths whose sqlite indexes
+should be aggregated.  Returns the total number of unique headwords."
+  (johnson-db--ensure-cache-directory)
+  (johnson-db-close-completion-db)
+  (let ((agg (make-hash-table :test #'equal))
+        (db (sqlite-open (johnson-db-completion-index-path))))
+    (unwind-protect
+        (progn
+          ;; Collect headwords from all per-dict databases.
+          (dolist (path dict-paths)
+            (let ((idx (johnson-db--index-path path)))
+              (when (file-exists-p idx)
+                (let ((per-db (sqlite-open idx)))
+                  (unwind-protect
+                      (dolist (row (sqlite-select per-db
+                                    "SELECT DISTINCT headword FROM entries"))
+                        (let ((hw (car row)))
+                          (puthash hw (1+ (gethash hw agg 0)) agg)))
+                    (sqlite-close per-db))))))
+          ;; Recreate the table (faster than DELETE for bulk rebuild).
+          (sqlite-execute db "DROP TABLE IF EXISTS completions")
+          (sqlite-execute db
+            "CREATE TABLE completions (
+               headword TEXT NOT NULL,
+               headword_normalized TEXT NOT NULL,
+               dict_count INTEGER NOT NULL DEFAULT 1)")
+          ;; Bulk insert in a single transaction.
+          (sqlite-execute db "BEGIN TRANSACTION")
+          (maphash (lambda (hw count)
+                     (sqlite-execute db
+                       "INSERT INTO completions (headword, headword_normalized, dict_count)
+                        VALUES (?, ?, ?)"
+                       (list hw (johnson-db-normalize hw) count)))
+                   agg)
+          (sqlite-execute db "COMMIT")
+          ;; Create index after all inserts.
+          (sqlite-execute db
+            "CREATE INDEX idx_comp_normalized ON completions(headword_normalized)")
+          (hash-table-count agg))
+      (sqlite-close db))))
+
+(defun johnson-db-query-completion (db prefix &optional limit)
+  "Query the unified completion DB for headwords matching PREFIX.
+Returns a list of (HEADWORD DICT-COUNT) pairs.  LIMIT defaults to 200."
+  (let ((normalized (johnson-db-normalize prefix))
+        (limit (or limit 200)))
+    (sqlite-select db
+                   "SELECT headword, dict_count FROM completions
+                    WHERE headword_normalized LIKE ?
+                    LIMIT ?"
+                   (list (concat normalized "%") limit))))
+
 (provide 'johnson-db)
 ;;; johnson-db.el ends here

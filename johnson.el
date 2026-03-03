@@ -200,7 +200,8 @@ PROPS is a plist with keys :name, :extensions, :detect,
   (maphash (lambda (_path db)
              (condition-case nil (johnson-db-close db) (error nil)))
            johnson--db-cache)
-  (clrhash johnson--db-cache))
+  (clrhash johnson--db-cache)
+  (johnson-db-close-completion-db))
 
 ;;;; Dictionary discovery
 
@@ -408,7 +409,12 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                  (cl-incf errors)
                  (message \"JOHNSON-INDEX-ERROR %%d %%d %%s %%s\"
                           done total name (error-message-string err))))))
-          (message \"JOHNSON-INDEX-DONE %%d %%d\" total errors)))"
+          (message \"JOHNSON-INDEX-DONE %%d %%d\" total errors)
+          (message \"JOHNSON-INDEX-COMPLETION building...\")
+          (let* ((paths (mapcar (lambda (d) (plist-get d :path))
+                                johnson--dictionaries))
+                 (count (johnson-db-rebuild-completion-index paths)))
+            (message \"JOHNSON-INDEX-COMPLETION done %%d\" count))))"
      dirs
      (expand-file-name johnson-cache-directory))))
 
@@ -454,7 +460,16 @@ Parses structured messages from OUTPUT and updates the progress buffer."
               (let ((errs (string-to-number (match-string 2 line))))
                 (when (> errs 0)
                   (insert (format " (%d errors)" errs))))
-              (insert ".\n")))))))))
+              (insert ".\n"))
+             ((string-match "^JOHNSON-INDEX-COMPLETION building" line)
+              (goto-char (point-max))
+              (insert "\nBuilding completion index..."))
+             ((string-match "^JOHNSON-INDEX-COMPLETION done \\([0-9]+\\)" line)
+              (goto-char (point-max))
+              (insert (format " done (%s headwords)\n"
+                              (johnson--format-number
+                               (string-to-number
+                                (match-string 1 line)))))))))))))
 
 (defun johnson--index-process-sentinel (proc _event)
   "Process sentinel for the child indexing process PROC.
@@ -462,6 +477,9 @@ Called when the process finishes."
   (when (memq (process-status proc) '(exit signal))
     (setq johnson--indexing-in-progress nil)
     (setq johnson--indexing-process nil)
+    ;; Invalidate stale cached completion connection so the next
+    ;; query picks up the freshly-built index.
+    (johnson-db-close-completion-db)
     (let ((exit-code (process-exit-status proc))
           (buf (process-get proc 'johnson-buf)))
       (if (zerop exit-code)
@@ -509,6 +527,19 @@ In batch/noninteractive mode, indexing runs synchronously."
               (insert (format "Indexing %d dictionaries...\n\n" total))))
           (dolist (dict johnson--dictionaries)
             (johnson--index-one-dict-sync dict buf))
+          ;; Build the unified completion index.
+          (with-current-buffer buf
+            (let ((inhibit-read-only t))
+              (goto-char (point-max))
+              (insert "\nBuilding completion index...")))
+          (let* ((paths (mapcar (lambda (d) (plist-get d :path))
+                                johnson--dictionaries))
+                 (count (johnson-db-rebuild-completion-index paths)))
+            (with-current-buffer buf
+              (let ((inhibit-read-only t))
+                (goto-char (point-max))
+                (insert (format " done (%s headwords)\n"
+                                (johnson--format-number count))))))
           (setq johnson--indexed-p t)
           (setq johnson--indexing-in-progress nil)
           (with-current-buffer buf
@@ -608,19 +639,31 @@ database queries across all dictionaries."
                                last-candidates
                                (string-prefix-p query-prefix normalized))))
             (setq query-prefix normalized)
-            (let ((candidates nil))
+            (let ((candidates nil)
+                  (comp-db (johnson-db-get-completion-db)))
               (clrhash last-counts)
               (when (>= (length string) johnson-completion-min-chars)
-                (dolist (dict (johnson--dictionaries-in-scope))
-                  (condition-case nil
-                      (let* ((path (plist-get dict :path))
-                             (db (johnson--get-db path))
-                             (words (johnson-db-query-prefix db string 200)))
-                        (dolist (w words)
-                          (push w candidates)
-                          (puthash w (1+ (or (gethash w last-counts) 0))
-                                   last-counts)))
-                    (error nil))))
+                (if comp-db
+                    ;; Unified completion index: single query.
+                    (condition-case nil
+                        (dolist (row (johnson-db-query-completion
+                                     comp-db string 200))
+                          (let ((hw (car row))
+                                (cnt (cadr row)))
+                            (push hw candidates)
+                            (puthash hw cnt last-counts)))
+                      (error nil))
+                  ;; Fallback: per-dictionary queries.
+                  (dolist (dict (johnson--dictionaries-in-scope))
+                    (condition-case nil
+                        (let* ((path (plist-get dict :path))
+                               (db (johnson--get-db path))
+                               (words (johnson-db-query-prefix db string 200)))
+                          (dolist (w words)
+                            (push w candidates)
+                            (puthash w (1+ (or (gethash w last-counts) 0))
+                                     last-counts)))
+                      (error nil)))))
               (setq last-candidates (delete-dups candidates)))))
         (complete-with-action action last-candidates string pred)))))
 
