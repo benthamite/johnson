@@ -582,8 +582,11 @@ Returns non-nil if dictionaries are ready for querying."
 ;;;; Completion
 
 (defun johnson--completion-table ()
-  "Return a dynamic completion table for dictionary headwords."
-  (let ((last-prefix nil)
+  "Return a dynamic completion table for dictionary headwords.
+Caches results for the broadest prefix queried and narrows in
+memory when the user extends that prefix, avoiding redundant
+database queries across all dictionaries."
+  (let ((query-prefix nil)
         (last-candidates nil)
         (last-counts (make-hash-table :test #'equal)))
     (lambda (string pred action)
@@ -596,8 +599,15 @@ Returns non-nil if dictionaries are ready for querying."
                       (format " (%d dicts)" count)))))
             (category . johnson-headword))
         (let ((normalized (johnson-db-normalize string)))
-          (unless (equal normalized last-prefix)
-            (setq last-prefix normalized)
+          ;; Re-query only when the new prefix is NOT an extension of
+          ;; the already-queried prefix.  When it IS an extension, the
+          ;; existing candidates are a superset of what we need and
+          ;; `complete-with-action' will narrow them.
+          (when (and (not (equal normalized query-prefix))
+                     (not (and query-prefix
+                               last-candidates
+                               (string-prefix-p query-prefix normalized))))
+            (setq query-prefix normalized)
             (let ((candidates nil))
               (clrhash last-counts)
               (when (>= (length string) johnson-completion-min-chars)
