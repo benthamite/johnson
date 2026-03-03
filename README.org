@@ -21,19 +21,21 @@ dependencies, relying on Emacs 30.1's built-in sqlite support for
 efficient headword indexing.  Dictionary files are parsed natively,
 without calling external tools.
 
-In version 0.1, the package supports the DSL (ABBYY Lingvo) format via
-the =johnson-dsl.el= backend module.  Future versions will add support
-for StarDict, MDict, and BGL (Babylon) formats.
+In version 0.2, the package supports the DSL (ABBYY Lingvo) and
+StarDict formats, including dictzip-compressed files (=.dsl.dz= and
+=.dict.dz=).  Future versions will add support for MDict and BGL
+(Babylon) formats.
 
-The architecture is modular and consists of three files.  The core module
-(=johnson.el=) provides the lookup engine, results buffer, navigation,
-history, and a plist-based format registry
-([[#h:format-registration][Format registration]]).  The sqlite index management
-is delegated to =johnson-db.el=, which maintains one database per
-dictionary file in a configurable cache directory
-([[#h:cache-directory][Cache directory]]).  Each dictionary format is handled
-by a separate backend module—currently =johnson-dsl.el=—that registers
-itself with the core via the format registry.
+The architecture is modular.  The core module (=johnson.el=) provides
+the lookup engine, results buffer, navigation, history, and a
+plist-based format registry ([[#h:format-registration][Format registration]]).
+The sqlite index management is delegated to =johnson-db.el=, which
+maintains one database per dictionary file in a configurable cache
+directory ([[#h:cache-directory][Cache directory]]).  Shared infrastructure
+for dictzip decompression lives in =johnson-dictzip.el=.  Each
+dictionary format is handled by a separate backend
+module—=johnson-dsl.el= and =johnson-stardict.el=—that registers itself
+with the core via the format registry.
 
 A typical workflow consists of three steps.  First, configure
 ~johnson-dictionary-directories~ to point at your dictionary files
@@ -989,7 +991,7 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
 :ID:       A1B2C3D4-E5F6-7890-ABCD-EF1234567890
 :END:
 
-** Version 0.1 (current) --- DSL
+** Version 0.1 --- DSL
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-v01
 :ID:       A2B3C4D5-E6F7-8901-ABCD-EF2345678901
@@ -1011,18 +1013,23 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
 - [X] Completion-at-point (CAPF) backend.
 - [X] Plain-text entry copying.
 
-** Version 0.2 --- StarDict and compressed DSL
+** Version 0.2 (current) --- StarDict and compressed DSL
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-v02
 :ID:       B2C3D4E5-F6A7-8901-BCDE-F12345678901
 :END:
 
-- [ ] =johnson-stardict.el= backend for =.ifo=, =.idx=, =.dict=, and
+- [X] =johnson-stardict.el= backend for =.ifo=, =.idx=, =.dict=, and
   =.syn= files.
-- [ ] Dictzip random-access support for compressed =.dict.dz= and
+- [X] Dictzip random-access support for compressed =.dict.dz= and
   =.dsl.dz= files.
-- [ ] StarDict content types: plain text, HTML, Pango markup, phonetic.
-
+- [X] StarDict content types: plain text, HTML, Pango markup, phonetic.
+- [X] Include table of contents at the beginning of the buffer. Integrate it with ace-link for quick navigation.
+- [X] Allow collapsing all sections, not just individual ones (like org does).
+- [X] Display a buffer of all indexed dictionaries and allow the user to reorder them, so that the new order can be saved as the new order in =johnson-dictionary-priorities=.
+    - When saving, prompt the user whether they want to set the new value via defcustom, for the current session, or to set it manually in their init file; in the latter case, copy the new value to the kill ring and display instructions on how to use it.
+- [X] Provide basic media support (audio pronunciation).
+  
 ** Version 0.3 --- MDict and DSL abbreviations
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-v03
@@ -1051,7 +1058,7 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
 The following features are planned but not yet scheduled for a specific
 version:
 
-- [ ] Media support (images, audio pronunciation).
+- [ ] Extended media support (images).
 - [ ] EPWING format.
 - [ ] DICT protocol (RFC 2229) for remote dictionary servers.
 - [ ] Wildcard search (=?=/=*= patterns).

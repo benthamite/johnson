@@ -1,7 +1,7 @@
 ;;; johnson.el --- Multi-format dictionary UI for Emacs -*- lexical-binding: t; -*-
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: dictionaries, i18n
 
@@ -17,7 +17,7 @@
 ;; implements native Elisp parsing for all supported formats — no
 ;; external tools required.
 ;;
-;; Supported formats (v0.1): DSL (ABBYY Lingvo).
+;; Supported formats (v0.2): DSL (ABBYY Lingvo), StarDict.
 ;;
 ;; Usage:
 ;;   M-x johnson-lookup            Look up a word
