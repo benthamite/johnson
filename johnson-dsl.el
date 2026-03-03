@@ -21,6 +21,7 @@
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
+(declare-function johnson-insert-audio-button "johnson")
 
 ;;;; Faces
 
@@ -157,6 +158,12 @@ If NAME is nil or empty, return `johnson-color-default-face'."
       'johnson-color-default-face
     (or (cdr (assoc (downcase name) johnson-dsl--color-alist))
         'johnson-color-default-face)))
+
+;;;; Dictionary context for rendering
+
+(defvar johnson-dsl--current-dict-dir nil
+  "Directory of the dictionary being rendered.
+Set by `johnson-dsl-retrieve-entry' for use by the renderer.")
 
 ;;;; Dictzip helpers
 
@@ -515,6 +522,7 @@ buffer (1-based offset, suitable for `buffer-substring-no-properties')."
   "Retrieve the entry body from the DSL dictionary at PATH.
 CHAR-OFFSET and NCHARS specify the entry's location as character
 positions in the decoded buffer (1-based offset)."
+  (setq johnson-dsl--current-dict-dir (file-name-directory path))
   (let ((buf (johnson-dsl--get-buffer path)))
     (with-current-buffer buf
       (buffer-substring-no-properties char-offset (+ char-offset nchars)))))
@@ -595,14 +603,26 @@ Inserts the rendered text at point."
                ;; [/m] closing: just remove the tag (already deleted)
                ((and closing-p (string-match "^m[0-9]?$" tag-name))
                 nil)
-               ;; [s] media tag: skip content until [/s]
+               ;; [s] media tag: extract filename and insert play button
                ((and (not closing-p) (equal tag-name "s"))
-                (let ((s-end (save-excursion
-                               (if (re-search-forward "\\[/s\\]" end t)
-                                   (match-end 0)
-                                 end))))
+                (let* ((s-end (save-excursion
+                                (if (re-search-forward "\\[/s\\]" end t)
+                                    (match-end 0)
+                                  end)))
+                       ;; Extract the filename between [s] and [/s].
+                       (content-end (- s-end 4)) ; before [/s]
+                       (filename (string-trim
+                                  (buffer-substring-no-properties
+                                   tag-beg content-end)))
+                       (old-len (- s-end tag-beg)))
                   (delete-region tag-beg s-end)
-                  (setq end (- end (- s-end tag-beg)))))
+                  (when (and (not (string-empty-p filename))
+                             johnson-dsl--current-dict-dir)
+                    (let ((audio-path (expand-file-name
+                                       filename
+                                       johnson-dsl--current-dict-dir)))
+                      (johnson-insert-audio-button audio-path)))
+                  (setq end (+ end (- (point) tag-beg) (- old-len)))))
                ;; Opening tags: push onto stack.
                ((not closing-p)
                 (push (list tag-name (point) tag-args) stack))

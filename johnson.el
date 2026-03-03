@@ -77,6 +77,14 @@ during idle time."
   :type 'integer
   :group 'johnson)
 
+(defcustom johnson-audio-player 'internal
+  "Audio player for pronunciation playback.
+If `internal', use Emacs `play-sound-file' (requires sound support).
+If a string, use it as an external command (e.g., \"afplay\", \"mpv\")."
+  :type '(choice (const :tag "Emacs built-in" internal)
+                 (string :tag "External command"))
+  :group 'johnson)
+
 ;;;; Faces
 
 (defface johnson-section-header-face
@@ -87,6 +95,11 @@ during idle time."
 (defface johnson-toc-face
   '((t :inherit link))
   "Face for table-of-contents entries in the results buffer."
+  :group 'johnson)
+
+(defface johnson-audio-button-face
+  '((t :inherit link))
+  "Face for audio playback buttons in dictionary entries."
   :group 'johnson)
 
 ;;;; Internal variables
@@ -823,6 +836,7 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     (define-key map "r" #'johnson-history-forward)
     (define-key map "s" #'johnson-new-search)
     (define-key map "g" #'johnson-refresh)
+    (define-key map "a" #'johnson-play-audio-at-point)
     (define-key map "o" #'johnson-ace-link)
     (define-key map "w" #'johnson-copy-entry)
     (define-key map "q" #'quit-window)
@@ -1281,9 +1295,47 @@ Dictionaries will be re-indexed on next lookup."
           (cl-incf count)))
       (message "Deleted %d index file%s" count (if (= count 1) "" "s")))))
 
+;;;; Audio playback
+
+(defun johnson-play-sound (file)
+  "Play the audio FILE using the configured player.
+See `johnson-audio-player'."
+  (cond
+   ((eq johnson-audio-player 'internal)
+    (if (fboundp 'play-sound-file)
+        (play-sound-file file)
+      (message "johnson: play-sound-file not available; set `johnson-audio-player' to an external command")))
+   ((stringp johnson-audio-player)
+    (start-process "johnson-audio" nil johnson-audio-player file))
+   (t
+    (message "johnson: no audio player configured"))))
+
+(defun johnson-play-audio-at-point ()
+  "Play the audio file referenced by the button at point."
+  (interactive)
+  (let ((file (get-text-property (point) 'johnson-audio-file)))
+    (if file
+        (if (file-exists-p file)
+            (johnson-play-sound file)
+          (message "Audio file not found: %s" file))
+      (message "No audio at point"))))
+
+(defun johnson-insert-audio-button (file &optional label)
+  "Insert a play button for audio FILE with optional LABEL."
+  (let ((start (point))
+        (text (or label "\u25B6")))
+    (insert text)
+    (make-text-button start (point)
+                      'face 'johnson-audio-button-face
+                      'johnson-audio-file file
+                      'action (lambda (_btn) (johnson-play-sound file))
+                      'help-echo (format "Play %s" (file-name-nondirectory file)))
+    (insert " ")))
+
 ;;;; Load built-in format backends
 
 (require 'johnson-dsl nil t)
+(require 'johnson-stardict nil t)
 
 (provide 'johnson)
 ;;; johnson.el ends here

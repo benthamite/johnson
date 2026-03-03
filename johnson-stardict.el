@@ -21,6 +21,7 @@
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
+(declare-function johnson-insert-audio-button "johnson")
 
 ;;;; Internal variables
 
@@ -33,6 +34,10 @@ Maps ifo file path to an alist of (KEY . VALUE) pairs.")
 Set by `johnson-stardict-retrieve-entry', read by
 `johnson-stardict-render-entry'.  Safe because rendering is
 synchronous.")
+
+(defvar johnson-stardict--current-dict-dir nil
+  "Directory of the dictionary being retrieved/rendered.
+Set by `johnson-stardict-retrieve-entry' for use by the renderer.")
 
 ;;;; .ifo parsing
 
@@ -244,6 +249,7 @@ for use by the renderer."
                                                   (+ byte-offset byte-size))
                   (buffer-string)))))
     (setq johnson-stardict--current-sametypesequence sametypesequence)
+    (setq johnson-stardict--current-dict-dir (file-name-directory path))
     raw))
 
 ;;;; Content type rendering
@@ -469,6 +475,34 @@ Handles <b>, <i>, <u>, <span foreground=\"...\"> tags."
       ;; Process Pango tags — essentially the same as HTML.
       (johnson-stardict--process-html-region start end))))
 
+(defun johnson-stardict--render-type-r (data)
+  "Render type `r' (resource) DATA.
+For entries starting with \"snd:\", insert an audio play button
+pointing to the resource file in the dictionary's res/ directory."
+  (let ((text (decode-coding-string data 'utf-8)))
+    (if (string-prefix-p "snd:" text)
+        (let ((filename (substring text 4)))
+          (when (and (not (string-empty-p filename))
+                     johnson-stardict--current-dict-dir)
+            (let ((audio-path (expand-file-name
+                               filename
+                               (expand-file-name
+                                "res"
+                                johnson-stardict--current-dict-dir))))
+              (johnson-insert-audio-button audio-path))))
+      ;; Non-sound resource: insert filename as reference.
+      (insert text))))
+
+(defun johnson-stardict--render-type-w (data)
+  "Render type `W' (WAV audio) DATA by inserting a play button.
+DATA is raw WAV audio bytes; written to a temp file for playback."
+  (when (> (length data) 0)
+    (let ((temp-file (make-temp-file "johnson-audio-" nil ".wav")))
+      (with-temp-file temp-file
+        (set-buffer-multibyte nil)
+        (insert data))
+      (johnson-insert-audio-button temp-file))))
+
 ;;;; Field splitting for sametypesequence
 
 (defun johnson-stardict--split-fields-sametypesequence (raw-data type-seq)
@@ -552,6 +586,9 @@ to parse the data fields."
           (?x (johnson-stardict--render-type-x data))
           (?g (johnson-stardict--render-type-g data))
           (?t (johnson-stardict--render-type-t data))
+          (?r (johnson-stardict--render-type-r data))
+          (?w (johnson-stardict--render-type-w data))
+          (?p (johnson-stardict--render-type-w data))
           ;; For unrecognized types, render as plain text.
           (_ (johnson-stardict--render-type-m data)))))))
 
