@@ -57,6 +57,13 @@ Lower numbers display first.  Default priority is 0."
   :type '(alist :key-type string :value-type integer)
   :group 'johnson)
 
+(defcustom johnson-completion-min-chars 3
+  "Minimum input length before completion candidates are fetched.
+Shorter inputs return no candidates, avoiding expensive prefix
+queries against the full headword index."
+  :type 'natnum
+  :group 'johnson)
+
 (defcustom johnson-history-max 100
   "Maximum number of entries in lookup history."
   :type 'integer
@@ -558,7 +565,7 @@ Returns non-nil if dictionaries are ready for querying."
             (setq last-prefix normalized)
             (let ((candidates nil))
               (clrhash last-counts)
-              (when (> (length string) 0)
+              (when (>= (length string) johnson-completion-min-chars)
                 (dolist (dict (johnson--dictionaries-in-scope))
                   (condition-case nil
                       (let* ((path (plist-get dict :path))
