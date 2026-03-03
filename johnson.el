@@ -91,17 +91,8 @@ Each element has keys :path, :format-name, :name,
 (defvar johnson--indexing-in-progress nil
   "Non-nil when asynchronous indexing is running.")
 
-(defvar johnson--indexing-timer nil
-  "Timer object for the current async indexing run.")
-
-(defvar johnson--indexing-queue nil
-  "List of dictionaries remaining to be indexed.")
-
-(defvar johnson--indexing-done 0
-  "Number of dictionaries processed so far in the current async run.")
-
-(defvar johnson--indexing-total 0
-  "Total number of dictionaries in the current async run.")
+(defvar johnson--indexing-process nil
+  "The child Emacs process used for async indexing.")
 
 (defvar johnson--indexing-callback nil
   "Function to call when async indexing completes.")
@@ -263,9 +254,9 @@ PROPS is a plist with keys :name, :extensions, :detect,
       (cl-incf i))
     (apply #'string parts)))
 
-(defun johnson--index-one-dict (dict buf)
-  "Index a single dictionary DICT, logging progress to BUF.
-Returns non-nil on success."
+(defun johnson--index-one-dict-sync (dict buf)
+  "Index a single dictionary DICT synchronously, logging to BUF.
+Returns non-nil on success.  Used for batch mode and single-dict reindex."
   (let* ((path (plist-get dict :path))
          (name (plist-get dict :name))
          (format-name (plist-get dict :format-name))
@@ -274,10 +265,7 @@ Returns non-nil on success."
       (with-current-buffer buf
         (let ((inhibit-read-only t))
           (goto-char (point-max))
-          (insert (format "  [%d/%d] %s..."
-                          (1+ johnson--indexing-done)
-                          johnson--indexing-total
-                          name))
+          (insert (format "  %s..." name))
           (redisplay))))
     (condition-case err
         (if (not (johnson-db-stale-p path))
@@ -325,49 +313,138 @@ Returns non-nil on success."
              (insert (format " ERROR: %s\n" (error-message-string err))))))
        nil))))
 
-(defun johnson--index-finish (buf)
-  "Finalize indexing, update BUF, and run callback."
-  (setq johnson--indexed-p t)
-  (setq johnson--indexing-in-progress nil)
-  (setq johnson--indexing-timer nil)
-  (when (buffer-live-p buf)
-    (with-current-buffer buf
-      (let ((inhibit-read-only t))
-        (goto-char (point-max))
-        (insert (format "\nDone. %d/%d dictionaries processed.\n"
-                        johnson--indexing-done johnson--indexing-total)))))
-  (message "johnson: indexing complete (%d dictionaries)" johnson--indexing-done)
-  (when johnson--indexing-callback
-    (let ((cb johnson--indexing-callback))
-      (setq johnson--indexing-callback nil)
-      (funcall cb))))
+(defun johnson--index-subprocess-script ()
+  "Return the Elisp form for the child indexing process."
+  (let ((dirs (mapcar #'expand-file-name johnson-dictionary-directories)))
+    (format
+     "(progn
+        (require 'johnson)
+        (setq johnson-dictionary-directories '%S)
+        (setq johnson-cache-directory %S)
+        (johnson--discover)
+        (let ((total (length johnson--dictionaries))
+              (done 0)
+              (errors 0))
+          (message \"JOHNSON-INDEX-START %%d\" total)
+          (dolist (dict johnson--dictionaries)
+            (let* ((path (plist-get dict :path))
+                   (name (plist-get dict :name))
+                   (format-name (plist-get dict :format-name))
+                   (fmt (johnson--get-format format-name)))
+              (cl-incf done)
+              (condition-case err
+                  (if (not (johnson-db-stale-p path))
+                      (let* ((db (johnson--get-db path))
+                             (count (johnson-db-entry-count db)))
+                        (message \"JOHNSON-INDEX-PROGRESS %%d %%d up-to-date %%d %%s\"
+                                 done total count name))
+                    (let ((db (johnson--get-db path))
+                          (entries nil)
+                          (count 0))
+                      (johnson-db-reset db)
+                      (johnson-db-set-metadata db \"name\" name)
+                      (johnson-db-set-metadata db \"format\" format-name)
+                      (johnson-db-set-metadata db \"source-lang\"
+                        (plist-get dict :source-lang))
+                      (johnson-db-set-metadata db \"target-lang\"
+                        (plist-get dict :target-lang))
+                      (johnson-db-set-metadata db \"source-path\" path)
+                      (johnson-db-set-metadata db \"mtime\"
+                        (format-time-string \"%%%%s\"
+                          (file-attribute-modification-time
+                            (file-attributes path))))
+                      (funcall (plist-get fmt :build-index) path
+                        (lambda (headword offset length)
+                          (push (list headword offset length) entries)
+                          (cl-incf count)))
+                      (johnson-db-insert-entries-batch db (nreverse entries))
+                      (johnson-db-set-metadata db \"entry-count\"
+                        (number-to-string count))
+                      (message \"JOHNSON-INDEX-PROGRESS %%d %%d indexed %%d %%s\"
+                               done total count name)))
+                (error
+                 (cl-incf errors)
+                 (message \"JOHNSON-INDEX-ERROR %%d %%d %%s %%s\"
+                          done total name (error-message-string err))))))
+          (message \"JOHNSON-INDEX-DONE %%d %%d\" total errors)))"
+     dirs
+     (expand-file-name johnson-cache-directory))))
 
-(defun johnson--index-next (buf)
-  "Process the next dictionary in `johnson--indexing-queue'.
-Schedules itself via timer for cooperative multitasking."
-  (if (null johnson--indexing-queue)
-      (johnson--index-finish buf)
-    (let ((dict (pop johnson--indexing-queue)))
-      (condition-case err
-          (johnson--index-one-dict dict buf)
-        ((error quit)
-         (when (buffer-live-p buf)
-           (with-current-buffer buf
-             (let ((inhibit-read-only t))
-               (goto-char (point-max))
-               (insert (format " FATAL: %s\n" (error-message-string err))))))))
-      (cl-incf johnson--indexing-done)
-      (setq johnson--indexing-timer
-            (run-with-timer 0 nil #'johnson--index-next buf)))))
+(defun johnson--index-process-filter (proc output)
+  "Process filter for the child indexing process PROC.
+Parses structured messages from OUTPUT and updates the progress buffer."
+  (let ((buf (process-get proc 'johnson-buf)))
+    (when (buffer-live-p buf)
+      (with-current-buffer buf
+        (let ((inhibit-read-only t))
+          (dolist (line (split-string output "\n" t))
+            (cond
+             ((string-match "^JOHNSON-INDEX-START \\([0-9]+\\)" line)
+              (goto-char (point-max))
+              (insert (format "Indexing %s dictionaries...\n\n"
+                              (match-string 1 line))))
+             ((string-match
+               "^JOHNSON-INDEX-PROGRESS \\([0-9]+\\) \\([0-9]+\\) \\(\\S-+\\) \\([0-9]+\\) \\(.*\\)"
+               line)
+              (let ((done (match-string 1 line))
+                    (total (match-string 2 line))
+                    (status (match-string 3 line))
+                    (count (string-to-number (match-string 4 line)))
+                    (name (match-string 5 line)))
+                (goto-char (point-max))
+                (insert (format "  [%s/%s] %s... %s (%s entries)\n"
+                                done total name status
+                                (johnson--format-number count)))))
+             ((string-match
+               "^JOHNSON-INDEX-ERROR \\([0-9]+\\) \\([0-9]+\\) \\(.*?\\) \\(.*\\)"
+               line)
+              (let ((done (match-string 1 line))
+                    (total (match-string 2 line))
+                    (name (match-string 3 line))
+                    (err (match-string 4 line)))
+                (goto-char (point-max))
+                (insert (format "  [%s/%s] %s... ERROR: %s\n"
+                                done total name err))))
+             ((string-match "^JOHNSON-INDEX-DONE \\([0-9]+\\) \\([0-9]+\\)" line)
+              (goto-char (point-max))
+              (insert (format "\nDone. %s dictionaries processed"
+                              (match-string 1 line)))
+              (let ((errs (string-to-number (match-string 2 line))))
+                (when (> errs 0)
+                  (insert (format " (%d errors)" errs))))
+              (insert ".\n")))))))))
+
+(defun johnson--index-process-sentinel (proc _event)
+  "Process sentinel for the child indexing process PROC.
+Called when the process finishes."
+  (when (memq (process-status proc) '(exit signal))
+    (setq johnson--indexing-in-progress nil)
+    (setq johnson--indexing-process nil)
+    (let ((exit-code (process-exit-status proc))
+          (buf (process-get proc 'johnson-buf)))
+      (if (zerop exit-code)
+          (progn
+            (setq johnson--indexed-p t)
+            (message "johnson: indexing complete"))
+        (when (buffer-live-p buf)
+          (with-current-buffer buf
+            (let ((inhibit-read-only t))
+              (goto-char (point-max))
+              (insert (format "\nProcess exited with code %d.\n" exit-code))))))
+      (when johnson--indexing-callback
+        (let ((cb johnson--indexing-callback))
+          (setq johnson--indexing-callback nil)
+          (when (zerop exit-code)
+            (funcall cb)))))))
 
 ;;;###autoload
 (defun johnson-index (&optional callback)
   "Index or re-index all discovered dictionaries.
 Progress is shown in the *johnson-indexing* buffer.
-When called interactively, indexing runs asynchronously.
-When CALLBACK is non-nil, it is called with no arguments once
-indexing completes.  In batch/noninteractive mode, indexing
-runs synchronously."
+In interactive mode, indexing runs in a child Emacs process so the
+current session stays responsive.  CALLBACK is called with no
+arguments when indexing completes successfully.
+In batch/noninteractive mode, indexing runs synchronously."
   (interactive)
   (when johnson--indexing-in-progress
     (user-error "Indexing already in progress"))
@@ -377,38 +454,58 @@ runs synchronously."
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (insert (format "Indexing %d dictionaries...\n\n" total))
         (special-mode)))
     (display-buffer buf)
-    (setq johnson--indexing-done 0)
-    (setq johnson--indexing-total total)
-    (setq johnson--indexing-queue (copy-sequence johnson--dictionaries))
     (setq johnson--indexing-callback callback)
     (if noninteractive
         ;; Synchronous for batch mode (tests).
         (progn
           (setq johnson--indexing-in-progress t)
-          (while johnson--indexing-queue
-            (let ((dict (pop johnson--indexing-queue)))
-              (johnson--index-one-dict dict buf)
-              (cl-incf johnson--indexing-done)))
-          (johnson--index-finish buf))
-      ;; Async for interactive mode.
+          (with-current-buffer buf
+            (let ((inhibit-read-only t))
+              (insert (format "Indexing %d dictionaries...\n\n" total))))
+          (dolist (dict johnson--dictionaries)
+            (johnson--index-one-dict-sync dict buf))
+          (setq johnson--indexed-p t)
+          (setq johnson--indexing-in-progress nil)
+          (with-current-buffer buf
+            (let ((inhibit-read-only t))
+              (goto-char (point-max))
+              (insert (format "\nDone. %d dictionaries processed.\n" total))))
+          (when johnson--indexing-callback
+            (let ((cb johnson--indexing-callback))
+              (setq johnson--indexing-callback nil)
+              (funcall cb))))
+      ;; Async: spawn a child emacs --batch process.
       (setq johnson--indexing-in-progress t)
-      (setq johnson--indexing-timer
-            (run-with-timer 0 nil #'johnson--index-next buf)))))
+      (let* ((load-dir (file-name-directory (locate-library "johnson")))
+             (script (johnson--index-subprocess-script))
+             (proc (make-process
+                    :name "johnson-indexing"
+                    :buffer nil
+                    :command (list
+                              (expand-file-name invocation-name
+                                                invocation-directory)
+                              "--batch"
+                              "-L" load-dir
+                              "--eval" script)
+                    :noquery t
+                    :connection-type 'pipe
+                    :filter #'johnson--index-process-filter
+                    :sentinel #'johnson--index-process-sentinel)))
+        (process-put proc 'johnson-buf buf)
+        (setq johnson--indexing-process proc)))))
 
 (defun johnson-stop-indexing ()
   "Stop the current asynchronous indexing run."
   (interactive)
-  (when johnson--indexing-timer
-    (cancel-timer johnson--indexing-timer)
-    (setq johnson--indexing-timer nil))
+  (when (and johnson--indexing-process
+             (process-live-p johnson--indexing-process))
+    (kill-process johnson--indexing-process))
   (setq johnson--indexing-in-progress nil)
-  (setq johnson--indexing-queue nil)
+  (setq johnson--indexing-process nil)
   (setq johnson--indexing-callback nil)
-  (message "johnson: indexing stopped at %d/%d"
-           johnson--indexing-done johnson--indexing-total))
+  (message "johnson: indexing stopped"))
 
 (defun johnson--ensure-indexed ()
   "Ensure dictionaries have been indexed.
@@ -417,8 +514,7 @@ Returns non-nil if dictionaries are ready for querying."
   (cond
    (johnson--indexed-p t)
    (johnson--indexing-in-progress
-    (message "johnson: indexing in progress (%d/%d)..."
-             johnson--indexing-done johnson--indexing-total)
+    (message "johnson: indexing in progress...")
     nil)
    (t
     ;; Use the fast filesystem-only check (no sqlite opens) to avoid
@@ -808,9 +904,7 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
         (when (file-exists-p index-path)
           (remhash id johnson--db-cache)
           (delete-file index-path)))
-      (let ((johnson--indexing-done 0)
-            (johnson--indexing-total 1))
-        (johnson--index-one-dict dict (get-buffer-create " *johnson-reindex*")))
+      (johnson--index-one-dict-sync dict (get-buffer-create " *johnson-reindex*"))
       (message "Re-indexed %s" name))
     (johnson--dict-list-entries)
     (tabulated-list-print t)))
