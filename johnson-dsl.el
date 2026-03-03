@@ -184,16 +184,23 @@ Returns a symbol: `utf-16-le', `utf-16-be', `utf-8-with-signature', or `utf-8'."
   (format " *johnson-cache: %s" path))
 
 (defun johnson-dsl--get-buffer (path)
-  "Return (or create) a raw-text cache buffer for the dictionary at PATH."
+  "Return (or create) a decoded cache buffer for the dictionary at PATH.
+The file is opened with its detected encoding so that character
+positions can be used directly for indexing and retrieval."
   (let ((buf-name (johnson-dsl--cache-buffer-name path)))
     (or (get-buffer buf-name)
-        (let ((encoding (johnson-dsl--detect-encoding path))
-              (coding-system-for-read 'raw-text))
+        (let* ((encoding (johnson-dsl--detect-encoding path))
+               (coding-system-for-read (johnson-dsl--coding-system encoding)))
           (with-current-buffer (generate-new-buffer buf-name)
             (buffer-disable-undo)
             (fundamental-mode)
             (let ((inhibit-read-only t))
               (insert-file-contents path))
+            ;; Remove BOM character if present at buffer start.
+            (goto-char (point-min))
+            (when (and (not (eobp)) (eq (char-after) #xfeff))
+              (let ((inhibit-read-only t))
+                (delete-char 1)))
             (setq-local johnson-dsl--encoding encoding)
             (setq buffer-read-only t)
             (current-buffer))))))
@@ -380,16 +387,16 @@ parts ((opt)), and escaped characters.  Returns a list of strings."
 
 (defun johnson-dsl-build-index (path callback)
   "Parse the DSL dictionary at PATH, calling CALLBACK for each entry.
-CALLBACK is called as (funcall CALLBACK headword byte-offset byte-length)
-where byte-offset and byte-length reference the entry body (indented lines)
-in the dictionary file."
+CALLBACK is called as (funcall CALLBACK headword char-offset char-length)
+where char-offset and char-length are character positions in the decoded
+buffer (1-based offset, suitable for `buffer-substring-no-properties')."
   (let* ((buf (johnson-dsl--get-buffer path))
          (skipped 0)
          (count 0))
     (with-current-buffer buf
-      (let ((inhibit-read-only t))
+      (save-excursion
         (goto-char (point-min))
-        ;; Skip metadata header lines (lines starting with # after BOM).
+        ;; Skip metadata header lines (lines starting with #).
         (while (and (not (eobp))
                     (or (looking-at "^#")
                         (looking-at "^[\n\r]")))
@@ -407,15 +414,12 @@ in the dictionary file."
               (unless body-start
                 (setq body-start (point)))
               (forward-line 1)
-              ;; Check if next line is also indented, or if we hit a flush-left
-              ;; line / EOF.
+              ;; Consume remaining indented lines.
               (while (and (not (eobp))
                           (looking-at "^[\t ]"))
                 (forward-line 1))
-              ;; We've reached the end of the body (next line is flush-left,
-              ;; blank, or EOF).  Skip trailing blank lines within the body.
+              ;; End of body.  Trim trailing blank lines.
               (let ((body-end (point)))
-                ;; Trim trailing whitespace-only lines from body-end.
                 (save-excursion
                   (goto-char body-end)
                   (while (and (> (point) body-start)
@@ -423,15 +427,15 @@ in the dictionary file."
                                      (looking-at "^[ \t]*$")))
                     (setq body-end (point))))
                 (when (and headwords body-start (> body-end body-start))
-                  ;; byte-offset is 0-based (buffer positions are 1-based).
-                  (let ((byte-offset (1- body-start))
-                        (byte-length (- body-end body-start)))
+                  ;; Store 1-based character positions directly.
+                  (let ((char-offset body-start)
+                        (char-length (- body-end body-start)))
                     (dolist (raw-hw headwords)
                       (condition-case _err
                           (let ((expanded (johnson-dsl--expand-headword raw-hw)))
                             (dolist (hw expanded)
                               (unless (string-empty-p hw)
-                                (funcall callback hw byte-offset byte-length)
+                                (funcall callback hw char-offset char-length)
                                 (cl-incf count))))
                         (error (cl-incf skipped))))))
                 (setq headwords nil)
@@ -453,17 +457,13 @@ in the dictionary file."
 
 ;;;; Entry retrieval
 
-(defun johnson-dsl-retrieve-entry (path byte-offset nbytes)
-  "Retrieve the raw entry body from the DSL dictionary at PATH.
-BYTE-OFFSET and NBYTES specify the entry's location in the file.
-Returns the decoded string."
-  (let* ((buf (johnson-dsl--get-buffer path))
-         (encoding (buffer-local-value 'johnson-dsl--encoding buf))
-         (raw (with-current-buffer buf
-                (buffer-substring-no-properties
-                 (1+ byte-offset)
-                 (+ 1 byte-offset nbytes)))))
-    (decode-coding-string raw (johnson-dsl--coding-system encoding))))
+(defun johnson-dsl-retrieve-entry (path char-offset nchars)
+  "Retrieve the entry body from the DSL dictionary at PATH.
+CHAR-OFFSET and NCHARS specify the entry's location as character
+positions in the decoded buffer (1-based offset)."
+  (let ((buf (johnson-dsl--get-buffer path)))
+    (with-current-buffer buf
+      (buffer-substring-no-properties char-offset (+ char-offset nchars)))))
 
 ;;;; Entry rendering
 
