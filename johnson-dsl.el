@@ -257,8 +257,12 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
          (source-lang nil)
          (target-lang nil))
     (with-temp-buffer
-      (let ((coding-system-for-read coding))
-        (insert-file-contents path))
+      (let* ((coding-system-for-read coding)
+             ;; Only read the first few KB — headers are always at the top.
+             ;; UTF-16 uses 2 bytes per char, so read more bytes for those.
+             (bom-len (johnson-dsl--bom-length encoding))
+             (read-bytes (if (memq encoding '(utf-16-le utf-16-be)) 8192 4096)))
+        (insert-file-contents path nil bom-len (+ bom-len read-bytes)))
       (goto-char (point-min))
       ;; Skip BOM character if present (the decoded stream may start with it).
       (when (and (not (eobp)) (eq (char-after) #xfeff))
