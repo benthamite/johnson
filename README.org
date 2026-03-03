@@ -1,4 +1,4 @@
-#+title: johnson: multi-format dictionary UI for Emacs
+#+title: =johnson=: A multi-format dictionary UI for Emacs
 #+author: Pablo Stafforini
 #+email: pablo@stafforini.com
 #+language: en
@@ -55,16 +55,6 @@ Here is a sample configuration using =elpaca= and =use-package=:
   (johnson-history-max 200)
   :bind
   ("C-c d" . johnson-lookup))
-#+end_src
-
-Or, if you prefer configuring options outside of =use-package=:
-
-#+begin_src emacs-lisp
-(setopt johnson-dictionary-directories '("~/dictionaries/"))
-(setopt johnson-default-search-scope 'all)
-(setopt johnson-dictionary-priorities '(("Oxford English-Spanish" . -10)
-                                        ("Collins English-Spanish" . -5)))
-(setopt johnson-history-max 200)
 #+end_src
 
 Results are displayed in a =*johnson*= buffer using ~johnson-mode~, a
