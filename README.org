@@ -9,23 +9,12 @@
 #+texinfo_dir_category: Emacs misc features
 #+texinfo_dir_title: Johnson: (johnson)
 #+texinfo_dir_desc: Multi-format dictionary UI for Emacs
+#+html: <img src="https://github.com/benthamite/johnson/blob/main/johnson.jpg?raw=true" align="right">
 
-This manual describes the features and customization options for the =johnson= Emacs Lisp package.
-
-* Overview
-:PROPERTIES:
-:CUSTOM_ID: h:overview
-:ID:       44A34A1A-66B7-4B31-AD15-52BC877782D2
-:END:
-
-=johnson= is a multi-format dictionary UI for Emacs, named after Samuel
-Johnson, author of /A Dictionary of the English Language/ (1755).  It
+=johnson= is a multi-format dictionary UI for Emacs.  It
 provides the functionality of programs such as GoldenDict and StarDict,
 allowing you to look up words across multiple dictionaries simultaneously
 and view formatted definitions in a dedicated Emacs buffer.
-
-#+CAPTION: Dr Johnson
-[[file:johnson.jpg]]
 
 The package is implemented entirely in Emacs Lisp with no external
 dependencies, relying on Emacs 30.1's built-in sqlite support for
