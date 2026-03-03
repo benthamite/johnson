@@ -1,0 +1,8 @@
+StarDict's dict ifo file
+version=2.4.2
+bookname=Test Plain Dictionary
+wordcount=3
+idxfilesize=40
+sametypesequence=m
+author=Test Author
+description=A test dictionary for unit tests
