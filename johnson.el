@@ -816,7 +816,8 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     (define-key map "n" #'johnson-next-section)
     (define-key map "p" #'johnson-prev-section)
     (define-key map (kbd "TAB") #'johnson-toggle-section)
-    (define-key map (kbd "<backtab>") #'johnson-prev-section-header)
+    (define-key map (kbd "<backtab>") #'johnson-toggle-all-sections)
+    (define-key map "P" #'johnson-prev-section-header)
     (define-key map (kbd "RET") #'johnson-follow-ref)
     (define-key map "l" #'johnson-history-back)
     (define-key map "r" #'johnson-history-forward)
@@ -913,6 +914,34 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
                 (overlay-put ov 'after-string nil))
             (overlay-put ov 'invisible t)
             (overlay-put ov 'after-string " [+]\n")))))))
+
+(defun johnson-collapse-all ()
+  "Collapse all sections in the results buffer."
+  (interactive)
+  (dolist (ov (overlays-in (point-min) (point-max)))
+    (when (overlay-get ov 'johnson-section-content)
+      (overlay-put ov 'invisible t)
+      (overlay-put ov 'after-string " [+]\n"))))
+
+(defun johnson-expand-all ()
+  "Expand all sections in the results buffer."
+  (interactive)
+  (dolist (ov (overlays-in (point-min) (point-max)))
+    (when (overlay-get ov 'johnson-section-content)
+      (overlay-put ov 'invisible nil)
+      (overlay-put ov 'after-string nil))))
+
+(defun johnson-toggle-all-sections ()
+  "Toggle all sections: collapse all if any is expanded, else expand all."
+  (interactive)
+  (let ((any-expanded nil))
+    (dolist (ov (overlays-in (point-min) (point-max)))
+      (when (and (overlay-get ov 'johnson-section-content)
+                 (not (overlay-get ov 'invisible)))
+        (setq any-expanded t)))
+    (if any-expanded
+        (johnson-collapse-all)
+      (johnson-expand-all))))
 
 (defun johnson--section-name-at (pos)
   "Return the section name at POS, or nil."
