@@ -15,6 +15,7 @@ This manual describes the features and customization options for the =johnson= E
 * Overview
 :PROPERTIES:
 :CUSTOM_ID: h:overview
+:ID:       44A34A1A-66B7-4B31-AD15-52BC877782D2
 :END:
 
 =johnson= is a multi-format dictionary UI for Emacs, named after Samuel
@@ -22,6 +23,7 @@ Johnson, author of /A Dictionary of the English Language/ (1755).  It
 provides the functionality of programs such as GoldenDict and StarDict,
 allowing you to look up words across multiple dictionaries simultaneously
 and view formatted definitions in a dedicated Emacs buffer.
+
 
 The package is implemented entirely in Emacs Lisp with no external
 dependencies, relying on Emacs 30.1's built-in sqlite support for
@@ -71,11 +73,13 @@ their indexing status and entry counts
 * User options
 :PROPERTIES:
 :CUSTOM_ID: h:user-options
+:ID:       0DD54B65-A386-4E88-A596-C9DEB1AFC76E
 :END:
 
 ** Dictionary discovery
 :PROPERTIES:
 :CUSTOM_ID: h:dictionary-discovery
+:ID:       AC8B514B-7C3E-4CA8-8438-26D1B8F4AB09
 :END:
 
 #+vindex: johnson-dictionary-directories
@@ -95,6 +99,7 @@ different locations.
 ** Search scope and groups
 :PROPERTIES:
 :CUSTOM_ID: h:search-scope-and-groups
+:ID:       CBF66D64-D4B6-458F-B10C-C93586F27C88
 :END:
 
 #+vindex: johnson-default-search-scope
@@ -127,6 +132,7 @@ different language pairs.
 ** Display ordering
 :PROPERTIES:
 :CUSTOM_ID: h:display-ordering
+:ID:       6341F01C-49AB-4C29-AE16-AF08FFDD4137
 :END:
 
 #+vindex: johnson-dictionary-priorities
@@ -153,6 +159,7 @@ negative priority:
 ** Lookup history
 :PROPERTIES:
 :CUSTOM_ID: h:lookup-history
+:ID:       79E4CAED-7CD8-4901-9D7F-34C6063622BB
 :END:
 
 #+vindex: johnson-history-max
@@ -173,6 +180,7 @@ entries are discarded.
 ** Cache directory
 :PROPERTIES:
 :CUSTOM_ID: h:cache-directory
+:ID:       37EEB74B-2AF6-46EA-9A12-5C8C310C274B
 :END:
 
 #+vindex: johnson-cache-directory
@@ -195,11 +203,13 @@ database is first opened via ~johnson-db-open~
 * Commands
 :PROPERTIES:
 :CUSTOM_ID: h:commands
+:ID:       7CCAC3F0-7E30-4AC7-8344-A86C55AA6D55
 :END:
 
 ** Looking up words
 :PROPERTIES:
 :CUSTOM_ID: h:looking-up-words
+:ID:       146A2B72-19D4-4D30-89A3-7DE01A3402BA
 :END:
 
 #+findex: johnson-lookup
@@ -241,6 +251,7 @@ refreshing does not push a new entry onto the navigation history.
 ** Indexing dictionaries
 :PROPERTIES:
 :CUSTOM_ID: h:indexing-dictionaries
+:ID:       DE7EC0AC-9BE4-44BC-97DF-28DA8B8A7B8F
 :END:
 
 #+findex: johnson-index
@@ -277,6 +288,7 @@ problem before continuing.
 ** Managing groups and scope
 :PROPERTIES:
 :CUSTOM_ID: h:managing-groups
+:ID:       0F77057C-BB86-46B8-96E9-3EDD7A92F175
 :END:
 
 #+findex: johnson-select-group
@@ -298,6 +310,7 @@ custom groups, those are used instead.
 ** Navigating the results buffer
 :PROPERTIES:
 :CUSTOM_ID: h:navigating-results
+:ID:       C1C613D9-EC13-4B1B-A575-8CB2180D17FA
 :END:
 
 #+findex: johnson-next-section
@@ -328,6 +341,7 @@ within the section body.  It is bound to =TAB= in ~johnson-mode~.
 ** Following cross-references
 :PROPERTIES:
 :CUSTOM_ID: h:following-refs
+:ID:       F6D2F7A9-BF33-4768-9C36-0976AD3B31A6
 :END:
 
 #+findex: johnson-follow-ref
@@ -344,6 +358,7 @@ at point".  It is bound to =RET= in ~johnson-mode~.
 ** Navigation history
 :PROPERTIES:
 :CUSTOM_ID: h:navigation-history
+:ID:       8D24E26B-F74C-4CD5-A824-AE3E8F90617B
 :END:
 
 #+findex: johnson-history-back
@@ -375,6 +390,7 @@ preventing duplicate entries from cluttering the history.
 ** Copying entries
 :PROPERTIES:
 :CUSTOM_ID: h:copying-entries
+:ID:       AB9B2CB7-6962-4323-B93B-96EE3EF80CA3
 :END:
 
 #+findex: johnson-copy-entry
@@ -393,6 +409,7 @@ It is bound to =w= in ~johnson-mode~.
 ** Dictionary list
 :PROPERTIES:
 :CUSTOM_ID: h:dictionary-list
+:ID:       98690F13-7355-4D28-8BAA-B0F1B794070F
 :END:
 
 #+findex: johnson-list-dictionaries
@@ -424,6 +441,7 @@ index is stale.  It is bound to =RET= in ~johnson-dict-list-mode~.
 ** Cache management
 :PROPERTIES:
 :CUSTOM_ID: h:cache-management
+:ID:       16FA4CA1-6AC9-406D-B3C0-B3433D9FA8BD
 :END:
 
 #+findex: johnson-close-caches
@@ -442,11 +460,13 @@ all database connections were closed.
 * Functions
 :PROPERTIES:
 :CUSTOM_ID: h:functions
+:ID:       905F7C3C-0CA7-4BC4-98ED-4B9B520299D3
 :END:
 
 ** Format registration
 :PROPERTIES:
 :CUSTOM_ID: h:format-registration
+:ID:       FB074606-FED1-4DE8-98E5-098CCE21C15F
 :END:
 
 #+findex: johnson-register-format
@@ -481,6 +501,7 @@ registers the DSL format at the end of the file.
 ** Completion at point
 :PROPERTIES:
 :CUSTOM_ID: h:completion-at-point
+:ID:       64808536-7848-48BD-86AD-162010D7E8F4
 :END:
 
 #+findex: johnson-completion-at-point-function
@@ -505,6 +526,7 @@ The completion respects the current search scope: if the scope is set to
 ** Database lifecycle
 :PROPERTIES:
 :CUSTOM_ID: h:database-lifecycle
+:ID:       43C94D54-3FAE-4D58-958C-D6892DDEB97D
 :END:
 
 #+findex: johnson-db-open
@@ -525,6 +547,7 @@ and closes them all at once via ~johnson-close-caches~
 ** Metadata storage
 :PROPERTIES:
 :CUSTOM_ID: h:metadata-storage
+:ID:       049E51A6-559B-405D-B261-5F355C6FE8CD
 :END:
 
 #+findex: johnson-db-set-metadata
@@ -552,6 +575,7 @@ buffer opened by ~johnson-dict-list-show-details~
 ** Headword normalization
 :PROPERTIES:
 :CUSTOM_ID: h:headword-normalization
+:ID:       52B7D48A-B288-46C0-BB83-EE960A1EF0BB
 :END:
 
 #+findex: johnson-db-normalize
@@ -572,6 +596,7 @@ string.
 ** Entry insertion
 :PROPERTIES:
 :CUSTOM_ID: h:entry-insertion
+:ID:       4F960C41-6581-4274-8D7E-6A991BDDAB91
 :END:
 
 #+findex: johnson-db-insert-entry
@@ -594,6 +619,7 @@ the database in a consistent state.
 ** Querying entries
 :PROPERTIES:
 :CUSTOM_ID: h:querying-entries
+:ID:       852D694C-B1BE-4ADE-92A4-B687810F1F65
 :END:
 
 #+findex: johnson-db-query-exact
@@ -622,6 +648,7 @@ buffer ([[#h:dictionary-list][Dictionary list]]) and in indexing progress messag
 ** Staleness detection and reset
 :PROPERTIES:
 :CUSTOM_ID: h:staleness-and-reset
+:ID:       EB7C07D0-3F1D-4C8E-85AB-E6AB2F8B7103
 :END:
 
 #+findex: johnson-db-stale-p
@@ -644,6 +671,7 @@ is zero and new entries can be inserted via
 ** DSL format detection
 :PROPERTIES:
 :CUSTOM_ID: h:dsl-format-detection
+:ID:       F7028140-CCA2-462E-BCA0-2A5477058F37
 :END:
 
 #+findex: johnson-dsl-detect
@@ -665,6 +693,7 @@ among all files found in the configured directories.
 ** DSL metadata parsing
 :PROPERTIES:
 :CUSTOM_ID: h:dsl-metadata-parsing
+:ID:       730BEC2C-BA93-4850-B737-7D8FCD71C16F
 :END:
 
 #+findex: johnson-dsl-parse-metadata
@@ -687,6 +716,7 @@ display names and for auto-detecting language-pair groups
 ** DSL index building
 :PROPERTIES:
 :CUSTOM_ID: h:dsl-index-building
+:ID:       66EA82DA-2BA4-4B98-89D1-3909F975AC52
 :END:
 
 #+findex: johnson-dsl-build-index
@@ -730,6 +760,7 @@ for both indexing and retrieval.
 ** DSL entry retrieval
 :PROPERTIES:
 :CUSTOM_ID: h:dsl-entry-retrieval
+:ID:       012860BA-4694-4207-B772-B332B3C088EF
 :END:
 
 #+findex: johnson-dsl-retrieve-entry
@@ -751,6 +782,7 @@ All cache buffers can be killed via ~johnson-close-caches~
 ** DSL entry rendering
 :PROPERTIES:
 :CUSTOM_ID: h:dsl-entry-rendering
+:ID:       4F7C4F8D-F9FB-499C-90BD-C3EF65CFE849
 :END:
 
 #+findex: johnson-dsl-render-entry
@@ -794,6 +826,7 @@ The supported tags include:
 * Faces
 :PROPERTIES:
 :CUSTOM_ID: h:faces
+:ID:       3C6FBB0E-1699-4339-9798-6435E1088E89
 :END:
 
 All faces defined in =johnson-dsl.el= belong to the ~johnson-dsl-faces~
@@ -805,6 +838,7 @@ belongs to the ~johnson~ group.
 ** Text styling faces
 :PROPERTIES:
 :CUSTOM_ID: h:text-styling-faces
+:ID:       CFD47329-564F-4234-9238-062388B75265
 :END:
 
 #+vindex: johnson-bold-face
@@ -827,6 +861,7 @@ syllables visually prominent in pronunciation guides.
 ** Content type faces
 :PROPERTIES:
 :CUSTOM_ID: h:content-type-faces
+:ID:       45F74043-2986-4BD2-BB39-A2BA1C6D8260
 :END:
 
 #+vindex: johnson-example-face
@@ -848,6 +883,7 @@ giving comments a consistent appearance with the rest of Emacs.
 ** Link faces
 :PROPERTIES:
 :CUSTOM_ID: h:link-faces
+:ID:       D638E0D0-E35B-4EFA-81BA-036F72B46251
 :END:
 
 #+vindex: johnson-ref-face
@@ -865,6 +901,7 @@ as clickable buttons that open the URL via ~browse-url~.
 ** Section header face
 :PROPERTIES:
 :CUSTOM_ID: h:section-header-face
+:ID:       85077C01-2B86-46F2-9C1E-A58CFFDC5648
 :END:
 
 #+vindex: johnson-section-header-face
@@ -879,6 +916,7 @@ and also in =johnson-dsl.el= (for DSL-specific section headers).
 ** Color faces
 :PROPERTIES:
 :CUSTOM_ID: h:color-faces
+:ID:       CFB433D3-265F-44FE-8138-4F28D041706D
 :END:
 
 #+vindex: johnson-color-default-face
@@ -924,16 +962,19 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
 * Indices
 :PROPERTIES:
 :CUSTOM_ID: h:indices
+:ID:       D3C8AD32-9CB4-4D37-AB73-2C059E1E481B
 :END:
 
 ** Function index
 :PROPERTIES:
 :INDEX: fn
 :CUSTOM_ID: h:function-index
+:ID:       3C3173CA-E648-4177-B708-8F3786E61B86
 :END:
 
 ** Variable index
 :PROPERTIES:
 :INDEX: vr
 :CUSTOM_ID: h:variable-index
+:ID:       836341E4-1AFA-4577-87BA-D837156FD757
 :END:
