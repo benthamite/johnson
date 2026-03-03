@@ -1,0 +1,492 @@
+#+title: johnson: multi-format dictionary UI for Emacs
+#+author: Pablo Stafforini
+#+email: pablo@stafforini.com
+#+language: en
+#+options: ':t toc:t author:t email:t num:t
+#+startup: content
+#+export_file_name: johnson.info
+#+texinfo_filename: johnson.info
+#+texinfo_dir_category: Emacs misc features
+#+texinfo_dir_title: Johnson: (johnson)
+#+texinfo_dir_desc: Multi-format dictionary UI for Emacs
+
+This manual describes the features and customization options for the Emacs Lisp file =johnson.el=.
+
+* Overview
+:PROPERTIES:
+:CUSTOM_ID: h:overview
+:END:
+
+=johnson= is a multi-format dictionary UI for Emacs, named after Samuel
+Johnson, author of /A Dictionary of the English Language/ (1755).  It
+provides the functionality of programs such as GoldenDict and StarDict,
+allowing you to look up words across multiple dictionaries simultaneously
+and view formatted definitions in a dedicated Emacs buffer.
+
+The package is implemented entirely in Emacs Lisp with no external
+dependencies, relying on Emacs 30.1's built-in sqlite support for
+efficient headword indexing.  Dictionary files are parsed natively,
+without calling external tools.
+
+In version 0.1, the package supports the DSL (ABBYY Lingvo) format via
+the =johnson-dsl.el= backend module.  Future versions will add support
+for StarDict, MDict, and BGL (Babylon) formats.
+
+The architecture is modular.  The core module (=johnson.el=) provides the
+lookup engine, results buffer, navigation, history, and format registry.
+Each dictionary format is handled by a separate backend module that
+registers itself with the core via a plist-based format registry
+([[#h:format-registration][Format registration]]).  The sqlite index management is
+delegated to =johnson-db.el=.
+
+A typical workflow consists of three steps.  First, configure
+~johnson-dictionary-directories~ to point at your dictionary files
+([[#h:dictionary-discovery][Dictionary discovery]]).  Second, run =M-x johnson-index= to scan
+and index all discovered dictionaries ([[#h:indexing-dictionaries][Indexing dictionaries]]).
+Third, use =M-x johnson-lookup= to look up words with dynamic
+completion ([[#h:looking-up-words][Looking up words]]).
+
+Results are displayed in a =*johnson*= buffer using ~johnson-mode~, a
+read-only major mode derived from ~special-mode~.  Each dictionary that
+contains a match for the queried word gets its own collapsible section,
+displayed in priority order ([[#h:display-ordering][Display ordering]]).  The buffer
+supports Info-like navigation: press =n= and =p= to move between
+sections, =TAB= to collapse or expand a section, =RET= to follow
+cross-references, and =l= and =r= to navigate back and forward through
+lookup history.
+
+Dictionaries are organized into groups by language pair (e.g., "English
+\to Spanish").  Groups are auto-detected from dictionary metadata but can
+be customized via ~johnson-dictionary-groups~
+([[#h:search-scope-and-groups][Search scope and groups]]).
+
+The package also provides a dictionary list buffer via =M-x
+johnson-list-dictionaries=, showing all discovered dictionaries with
+their indexing status and entry counts
+([[#h:dictionary-list][Dictionary list]]).
+
+* User options
+:PROPERTIES:
+:CUSTOM_ID: h:user-options
+:END:
+
+** Dictionary discovery
+:PROPERTIES:
+:CUSTOM_ID: h:dictionary-discovery
+:END:
+
+#+vindex: johnson-dictionary-directories
+The user option ~johnson-dictionary-directories~ specifies the
+directories to scan recursively for dictionary files.  When the package
+discovers dictionaries, it walks each directory in this list and
+identifies files using the registered format backends' detection
+functions.  Files matching the =_abrv= naming convention (abbreviation
+tables) are automatically skipped.
+
+The default value is =("~/.local/share/dictionaries/")=.  You should
+change this to point at wherever your dictionary files are stored.  The
+value is a list of directory paths (type: ~(repeat directory)~), so you
+can specify multiple directories if your dictionaries are spread across
+different locations.
+
+** Search scope and groups
+:PROPERTIES:
+:CUSTOM_ID: h:search-scope-and-groups
+:END:
+
+#+vindex: johnson-default-search-scope
+#+vindex: johnson-dictionary-groups
+The user option ~johnson-default-search-scope~ controls the default
+search scope for lookups.  When set to ~all~ (the default), lookups
+search across all discovered dictionaries.  When set to ~group~, lookups
+search only within the currently active dictionary group.
+
+You can switch between these modes interactively via
+~johnson-select-group~ ([[#h:managing-groups][Managing groups and scope]]), which
+also lets you choose the active group.
+
+The user option ~johnson-dictionary-groups~ provides user-defined
+dictionary group overrides.  It is an alist of =(GROUP-NAME .
+(LIST-OF-DICTIONARY-NAMES))= (type: ~(alist :key-type string :value-type
+(repeat string))~).
+
+When this option is ~nil~ (the default), groups are auto-detected from
+dictionary metadata.  Each dictionary is assigned to a group based on
+its source and target language pair, formatted as ="Source \to Target"=
+(e.g., ="English \to Spanish"=).
+
+Set this option when you want to create custom groupings that differ from
+the language-pair default.  For instance, you could create a group named
+="Medical"= that includes specialized medical dictionaries across
+different language pairs.
+
+** Display ordering
+:PROPERTIES:
+:CUSTOM_ID: h:display-ordering
+:END:
+
+#+vindex: johnson-dictionary-priorities
+The user option ~johnson-dictionary-priorities~ controls the display
+order of dictionary sections in the results buffer.  It is an alist of
+=(DICTIONARY-NAME . PRIORITY)= where PRIORITY is an integer (type:
+~(alist :key-type string :value-type integer)~).
+
+Lower numbers display first.  The default priority is 0, so dictionaries
+without an explicit priority entry are all treated equally and appear in
+discovery order.
+
+You would set this option to ensure that your preferred dictionaries
+always appear at the top of the results.  For example, to make the
+"Oxford English-Spanish" dictionary appear before all others, assign it a
+negative priority:
+
+#+begin_src emacs-lisp
+(setq johnson-dictionary-priorities
+      '(("Oxford English-Spanish" . -10)
+        ("Collins English-Spanish" . -5)))
+#+end_src
+
+** Lookup history
+:PROPERTIES:
+:CUSTOM_ID: h:lookup-history
+:END:
+
+#+vindex: johnson-history-max
+#+vindex: johnson-history
+The user option ~johnson-history-max~ sets the maximum number of entries
+retained in the lookup history.  The default value is ~100~ (type:
+~integer~).
+
+The variable ~johnson-history~ stores the list of previously looked-up
+words and serves as the history list for ~completing-read~ in
+~johnson-lookup~ ([[#h:looking-up-words][Looking up words]]).  You can access
+previous lookups via =M-p= and =M-n= in the completion prompt.  If
+~savehist-mode~ is active, this history persists across Emacs sessions.
+
+When the history exceeds ~johnson-history-max~ entries, the oldest
+entries are discarded.
+
+* Commands
+:PROPERTIES:
+:CUSTOM_ID: h:commands
+:END:
+
+** Looking up words
+:PROPERTIES:
+:CUSTOM_ID: h:looking-up-words
+:END:
+
+#+findex: johnson-lookup
+#+findex: johnson-new-search
+#+findex: johnson-refresh
+The command ~johnson-lookup~ is the primary entry point for dictionary
+lookups.  When called interactively, it prompts for a word with
+~completing-read~, defaulting to the word at point.  The completion
+table is backed by sqlite prefix queries across all in-scope
+dictionaries, providing dynamic suggestions as you type.  Each candidate
+is annotated with the number of dictionaries containing it when there
+are multiple matches (e.g., =(3 dicts)=).
+
+If the dictionaries have not been indexed yet, ~johnson-lookup~ prompts
+you to index them first.  When indexing is already in progress, the
+lookup is deferred and will resume automatically once indexing completes.
+
+After a word is selected, the command queries all dictionaries for exact
+matches (case-insensitive, accent-insensitive) and displays the results
+in the =*johnson*= buffer.  The word is pushed onto the lookup history
+([[#h:lookup-history][Lookup history]]) and the navigation history
+([[#h:navigation-history][Navigation history]]).
+
+The optional WORD argument allows calling ~johnson-lookup~ from Lisp
+code without prompting.
+
+The command ~johnson-new-search~ re-invokes ~johnson-lookup~ without
+arguments, prompting for a new word.  It is bound to =s= in
+~johnson-mode~ for quick access when you want to search for a different
+word while viewing results.
+
+The command ~johnson-refresh~ re-displays the current word by
+re-querying all dictionaries and rebuilding the results buffer.  This is
+useful if you have re-indexed a dictionary and want to see updated
+results.  It is bound to =g= in ~johnson-mode~.  Unlike a new search,
+refreshing does not push a new entry onto the navigation history.
+
+** Indexing dictionaries
+:PROPERTIES:
+:CUSTOM_ID: h:indexing-dictionaries
+:END:
+
+#+findex: johnson-index
+#+findex: johnson-stop-indexing
+The command ~johnson-index~ scans all configured dictionary directories,
+discovers dictionary files, and indexes (or re-indexes) those whose
+index is stale or missing.  Progress is displayed in a dedicated
+=*johnson-indexing*= buffer, showing one line per dictionary with its
+name, progress counter, and result (entry count or error message).
+
+When called interactively, indexing runs asynchronously using
+timer-based cooperative multitasking, so Emacs remains responsive during
+the process.  In batch or noninteractive mode, indexing runs
+synchronously.
+
+If indexing is already in progress, the command signals an error rather
+than starting a second concurrent run.
+
+The optional CALLBACK argument accepts a function to be called with no
+arguments once indexing completes.  This is used internally to chain
+lookup after indexing, but you can also use it in your own scripts.
+
+Dictionaries that are already up to date (based on file modification
+time comparison) are skipped with an "up to date" message rather than
+being re-indexed.
+
+The command ~johnson-stop-indexing~ cancels the current asynchronous
+indexing run.  It cancels the timer, clears the indexing queue, and
+reports how many dictionaries were processed before stopping.  This is
+useful if indexing is taking too long or if you want to abort and fix a
+problem before continuing.
+
+** Managing groups and scope
+:PROPERTIES:
+:CUSTOM_ID: h:managing-groups
+:END:
+
+#+findex: johnson-select-group
+The command ~johnson-select-group~ lets you choose the active dictionary
+group.  It presents a ~completing-read~ prompt with all available groups
+plus an ="All"= pseudo-group.
+
+Selecting ="All"= sets the search scope to ~all~, meaning lookups will
+search across every discovered dictionary.  Selecting a specific group
+sets the scope to ~group~ and activates that group, restricting lookups
+to dictionaries within it.
+
+The available groups depend on your configuration.  If
+~johnson-dictionary-groups~ is ~nil~ (the default), groups are
+auto-detected from dictionary metadata as language pairs
+([[#h:search-scope-and-groups][Search scope and groups]]).  If you have defined
+custom groups, those are used instead.
+
+** Navigating the results buffer
+:PROPERTIES:
+:CUSTOM_ID: h:navigating-results
+:END:
+
+#+findex: johnson-next-section
+#+findex: johnson-prev-section
+#+findex: johnson-prev-section-header
+#+findex: johnson-toggle-section
+The command ~johnson-next-section~ moves point to the next dictionary
+section header in the results buffer.  If point is already on a header,
+it moves past it to find the next one.  When there are no more sections
+below, it displays "No more sections".  It is bound to =n= in
+~johnson-mode~.
+
+The command ~johnson-prev-section~ moves point to the previous
+dictionary section header.  When there is no previous section, it
+displays "No previous section".  It is bound to =p= in ~johnson-mode~.
+
+The command ~johnson-prev-section-header~ is an alias for
+~johnson-prev-section~, bound to =S-TAB= (=<backtab>=) in
+~johnson-mode~.
+
+The command ~johnson-toggle-section~ collapses or expands the dictionary
+section at point.  Collapsed sections hide their content using an
+overlay with the ~invisible~ property and display a =[+]= indicator.
+Expanding the section removes the overlay, revealing the full entry
+content.  The command works whether point is on the section header or
+within the section body.  It is bound to =TAB= in ~johnson-mode~.
+
+** Following cross-references
+:PROPERTIES:
+:CUSTOM_ID: h:following-refs
+:END:
+
+#+findex: johnson-follow-ref
+The command ~johnson-follow-ref~ activates the cross-reference button at
+point.  In DSL dictionaries, cross-references are created by =[ref]= tags
+or =<<...>>= markers and rendered as clickable text buttons.  Activating
+a cross-reference button triggers a new ~johnson-lookup~ for the
+referenced word, searching across all loaded dictionaries regardless of
+the current scope setting.
+
+If there is no button at point, the command displays "No cross-reference
+at point".  It is bound to =RET= in ~johnson-mode~.
+
+** Navigation history
+:PROPERTIES:
+:CUSTOM_ID: h:navigation-history
+:END:
+
+#+findex: johnson-history-back
+#+findex: johnson-history-forward
+The results buffer maintains a buffer-local navigation history, similar
+to the history in Info mode or eww.  Each lookup pushes the word onto
+the history list.  Following a cross-reference also creates a history
+entry.
+
+The command ~johnson-history-back~ navigates to the previous word in the
+history, re-executing the lookup for that word.  When at the beginning
+of the history, it displays "Beginning of history".  It is bound to =l=
+in ~johnson-mode~.
+
+The command ~johnson-history-forward~ navigates to the next word in the
+history (after going back).  When at the end of the history, it displays
+"End of history".  It is bound to =r= in ~johnson-mode~.
+
+Navigation history is separate from the lookup history stored in
+~johnson-history~ ([[#h:lookup-history][Lookup history]]).  The lookup history
+is a global list used for ~completing-read~ recall (=M-p=/=M-n=), while
+the navigation history is buffer-local to the =*johnson*= buffer and
+tracks the sequence of words viewed in that buffer.
+
+When navigating back or forward, the lookup is performed with history
+push suppressed (via the internal ~johnson--navigating-history~ flag),
+preventing duplicate entries from cluttering the history.
+
+** Copying entries
+:PROPERTIES:
+:CUSTOM_ID: h:copying-entries
+:END:
+
+#+findex: johnson-copy-entry
+The command ~johnson-copy-entry~ copies the current dictionary section's
+entry as plain text to the kill ring.  All text properties, faces, and
+markup are stripped; only the raw text content is copied.
+
+The "current section" is determined by point position: whichever
+dictionary section the cursor is inside.  Section boundaries are
+identified by the section content overlays.  If point is not within any
+section (e.g., between sections or on a header line), the command
+displays "No section at point".
+
+It is bound to =w= in ~johnson-mode~.
+
+** Dictionary list
+:PROPERTIES:
+:CUSTOM_ID: h:dictionary-list
+:END:
+
+#+findex: johnson-list-dictionaries
+#+findex: johnson-dict-list-reindex
+#+findex: johnson-dict-list-show-details
+The command ~johnson-list-dictionaries~ opens a =*johnson-dictionaries*=
+buffer displaying all discovered dictionaries in a tabulated list.  The
+buffer uses ~johnson-dict-list-mode~, a major mode derived from
+~tabulated-list-mode~.
+
+The table shows six columns: Name (the dictionary's display name),
+Format (e.g., "DSL"), Languages (the source-to-target language pair),
+Entries (the number of indexed headwords), Status ("Indexed", "Needs
+reindex", or "Not indexed"), and Path (the abbreviated file path).  The
+list is sorted by name by default and can be re-sorted by clicking on
+column headers.
+
+The command ~johnson-dict-list-reindex~ re-indexes the dictionary at
+point in the tabulated list.  It deletes the existing index file, forces
+a fresh index build, and refreshes the list to show the updated entry
+count and status.  It is bound to =i= in ~johnson-dict-list-mode~.
+
+The command ~johnson-dict-list-show-details~ opens a
+=*johnson-dict-details*= buffer showing detailed information about the
+dictionary at point: its name, format, source and target languages,
+group, priority, file path, index path, entry count, and whether the
+index is stale.  It is bound to =RET= in ~johnson-dict-list-mode~.
+
+** Cache management
+:PROPERTIES:
+:CUSTOM_ID: h:cache-management
+:END:
+
+#+findex: johnson-close-caches
+The command ~johnson-close-caches~ kills all dictionary file cache
+buffers and closes all open sqlite database connections.  It also resets
+the internal dictionary list and indexed state, so the next lookup will
+trigger a fresh discovery and staleness check.
+
+This is useful if you have added or removed dictionary files and want to
+force a clean rediscovery, or if you want to reclaim the memory used by
+cached dictionary buffers.
+
+The command reports how many cache buffers were closed and confirms that
+all database connections were closed.
+
+* Functions
+:PROPERTIES:
+:CUSTOM_ID: h:functions
+:END:
+
+** Format registration
+:PROPERTIES:
+:CUSTOM_ID: h:format-registration
+:END:
+
+#+findex: johnson-register-format
+The function ~johnson-register-format~ registers a dictionary format
+backend with the core.  It accepts a plist with the following keys:
+
+- ~:name~ --- a unique string identifying the format (e.g., ="dsl"=).
+- ~:extensions~ --- a list of file extension strings used to filter files
+  during directory scanning (e.g., =("dsl")=).
+- ~:detect~ --- a function =(PATH) \to BOOLEAN= that determines whether
+  a file at PATH is a dictionary in this format.
+- ~:parse-metadata~ --- a function =(PATH) \to PLIST= that extracts
+  metadata from the dictionary file, returning at minimum ~:name~,
+  ~:source-lang~, and ~:target-lang~.
+- ~:build-index~ --- a function =(PATH CALLBACK) \to NIL= that parses
+  the dictionary and calls =(funcall CALLBACK HEADWORD OFFSET LENGTH)=
+  for each entry.
+- ~:retrieve-entry~ --- a function =(PATH OFFSET LENGTH) \to STRING=
+  that retrieves the raw entry text at the given location.
+- ~:render-entry~ --- a function =(RAW-TEXT) \to NIL= that inserts
+  rendered content into the current buffer at point.
+
+If a format with the same ~:name~ is already registered, it is replaced.
+This allows format backends to re-register themselves (e.g., after
+reloading the file during development).
+
+Backend modules typically call this function inside a
+~with-eval-after-load~ form for =johnson=, ensuring the core is loaded
+before registration occurs.  For an example, see how =johnson-dsl.el=
+registers the DSL format.
+
+** Completion at point
+:PROPERTIES:
+:CUSTOM_ID: h:completion-at-point
+:END:
+
+#+findex: johnson-completion-at-point-function
+The function ~johnson-completion-at-point-function~ provides a
+completion-at-point (CAPF) backend backed by the johnson dictionary
+index.  It completes the word at point using the same dynamic sqlite
+prefix queries as ~johnson-lookup~ ([[#h:looking-up-words][Looking up words]]).
+
+To use this function, add it to ~completion-at-point-functions~ in the
+major modes where you want dictionary completion:
+
+#+begin_src emacs-lisp
+(add-hook 'text-mode-hook
+          (lambda ()
+            (add-to-list 'completion-at-point-functions
+                         #'johnson-completion-at-point-function)))
+#+end_src
+
+The completion respects the current search scope: if the scope is set to
+~group~, only dictionaries in the active group are queried.
+
+* Indices
+:PROPERTIES:
+:CUSTOM_ID: h:indices
+:END:
+
+** Function index
+:PROPERTIES:
+:INDEX: fn
+:CUSTOM_ID: h:function-index
+:END:
+
+** Variable index
+:PROPERTIES:
+:INDEX: vr
+:CUSTOM_ID: h:variable-index
+:END:
