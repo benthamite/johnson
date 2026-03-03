@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'johnson-dictzip)
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
@@ -157,14 +158,23 @@ If NAME is nil or empty, return `johnson-color-default-face'."
     (or (cdr (assoc (downcase name) johnson-dsl--color-alist))
         'johnson-color-default-face)))
 
+;;;; Dictzip helpers
+
+(defun johnson-dsl--dictzip-p (path)
+  "Return non-nil if PATH is a dictzip-compressed DSL file."
+  (string-suffix-p ".dsl.dz" path t))
+
 ;;;; Encoding detection
 
 (defun johnson-dsl--detect-encoding (path)
   "Detect the encoding of the DSL file at PATH.
+Handles both plain and dictzip-compressed (.dsl.dz) files.
 Returns a symbol: `utf-16-le', `utf-16-be', `utf-8-with-signature', or `utf-8'."
   (with-temp-buffer
     (set-buffer-multibyte nil)
-    (insert-file-contents-literally path nil 0 4)
+    (if (johnson-dsl--dictzip-p path)
+        (insert (johnson-dictzip-read path 0 4))
+      (insert-file-contents-literally path nil 0 4))
     (let ((b1 (and (> (point-max) 1) (char-after 1)))
           (b2 (and (> (point-max) 2) (char-after 2)))
           (b3 (and (> (point-max) 3) (char-after 3))))
@@ -185,17 +195,28 @@ Returns a symbol: `utf-16-le', `utf-16-be', `utf-8-with-signature', or `utf-8'."
 
 (defun johnson-dsl--get-buffer (path)
   "Return (or create) a decoded cache buffer for the dictionary at PATH.
-The file is opened with its detected encoding so that character
-positions can be used directly for indexing and retrieval."
+Handles both plain and dictzip-compressed (.dsl.dz) files.
+The content is decoded so that character positions can be used
+directly for indexing and retrieval."
   (let ((buf-name (johnson-dsl--cache-buffer-name path)))
     (or (get-buffer buf-name)
         (let* ((encoding (johnson-dsl--detect-encoding path))
-               (coding-system-for-read (johnson-dsl--coding-system encoding)))
+               (coding (johnson-dsl--coding-system encoding)))
           (with-current-buffer (generate-new-buffer buf-name)
             (buffer-disable-undo)
             (fundamental-mode)
             (let ((inhibit-read-only t))
-              (insert-file-contents path))
+              (if (johnson-dsl--dictzip-p path)
+                  ;; Decompress the entire dictzip file, then decode.
+                  (let ((raw (johnson-dictzip-read-full path)))
+                    (set-buffer-multibyte nil)
+                    (insert raw)
+                    ;; Decode the unibyte buffer in place.
+                    (decode-coding-region (point-min) (point-max) coding)
+                    (set-buffer-multibyte t))
+                ;; Plain file: read with encoding.
+                (let ((coding-system-for-read coding))
+                  (insert-file-contents path))))
             ;; Remove BOM character if present at buffer start.
             (goto-char (point-min))
             (when (and (not (eobp)) (eq (char-after) #xfeff))
@@ -228,19 +249,28 @@ positions can be used directly for indexing and retrieval."
 
 (defun johnson-dsl-detect (path)
   "Return non-nil if PATH appears to be a DSL dictionary file.
-Checks for .dsl extension and verifies that the first non-BOM content
-starts with `#'."
-  (and (string-suffix-p ".dsl" path t)
+Checks for .dsl or .dsl.dz extension and verifies that the first
+non-BOM content starts with `#'."
+  (and (or (string-suffix-p ".dsl" path t)
+           (string-suffix-p ".dsl.dz" path t))
        (condition-case nil
            (let* ((encoding (johnson-dsl--detect-encoding path))
                   (bom-len (johnson-dsl--bom-length encoding))
-                  ;; For UTF-16 read enough bytes to get a few characters;
-                  ;; for UTF-8, a small read suffices.
                   (read-len (if (memq encoding '(utf-16-le utf-16-be)) 64 32))
                   (coding (johnson-dsl--coding-system encoding)))
              (with-temp-buffer
-               (let ((coding-system-for-read coding))
-                 (insert-file-contents path nil bom-len (+ bom-len read-len)))
+               (if (johnson-dsl--dictzip-p path)
+                   ;; For dictzip: decompress a small chunk and decode.
+                   (let ((raw (johnson-dictzip-read path 0 (+ bom-len read-len))))
+                     (set-buffer-multibyte nil)
+                     (insert raw)
+                     ;; Skip BOM bytes.
+                     (when (> bom-len 0)
+                       (delete-region 1 (1+ bom-len)))
+                     (decode-coding-region (point-min) (point-max) coding)
+                     (set-buffer-multibyte t))
+                 (let ((coding-system-for-read coding))
+                   (insert-file-contents path nil bom-len (+ bom-len read-len))))
                (goto-char (point-min))
                (skip-chars-forward "\n\r\t ")
                (eq (char-after) ?#)))
@@ -250,6 +280,7 @@ starts with `#'."
 
 (defun johnson-dsl-parse-metadata (path)
   "Parse metadata headers from the DSL dictionary at PATH.
+Handles both plain and dictzip-compressed (.dsl.dz) files.
 Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
   (let* ((encoding (johnson-dsl--detect-encoding path))
          (coding (johnson-dsl--coding-system encoding))
@@ -257,12 +288,21 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
          (source-lang nil)
          (target-lang nil))
     (with-temp-buffer
-      (let* ((coding-system-for-read coding)
-             ;; Only read the first few KB — headers are always at the top.
-             ;; UTF-16 uses 2 bytes per char, so read more bytes for those.
-             (bom-len (johnson-dsl--bom-length encoding))
-             (read-bytes (if (memq encoding '(utf-16-le utf-16-be)) 8192 4096)))
-        (insert-file-contents path nil bom-len (+ bom-len read-bytes)))
+      (if (johnson-dsl--dictzip-p path)
+          ;; For dictzip: decompress first chunk (headers are at the top).
+          (let* ((bom-len (johnson-dsl--bom-length encoding))
+                 (read-bytes (if (memq encoding '(utf-16-le utf-16-be)) 8192 4096))
+                 (raw (johnson-dictzip-read path 0 (+ bom-len read-bytes))))
+            (set-buffer-multibyte nil)
+            (insert raw)
+            (when (> bom-len 0)
+              (delete-region 1 (1+ bom-len)))
+            (decode-coding-region (point-min) (point-max) coding)
+            (set-buffer-multibyte t))
+        (let* ((coding-system-for-read coding)
+               (bom-len (johnson-dsl--bom-length encoding))
+               (read-bytes (if (memq encoding '(utf-16-le utf-16-be)) 8192 4096)))
+          (insert-file-contents path nil bom-len (+ bom-len read-bytes))))
       (goto-char (point-min))
       ;; Skip BOM character if present (the decoded stream may start with it).
       (when (and (not (eobp)) (eq (char-after) #xfeff))
@@ -658,7 +698,7 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
 (with-eval-after-load 'johnson
   (johnson-register-format
    :name "dsl"
-   :extensions '("dsl")
+   :extensions '("dsl" "dsl.dz")
    :detect #'johnson-dsl-detect
    :parse-metadata #'johnson-dsl-parse-metadata
    :build-index #'johnson-dsl-build-index
