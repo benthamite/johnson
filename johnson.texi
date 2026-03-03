@@ -22,12 +22,59 @@
 @node Top
 @top johnson: multi-format dictionary UI for Emacs
 
-This manual describes the features and customization options for the @samp{johnson} Emacs Lisp package. @*
+@samp{johnson} is a multi-format dictionary UI for Emacs.  It @*
+provides the functionality of programs such as GoldenDict and StarDict, @*
+allowing you to look up words across multiple dictionaries simultaneously @*
+and view formatted definitions in a dedicated Emacs buffer. @*
+
+The package is implemented entirely in Emacs Lisp with no external @*
+dependencies, relying on Emacs 30.1's built-in sqlite support for @*
+efficient headword indexing.  Dictionary files are parsed natively, @*
+without calling external tools. @*
+
+In version 0.1, the package supports the DSL (ABBYY Lingvo) format via @*
+the @samp{johnson-dsl.el} backend module.  Future versions will add support @*
+for StarDict, MDict, and BGL (Babylon) formats. @*
+
+The architecture is modular and consists of three files.  The core module @*
+(@samp{johnson.el}) provides the lookup engine, results buffer, navigation, @*
+history, and a plist-based format registry @*
+(@ref{Format registration}).  The sqlite index management @*
+is delegated to @samp{johnson-db.el}, which maintains one database per @*
+dictionary file in a configurable cache directory @*
+(@ref{Cache directory}).  Each dictionary format is handled @*
+by a separate backend module—currently =johnson-dsl.el=—that registers @*
+itself with the core via the format registry. @*
+
+A typical workflow consists of three steps.  First, configure @*
+@code{johnson-dictionary-directories} to point at your dictionary files @*
+(@ref{Dictionary discovery}).  Second, run @samp{M-x johnson-index} to scan @*
+and index all discovered dictionaries (@ref{Indexing dictionaries}). @*
+Third, use @samp{M-x johnson-lookup} to look up words with dynamic @*
+completion (@ref{Looking up words}). @*
+
+Results are displayed in a @samp{*johnson*} buffer using @code{johnson-mode}, a @*
+read-only major mode derived from @code{special-mode}.  Each dictionary that @*
+contains a match for the queried word gets its own collapsible section, @*
+displayed in priority order (@ref{Display ordering}).  The buffer @*
+supports Info-like navigation: press @samp{n} and @samp{p} to move between @*
+sections, @samp{TAB} to collapse or expand a section, @samp{RET} to follow @*
+cross-references, and @samp{l} and @samp{r} to navigate back and forward through @*
+lookup history. @*
+
+Dictionaries are organized into groups by language pair (e.g., ``English @*
+@arrow{} Spanish'').  Groups are auto-detected from dictionary metadata but can @*
+be customized via @code{johnson-dictionary-groups} @*
+(@ref{Search scope and groups}). @*
+
+The package also provides a dictionary list buffer via @samp{M-x
+johnson-list-dictionaries}, showing all discovered dictionaries with @*
+their indexing status and entry counts @*
+(@ref{Dictionary list}). @*
 
 @end ifnottex
 
 @menu
-* Overview::
 * User options::
 * Commands::
 * Functions::
@@ -88,65 +135,6 @@ Indices
 
 @end detailmenu
 @end menu
-
-@node Overview
-@chapter Overview
-
-@samp{johnson} is a multi-format dictionary UI for Emacs, named after Samuel @*
-Johnson, author of @emph{A Dictionary of the English Language} (1755).  It @*
-provides the functionality of programs such as GoldenDict and StarDict, @*
-allowing you to look up words across multiple dictionaries simultaneously @*
-and view formatted definitions in a dedicated Emacs buffer. @*
-
-@float Figure
-@image{johnson,,,,jpg}
-@caption{Dr Johnson}
-@end float @*
-
-The package is implemented entirely in Emacs Lisp with no external @*
-dependencies, relying on Emacs 30.1's built-in sqlite support for @*
-efficient headword indexing.  Dictionary files are parsed natively, @*
-without calling external tools. @*
-
-In version 0.1, the package supports the DSL (ABBYY Lingvo) format via @*
-the @samp{johnson-dsl.el} backend module.  Future versions will add support @*
-for StarDict, MDict, and BGL (Babylon) formats. @*
-
-The architecture is modular and consists of three files.  The core module @*
-(@samp{johnson.el}) provides the lookup engine, results buffer, navigation, @*
-history, and a plist-based format registry @*
-(@ref{Format registration}).  The sqlite index management @*
-is delegated to @samp{johnson-db.el}, which maintains one database per @*
-dictionary file in a configurable cache directory @*
-(@ref{Cache directory}).  Each dictionary format is handled @*
-by a separate backend module—currently =johnson-dsl.el=—that registers @*
-itself with the core via the format registry. @*
-
-A typical workflow consists of three steps.  First, configure @*
-@code{johnson-dictionary-directories} to point at your dictionary files @*
-(@ref{Dictionary discovery}).  Second, run @samp{M-x johnson-index} to scan @*
-and index all discovered dictionaries (@ref{Indexing dictionaries}). @*
-Third, use @samp{M-x johnson-lookup} to look up words with dynamic @*
-completion (@ref{Looking up words}). @*
-
-Results are displayed in a @samp{*johnson*} buffer using @code{johnson-mode}, a @*
-read-only major mode derived from @code{special-mode}.  Each dictionary that @*
-contains a match for the queried word gets its own collapsible section, @*
-displayed in priority order (@ref{Display ordering}).  The buffer @*
-supports Info-like navigation: press @samp{n} and @samp{p} to move between @*
-sections, @samp{TAB} to collapse or expand a section, @samp{RET} to follow @*
-cross-references, and @samp{l} and @samp{r} to navigate back and forward through @*
-lookup history. @*
-
-Dictionaries are organized into groups by language pair (e.g., ``English @*
-@arrow{} Spanish'').  Groups are auto-detected from dictionary metadata but can @*
-be customized via @code{johnson-dictionary-groups} @*
-(@ref{Search scope and groups}). @*
-
-The package also provides a dictionary list buffer via @samp{M-x
-johnson-list-dictionaries}, showing all discovered dictionaries with @*
-their indexing status and entry counts @*
-(@ref{Dictionary list}). @*
 
 @node User options
 @chapter User options
