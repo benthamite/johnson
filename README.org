@@ -11,7 +11,8 @@
 #+texinfo_dir_desc: Multi-format dictionary UI for Emacs
 #+html: <img src="https://github.com/benthamite/johnson/blob/main/johnson.jpg?raw=true" align="right">
 
-=johnson= is a multi-format dictionary UI for Emacs.  It
+=johnson= is a multi-format dictionary UI for Emacs, named after Samuel
+Johnson, author of /A Dictionary of the English Language/ (1755).  It
 provides the functionality of programs such as GoldenDict and StarDict,
 allowing you to look up words across multiple dictionaries simultaneously
 and view formatted definitions in a dedicated Emacs buffer.
@@ -949,6 +950,67 @@ The face ~johnson-color-orange-face~ is used for =orange= and
 =darkorange=.
 
 Any unrecognized color name falls back to ~johnson-color-default-face~.
+
+* Roadmap
+:PROPERTIES:
+:CUSTOM_ID: h:roadmap
+:ID:       A1B2C3D4-E5F6-7890-ABCD-EF1234567890
+:END:
+
+Version 0.1 (current) supports the DSL (ABBYY Lingvo) format.  The
+following versions will add support for additional dictionary formats
+and features.
+
+** Version 0.2 --- StarDict and compressed DSL
+:PROPERTIES:
+:CUSTOM_ID: h:roadmap-v02
+:ID:       B2C3D4E5-F6A7-8901-BCDE-F12345678901
+:END:
+
+- =johnson-stardict.el= backend for =.ifo=, =.idx=, =.dict=, and
+  =.syn= files.
+- Dictzip random-access support for compressed =.dict.dz= and
+  =.dsl.dz= files.
+- StarDict content types: plain text, HTML, Pango markup, phonetic.
+
+** Version 0.3 --- MDict and DSL abbreviations
+:PROPERTIES:
+:CUSTOM_ID: h:roadmap-v03
+:ID:       C3D4E5F6-A7B8-9012-CDEF-123456789012
+:END:
+
+- =johnson-mdict.el= backend for =.mdx= and =.mdd= files.
+- Support for MDict's HTML+CSS content.
+- =_abrv.dsl= abbreviation table support for DSL dictionaries (=[p]=
+  tag expansion).
+
+** Version 0.4 --- BGL (Babylon)
+:PROPERTIES:
+:CUSTOM_ID: h:roadmap-v04
+:ID:       D4E5F6A7-B8C9-0123-DEFA-234567890123
+:END:
+
+- =johnson-bgl.el= backend for =.bgl= files.
+
+** Future features
+:PROPERTIES:
+:CUSTOM_ID: h:roadmap-future
+:ID:       E5F6A7B8-C9D0-1234-EFAB-345678901234
+:END:
+
+The following features are planned but not yet scheduled for a specific
+version:
+
+- Media support (images, audio pronunciation).
+- EPWING format.
+- DICT protocol (RFC 2229) for remote dictionary servers.
+- Wildcard search (=?=/=*= patterns).
+- Fuzzy/approximate matching.
+- Full-text search within definitions.
+- Eldoc integration.
+- Scan-popup mode (auto-lookup on selection).
+- Bookmarking entries.
+- Full browsable history buffer with timestamps.
 
 * Indices
 :PROPERTIES:
