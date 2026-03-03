@@ -10,7 +10,7 @@
 #+texinfo_dir_title: Johnson: (johnson)
 #+texinfo_dir_desc: Multi-format dictionary UI for Emacs
 
-This manual describes the features and customization options for the Emacs Lisp file =johnson.el=.
+This manual describes the features and customization options for the =johnson= Emacs Lisp package.
 
 * Overview
 :PROPERTIES:
@@ -32,12 +32,15 @@ In version 0.1, the package supports the DSL (ABBYY Lingvo) format via
 the =johnson-dsl.el= backend module.  Future versions will add support
 for StarDict, MDict, and BGL (Babylon) formats.
 
-The architecture is modular.  The core module (=johnson.el=) provides the
-lookup engine, results buffer, navigation, history, and format registry.
-Each dictionary format is handled by a separate backend module that
-registers itself with the core via a plist-based format registry
-([[#h:format-registration][Format registration]]).  The sqlite index management is
-delegated to =johnson-db.el=.
+The architecture is modular and consists of three files.  The core module
+(=johnson.el=) provides the lookup engine, results buffer, navigation,
+history, and a plist-based format registry
+([[#h:format-registration][Format registration]]).  The sqlite index management
+is delegated to =johnson-db.el=, which maintains one database per
+dictionary file in a configurable cache directory
+([[#h:cache-directory][Cache directory]]).  Each dictionary format is handled
+by a separate backend module—currently =johnson-dsl.el=—that registers
+itself with the core via the format registry.
 
 A typical workflow consists of three steps.  First, configure
 ~johnson-dictionary-directories~ to point at your dictionary files
@@ -99,7 +102,8 @@ different locations.
 The user option ~johnson-default-search-scope~ controls the default
 search scope for lookups.  When set to ~all~ (the default), lookups
 search across all discovered dictionaries.  When set to ~group~, lookups
-search only within the currently active dictionary group.
+search only within the currently active dictionary group.  The type is
+~(choice (const all) (const group))~.
 
 You can switch between these modes interactively via
 ~johnson-select-group~ ([[#h:managing-groups][Managing groups and scope]]), which
@@ -166,6 +170,28 @@ previous lookups via =M-p= and =M-n= in the completion prompt.  If
 When the history exceeds ~johnson-history-max~ entries, the oldest
 entries are discarded.
 
+** Cache directory
+:PROPERTIES:
+:CUSTOM_ID: h:cache-directory
+:END:
+
+#+vindex: johnson-cache-directory
+The user option ~johnson-cache-directory~ specifies the directory where
+sqlite index files are stored.  Each dictionary gets its own sqlite
+database file in this directory, named by the MD5 hash of the dictionary
+file's absolute path.  This hashing scheme prevents collisions when
+multiple dictionaries share similar names or reside in different
+directories.
+
+The default value is =~/.cache/johnson/=.  You may want to change this
+if you prefer to store caches on a faster drive, in a location that is
+excluded from backups, or alongside other application caches.  The value
+must be a directory path (type: ~directory~).
+
+The directory is created automatically if it does not exist when a
+database is first opened via ~johnson-db-open~
+([[#h:database-lifecycle][Database lifecycle]]).
+
 * Commands
 :PROPERTIES:
 :CUSTOM_ID: h:commands
@@ -192,10 +218,11 @@ you to index them first.  When indexing is already in progress, the
 lookup is deferred and will resume automatically once indexing completes.
 
 After a word is selected, the command queries all dictionaries for exact
-matches (case-insensitive, accent-insensitive) and displays the results
-in the =*johnson*= buffer.  The word is pushed onto the lookup history
-([[#h:lookup-history][Lookup history]]) and the navigation history
-([[#h:navigation-history][Navigation history]]).
+matches (case-insensitive, accent-insensitive via
+~johnson-db-normalize~; see [[#h:headword-normalization][Headword normalization]])
+and displays the results in the =*johnson*= buffer.  The word is pushed
+onto the lookup history ([[#h:lookup-history][Lookup history]]) and the
+navigation history ([[#h:navigation-history][Navigation history]]).
 
 The optional WORD argument allows calling ~johnson-lookup~ from Lisp
 code without prompting.
@@ -220,25 +247,26 @@ refreshing does not push a new entry onto the navigation history.
 #+findex: johnson-stop-indexing
 The command ~johnson-index~ scans all configured dictionary directories,
 discovers dictionary files, and indexes (or re-indexes) those whose
-index is stale or missing.  Progress is displayed in a dedicated
-=*johnson-indexing*= buffer, showing one line per dictionary with its
-name, progress counter, and result (entry count or error message).
+index is stale or missing.  Staleness is determined by comparing the
+file modification time stored in the database against the actual file's
+modification time ([[#h:staleness-and-reset][Staleness detection and reset]]).
+
+Progress is displayed in a dedicated =*johnson-indexing*= buffer,
+showing one line per dictionary with its name, progress counter, and
+result (entry count or error message).
 
 When called interactively, indexing runs asynchronously using
 timer-based cooperative multitasking, so Emacs remains responsive during
 the process.  In batch or noninteractive mode, indexing runs
-synchronously.
-
-If indexing is already in progress, the command signals an error rather
-than starting a second concurrent run.
+synchronously.  If indexing is already in progress, the command signals
+an error rather than starting a second concurrent run.
 
 The optional CALLBACK argument accepts a function to be called with no
 arguments once indexing completes.  This is used internally to chain
 lookup after indexing, but you can also use it in your own scripts.
 
-Dictionaries that are already up to date (based on file modification
-time comparison) are skipped with an "up to date" message rather than
-being re-indexed.
+Dictionaries that are already up to date are skipped with an "up to
+date" message rather than being re-indexed.
 
 The command ~johnson-stop-indexing~ cancels the current asynchronous
 indexing run.  It cancels the timer, clears the indexing queue, and
@@ -448,7 +476,7 @@ reloading the file during development).
 Backend modules typically call this function inside a
 ~with-eval-after-load~ form for =johnson=, ensuring the core is loaded
 before registration occurs.  For an example, see how =johnson-dsl.el=
-registers the DSL format.
+registers the DSL format at the end of the file.
 
 ** Completion at point
 :PROPERTIES:
@@ -473,6 +501,425 @@ major modes where you want dictionary completion:
 
 The completion respects the current search scope: if the scope is set to
 ~group~, only dictionaries in the active group are queried.
+
+** Database lifecycle
+:PROPERTIES:
+:CUSTOM_ID: h:database-lifecycle
+:END:
+
+#+findex: johnson-db-open
+#+findex: johnson-db-close
+The function ~johnson-db-open~ opens or creates the sqlite database for
+a given dictionary file path.  It ensures the cache directory
+([[#h:cache-directory][Cache directory]]) exists, creates the ~metadata~ and
+~entries~ tables if they do not already exist, creates the index on
+~headword_normalized~ if absent, and returns the database connection
+object.  This is the primary entry point for obtaining a database handle.
+
+The function ~johnson-db-close~ closes a sqlite database connection.
+Pass the connection object previously returned by ~johnson-db-open~.
+In practice, the core module caches database connections in a hash table
+and closes them all at once via ~johnson-close-caches~
+([[#h:cache-management][Cache management]]).
+
+** Metadata storage
+:PROPERTIES:
+:CUSTOM_ID: h:metadata-storage
+:END:
+
+#+findex: johnson-db-set-metadata
+#+findex: johnson-db-get-metadata
+#+findex: johnson-db-get-all-metadata
+The metadata table stores key-value pairs describing each dictionary:
+its name, format identifier, source and target languages, source file
+path, file modification time, and entry count.  These metadata entries
+are written during indexing and read during dictionary discovery and
+staleness detection ([[#h:staleness-and-reset][Staleness detection and reset]]).
+
+The function ~johnson-db-set-metadata~ writes a key-value pair to the
+metadata table using =INSERT OR REPLACE= semantics, so existing keys are
+updated rather than duplicated.  Both KEY and VALUE are strings.
+
+The function ~johnson-db-get-metadata~ retrieves a single metadata value
+by key, returning ~nil~ if the key is not present in the database.
+
+The function ~johnson-db-get-all-metadata~ returns all metadata as an
+alist of =(KEY . VALUE)= pairs.  This is useful for displaying
+comprehensive dictionary details, such as in the dictionary detail
+buffer opened by ~johnson-dict-list-show-details~
+([[#h:dictionary-list][Dictionary list]]).
+
+** Headword normalization
+:PROPERTIES:
+:CUSTOM_ID: h:headword-normalization
+:END:
+
+#+findex: johnson-db-normalize
+The function ~johnson-db-normalize~ transforms a string for
+case-insensitive and accent-insensitive search.  It performs three steps
+in sequence: NFKD decomposition via ~ucs-normalize-NFKD-string~,
+removal of combining diacritical marks (Unicode general category Mn),
+and downcasing via ~downcase~.
+
+This normalization means that searching for =cafe= will match headwords
+such as =café=, =CAFÉ=, and =Café=.  Both user input and headwords are
+normalized with this function before storage and querying, ensuring
+consistent matching behavior.
+
+If the input is ~nil~ or an empty string, the function returns an empty
+string.
+
+** Entry insertion
+:PROPERTIES:
+:CUSTOM_ID: h:entry-insertion
+:END:
+
+#+findex: johnson-db-insert-entry
+#+findex: johnson-db-insert-entries-batch
+The function ~johnson-db-insert-entry~ inserts a single headword entry
+into the database.  It takes the original HEADWORD text, a BYTE-OFFSET
+(or character offset, depending on the format backend), and an
+ENTRY-LENGTH specifying the entry's extent in the dictionary file.  The
+headword is automatically normalized via ~johnson-db-normalize~
+([[#h:headword-normalization][Headword normalization]]) before insertion.
+
+For bulk insertion during indexing, the function
+~johnson-db-insert-entries-batch~ inserts a list of entries in a single
+database transaction, which is dramatically faster than individual
+inserts for large dictionaries.  Each element in the ENTRIES list is a
+=(HEADWORD BYTE-OFFSET BYTE-LENGTH)= triple.  If an error occurs during
+the transaction, it is rolled back and the error is re-signaled, leaving
+the database in a consistent state.
+
+** Querying entries
+:PROPERTIES:
+:CUSTOM_ID: h:querying-entries
+:END:
+
+#+findex: johnson-db-query-exact
+#+findex: johnson-db-query-prefix
+#+findex: johnson-db-entry-count
+The function ~johnson-db-query-exact~ queries the database for entries
+whose normalized headword exactly matches the normalized form of WORD.
+It returns a list of =(HEADWORD BYTE-OFFSET BYTE-LENGTH)= triples,
+where HEADWORD is the original non-normalized text.  Multiple triples
+may be returned when a dictionary contains duplicate headwords (e.g.,
+from headword alternation) or when multiple entries share the same
+normalized form.  This function is used during the lookup flow in
+~johnson-lookup~ ([[#h:looking-up-words][Looking up words]]).
+
+The function ~johnson-db-query-prefix~ queries the database for distinct
+headwords whose normalized form begins with the normalized PREFIX.  It
+uses a SQL =LIKE= query on the indexed ~headword_normalized~ column for
+efficient prefix matching.  The optional LIMIT argument defaults to 100.
+This function powers the dynamic completion table used by
+~johnson-lookup~.
+
+The function ~johnson-db-entry-count~ returns the total number of rows
+in the entries table.  It is used for display in the dictionary list
+buffer ([[#h:dictionary-list][Dictionary list]]) and in indexing progress messages.
+
+** Staleness detection and reset
+:PROPERTIES:
+:CUSTOM_ID: h:staleness-and-reset
+:END:
+
+#+findex: johnson-db-stale-p
+#+findex: johnson-db-reset
+The function ~johnson-db-stale-p~ checks whether the index for a
+dictionary file is stale or does not exist.  It compares the file
+modification time stored in the database metadata (under the key
+="mtime"=) against the actual file's modification time.  If the sqlite
+database file does not exist at all, the function returns non-nil.  This
+function is called during the indexing flow
+([[#h:indexing-dictionaries][Indexing dictionaries]]) to determine which
+dictionaries need re-indexing.
+
+The function ~johnson-db-reset~ deletes all entries from a database in
+preparation for re-indexing.  It issues =DELETE FROM entries= but does
+not drop the table or remove metadata.  After a reset, the entry count
+is zero and new entries can be inserted via
+~johnson-db-insert-entries-batch~ ([[#h:entry-insertion][Entry insertion]]).
+
+** DSL format detection
+:PROPERTIES:
+:CUSTOM_ID: h:dsl-format-detection
+:END:
+
+#+findex: johnson-dsl-detect
+The function ~johnson-dsl-detect~ determines whether a given file path
+is a DSL dictionary file.  It checks for the =.dsl= extension
+(case-insensitively) and then verifies that the first non-BOM content in
+the file starts with =#=, which indicates a DSL metadata header.
+
+The detection handles all supported encodings: it reads the BOM to
+determine the encoding, skips the appropriate number of BOM bytes, and
+decodes the initial content to check for the =#= character.  For UTF-16
+files, it reads enough bytes (64) to ensure it captures the first
+decoded characters.
+
+This function is registered as the ~:detect~ handler in the format
+registry and is called during dictionary discovery to identify DSL files
+among all files found in the configured directories.
+
+** DSL metadata parsing
+:PROPERTIES:
+:CUSTOM_ID: h:dsl-metadata-parsing
+:END:
+
+#+findex: johnson-dsl-parse-metadata
+The function ~johnson-dsl-parse-metadata~ extracts metadata headers from
+a DSL dictionary file.  It reads only the first few kilobytes of the
+file (4 KB for UTF-8, 8 KB for UTF-16) since headers always appear at
+the top, making this operation efficient even for large files.
+
+The function parses three header fields: =#NAME= (the dictionary's
+display name), =#INDEX_LANGUAGE= (the source language), and
+=#CONTENTS_LANGUAGE= (the target language).  Header values are enclosed
+in double quotes in the file.
+
+It returns a plist with keys ~:name~, ~:source-lang~, and
+~:target-lang~.  If a header is absent, the corresponding value defaults
+to an empty string.  The core module uses these values for dictionary
+display names and for auto-detecting language-pair groups
+([[#h:search-scope-and-groups][Search scope and groups]]).
+
+** DSL index building
+:PROPERTIES:
+:CUSTOM_ID: h:dsl-index-building
+:END:
+
+#+findex: johnson-dsl-build-index
+The function ~johnson-dsl-build-index~ parses an entire DSL dictionary
+file and calls a CALLBACK function for each headword entry found.  The
+callback receives three arguments: the headword string, the character
+offset of the entry body in the decoded buffer (1-based), and the
+character length of the body.
+
+The parsing proceeds in a single pass through a decoded buffer cache.
+It first skips metadata header lines (beginning with =#=), then
+identifies entries by their structure: flush-left lines are headwords,
+and indented lines (beginning with a tab or spaces) are the entry body.
+Multiple consecutive flush-left lines before an indented body are treated
+as multiple headwords for the same entry.
+
+Each raw headword is expanded via the internal headword expansion
+pipeline, which handles three kinds of variants:
+
+- *Split markers*: =colour{/}color= produces two separate headwords,
+  =colour= and =color=.
+
+- *Alternation*: =pre{a/b}suf= expands to =preasuf= and =prebsuf=.
+
+- *Optional parts*: =go(es)= expands to both =go= and =goes=.
+
+Escaped characters (=\[=, =\]=, =\{=, =\}=, =\(=, =\)=) are stripped
+after expansion.  Each expanded variant becomes a separate row in the
+database, all pointing to the same entry body.
+
+If a headword fails to parse, it is skipped and a count of skipped
+entries is logged as a warning message at the end of the indexing run.
+
+A key design decision is the use of /decoded buffers/ rather than raw
+byte access.  Dictionary files are opened with their detected encoding
+(UTF-16LE, UTF-16BE, UTF-8 with BOM, or plain UTF-8) and cached as
+multibyte Emacs buffers.  The index stores character positions rather
+than byte offsets, which ensures that UTF-16 encoded files work correctly
+for both indexing and retrieval.
+
+** DSL entry retrieval
+:PROPERTIES:
+:CUSTOM_ID: h:dsl-entry-retrieval
+:END:
+
+#+findex: johnson-dsl-retrieve-entry
+The function ~johnson-dsl-retrieve-entry~ retrieves the raw entry body
+from a DSL dictionary file.  It takes the file path, a character offset
+(CHAR-OFFSET, 1-based), and a character count (NCHARS), and returns the
+corresponding substring from the decoded buffer cache.
+
+Because the index stores character positions rather than byte offsets,
+this function works correctly with all supported encodings, including
+UTF-16 files where byte positions would not align with character
+boundaries.
+
+The decoded buffer cache keeps dictionary files open as hidden Emacs
+buffers (named =" *johnson-cache: PATH"=) for fast repeated lookups.
+All cache buffers can be killed via ~johnson-close-caches~
+([[#h:cache-management][Cache management]]).
+
+** DSL entry rendering
+:PROPERTIES:
+:CUSTOM_ID: h:dsl-entry-rendering
+:END:
+
+#+findex: johnson-dsl-render-entry
+The function ~johnson-dsl-render-entry~ transforms raw DSL entry text
+into richly formatted content in the current buffer.  It inserts the
+rendered text at point using Emacs text properties and faces rather than
+HTML or shr rendering.
+
+The rendering proceeds in several steps.  First, leading indentation
+(tab or spaces) is stripped from each line.  Media references
+(={{...}}=) are removed.  Then the text is inserted into the buffer and
+processed in two passes.
+
+The first pass handles =<<...>>= cross-reference markers, converting
+them into clickable buttons with ~johnson-ref-face~
+([[#h:link-faces][Link faces]]).  Each button invokes ~johnson-lookup~ for the
+referenced word when activated.
+
+The second pass processes DSL tags using a stack-based parser.  The
+parser scans for tag patterns matching =[tag]= and =[/tag]=, maintaining
+a stack of active tags.  When a closing tag is encountered, the
+corresponding face or text property is applied to the enclosed region.
+The supported tags include:
+
+- =[b]=, =[i]=, =[u]=: text styling ([[#h:text-styling-faces][Text styling faces]])
+- =[c]= and =[c NAME]=: color ([[#h:color-faces][Color faces]])
+- =[sup]=, =[sub]=: superscript and subscript via ~display~ properties
+- =[ex]=: examples ([[#h:content-type-faces][Content type faces]])
+- =[*]=: optional/secondary text
+- =[ref]=: cross-reference buttons ([[#h:link-faces][Link faces]])
+- =[url]=: external URL buttons
+- =[lang id=N]=: language identifier (stored as text property)
+- =[trn]=, =[!trn]=: translation blocks (blank line separation)
+- =[com]=: comments
+- =[m]= and =[m0]=-=[m9]=: indentation levels via ~line-prefix~ and
+  ~wrap-prefix~ display properties
+- =[p]=: abbreviation markers (rendered as-is)
+- =[']=: stress marks ([[#h:text-styling-faces][Text styling faces]])
+- =[s]=: media references (content is suppressed)
+
+* Faces
+:PROPERTIES:
+:CUSTOM_ID: h:faces
+:END:
+
+All faces defined in =johnson-dsl.el= belong to the ~johnson-dsl-faces~
+customization group.  You can customize them via =M-x customize-group
+RET johnson-dsl-faces RET= to match your preferred color theme.  The
+face ~johnson-section-header-face~ is defined in =johnson.el= and
+belongs to the ~johnson~ group.
+
+** Text styling faces
+:PROPERTIES:
+:CUSTOM_ID: h:text-styling-faces
+:END:
+
+#+vindex: johnson-bold-face
+#+vindex: johnson-italic-face
+#+vindex: johnson-underline-face
+#+vindex: johnson-stress-face
+The face ~johnson-bold-face~ renders text enclosed in =[b]...[/b]= tags.
+It inherits from ~bold~.
+
+The face ~johnson-italic-face~ renders text enclosed in =[i]...[/i]=
+tags.  It inherits from ~italic~.
+
+The face ~johnson-underline-face~ renders text enclosed in
+=[u]...[/u]= tags.  It sets the =:underline= attribute to ~t~.
+
+The face ~johnson-stress-face~ renders stress marks enclosed in
+=[']=...=[/']=  tags.  It inherits from ~bold~, making accented
+syllables visually prominent in pronunciation guides.
+
+** Content type faces
+:PROPERTIES:
+:CUSTOM_ID: h:content-type-faces
+:END:
+
+#+vindex: johnson-example-face
+#+vindex: johnson-optional-face
+#+vindex: johnson-comment-face
+The face ~johnson-example-face~ renders example sentences enclosed in
+=[ex]...[/ex]= tags.  It inherits from ~italic~ with a =dim gray=
+foreground, visually distinguishing examples from definitions.
+
+The face ~johnson-optional-face~ renders optional or secondary text
+enclosed in =[*]...[/*]= tags.  It uses a muted gray foreground that
+adapts to the background: =gray50= on light backgrounds and =gray60=
+on dark backgrounds.
+
+The face ~johnson-comment-face~ renders comment annotations enclosed in
+=[com]...[/com]= tags.  It inherits from ~font-lock-comment-face~,
+giving comments a consistent appearance with the rest of Emacs.
+
+** Link faces
+:PROPERTIES:
+:CUSTOM_ID: h:link-faces
+:END:
+
+#+vindex: johnson-ref-face
+#+vindex: johnson-url-face
+The face ~johnson-ref-face~ renders cross-reference links enclosed in
+=[ref]...[/ref]= tags or =<<...>>= markers.  It inherits from ~link~.
+Cross-references are rendered as clickable buttons that invoke
+~johnson-lookup~ for the referenced word
+([[#h:following-refs][Following cross-references]]).
+
+The face ~johnson-url-face~ renders external URL links enclosed in
+=[url]...[/url]= tags.  It inherits from ~link~.  URL links are rendered
+as clickable buttons that open the URL via ~browse-url~.
+
+** Section header face
+:PROPERTIES:
+:CUSTOM_ID: h:section-header-face
+:END:
+
+#+vindex: johnson-section-header-face
+The face ~johnson-section-header-face~ renders dictionary section
+headers in the results buffer (the lines using Unicode box-drawing
+character =━=).  It inherits from ~bold~ with the =:extend= attribute
+set to ~t~, ensuring the face extends to the edge of the window.
+
+This face is defined in =johnson.el= (for the results buffer headers)
+and also in =johnson-dsl.el= (for DSL-specific section headers).
+
+** Color faces
+:PROPERTIES:
+:CUSTOM_ID: h:color-faces
+:END:
+
+#+vindex: johnson-color-default-face
+#+vindex: johnson-color-green-face
+#+vindex: johnson-color-red-face
+#+vindex: johnson-color-blue-face
+#+vindex: johnson-color-gray-face
+#+vindex: johnson-color-brown-face
+#+vindex: johnson-color-violet-face
+#+vindex: johnson-color-orange-face
+DSL dictionaries use =[c]...[/c]= and =[c NAME]...[/c]= tags to apply
+color to text.  The module maps DSL color names (case-insensitively) to
+a fixed set of customizable Emacs faces.  All color faces define
+separate foreground colors for light and dark backgrounds.
+
+The face ~johnson-color-default-face~ is used when no color name is
+specified (i.e., a bare =[c]= tag).  It defaults to green (=dark green=
+on light backgrounds, =green3= on dark backgrounds).
+
+The face ~johnson-color-green-face~ is used for the DSL color names
+=green= and =darkgreen=.
+
+The face ~johnson-color-red-face~ is used for =red=, =darkred=, and
+=crimson=.
+
+The face ~johnson-color-blue-face~ is used for =blue=, =darkblue=, and
+=steelblue=.
+
+The face ~johnson-color-gray-face~ is used for =gray=, =darkgray=, and
+=dimgray=.
+
+The face ~johnson-color-brown-face~ is used for =brown= and
+=saddlebrown=.
+
+The face ~johnson-color-violet-face~ is used for =violet=, =purple=,
+and =darkviolet=.
+
+The face ~johnson-color-orange-face~ is used for =orange= and
+=darkorange=.
+
+Any unrecognized color name falls back to ~johnson-color-default-face~.
 
 * Indices
 :PROPERTIES:
