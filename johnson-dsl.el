@@ -227,7 +227,7 @@ positions can be used directly for indexing and retrieval."
 ;;;; Format detection
 
 (defun johnson-dsl-detect (path)
-  "Return non-nil if PATH looks like a DSL dictionary file.
+  "Return non-nil if PATH appears to be a DSL dictionary file.
 Checks for .dsl extension and verifies that the first non-BOM content
 starts with `#'."
   (and (string-suffix-p ".dsl" path t)
