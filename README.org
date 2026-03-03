@@ -42,6 +42,31 @@ and index all discovered dictionaries ([[#h:indexing-dictionaries][Indexing dict
 Third, use =M-x johnson-lookup= to look up words with dynamic
 completion ([[#h:looking-up-words][Looking up words]]).
 
+Here is a sample configuration using =elpaca= and =use-package=:
+
+#+begin_src emacs-lisp
+(use-package johnson
+  :ensure (:host github :repo "benthamite/johnson")
+  :custom
+  (johnson-dictionary-directories '("~/dictionaries/"))
+  (johnson-default-search-scope 'all)
+  (johnson-dictionary-priorities '(("Oxford English-Spanish" . -10)
+                                   ("Collins English-Spanish" . -5)))
+  (johnson-history-max 200)
+  :bind
+  ("C-c d" . johnson-lookup))
+#+end_src
+
+Or, if you prefer configuring options outside of =use-package=:
+
+#+begin_src emacs-lisp
+(setopt johnson-dictionary-directories '("~/dictionaries/"))
+(setopt johnson-default-search-scope 'all)
+(setopt johnson-dictionary-priorities '(("Oxford English-Spanish" . -10)
+                                        ("Collins English-Spanish" . -5)))
+(setopt johnson-history-max 200)
+#+end_src
+
 Results are displayed in a =*johnson*= buffer using ~johnson-mode~, a
 read-only major mode derived from ~special-mode~.  Each dictionary that
 contains a match for the queried word gets its own collapsible section,
@@ -51,9 +76,9 @@ sections, =TAB= to collapse or expand a section, =RET= to follow
 cross-references, and =l= and =r= to navigate back and forward through
 lookup history.
 
-Dictionaries are organized into groups by language pair (e.g., "English
-\to Spanish").  Groups are auto-detected from dictionary metadata but can
-be customized via ~johnson-dictionary-groups~
+Dictionaries are organized into groups by language pair
+(e.g., "English → Spanish").  Groups are auto-detected from dictionary
+metadata but can be customized via ~johnson-dictionary-groups~
 ([[#h:search-scope-and-groups][Search scope and groups]]).
 
 The package also provides a dictionary list buffer via =M-x
@@ -85,7 +110,13 @@ The default value is =("~/.local/share/dictionaries/")=.  You should
 change this to point at wherever your dictionary files are stored.  The
 value is a list of directory paths (type: ~(repeat directory)~), so you
 can specify multiple directories if your dictionaries are spread across
-different locations.
+different locations:
+
+#+begin_src emacs-lisp
+(setopt johnson-dictionary-directories
+        '("~/dictionaries/"
+          "/mnt/data/dictionaries/"))
+#+end_src
 
 ** Search scope and groups
 :PROPERTIES:
@@ -98,27 +129,38 @@ different locations.
 The user option ~johnson-default-search-scope~ controls the default
 search scope for lookups.  When set to ~all~ (the default), lookups
 search across all discovered dictionaries.  When set to ~group~, lookups
-search only within the currently active dictionary group.  The type is
-~(choice (const all) (const group))~.
+search only within the currently active dictionary group.
+
+#+begin_src emacs-lisp
+(setopt johnson-default-search-scope 'group)
+#+end_src
 
 You can switch between these modes interactively via
 ~johnson-select-group~ ([[#h:managing-groups][Managing groups and scope]]), which
 also lets you choose the active group.
 
-The user option ~johnson-dictionary-groups~ provides user-defined
-dictionary group overrides.  It is an alist of =(GROUP-NAME .
-(LIST-OF-DICTIONARY-NAMES))= (type: ~(alist :key-type string :value-type
-(repeat string))~).
-
-When this option is ~nil~ (the default), groups are auto-detected from
-dictionary metadata.  Each dictionary is assigned to a group based on
-its source and target language pair, formatted as ="Source \to Target"=
-(e.g., ="English \to Spanish"=).
+The user option ~johnson-dictionary-groups~ lets you define custom
+dictionary groups.  When this option is ~nil~ (the default), groups are
+auto-detected from dictionary metadata: each dictionary is assigned to a
+group based on its source and target language pair, such as "English →
+Spanish".
 
 Set this option when you want to create custom groupings that differ from
-the language-pair default.  For instance, you could create a group named
-="Medical"= that includes specialized medical dictionaries across
-different language pairs.
+the language-pair default.  For instance, you could group specialized
+medical dictionaries across different language pairs into a single
+"Medical" group:
+
+#+begin_src emacs-lisp
+(setopt johnson-dictionary-groups
+        '(("Medical" . ("Dorland's Medical"
+                        "Stedman's Medical"
+                        "Medical Abbreviations"))
+          ("Legal" . ("Black's Law Dictionary"
+                      "Legal Terms EN-ES"))))
+#+end_src
+
+When ~johnson-dictionary-groups~ is non-nil, /only/ the groups listed
+here are available; the auto-detected language-pair groups are not used.
 
 ** Display ordering
 :PROPERTIES:
@@ -128,23 +170,18 @@ different language pairs.
 
 #+vindex: johnson-dictionary-priorities
 The user option ~johnson-dictionary-priorities~ controls the display
-order of dictionary sections in the results buffer.  It is an alist of
-=(DICTIONARY-NAME . PRIORITY)= where PRIORITY is an integer (type:
-~(alist :key-type string :value-type integer)~).
+order of dictionary sections in the results buffer.  It is an alist
+mapping dictionary names to integer priorities.  Lower numbers display
+first.  The default priority is 0, so dictionaries without an explicit
+priority entry are all treated equally and appear in discovery order.
 
-Lower numbers display first.  The default priority is 0, so dictionaries
-without an explicit priority entry are all treated equally and appear in
-discovery order.
-
-You would set this option to ensure that your preferred dictionaries
-always appear at the top of the results.  For example, to make the
-"Oxford English-Spanish" dictionary appear before all others, assign it a
-negative priority:
+For example, to make the "Oxford English-Spanish" dictionary always
+appear before "Collins English-Spanish", assign it a lower priority:
 
 #+begin_src emacs-lisp
-(setq johnson-dictionary-priorities
-      '(("Oxford English-Spanish" . -10)
-        ("Collins English-Spanish" . -5)))
+(setopt johnson-dictionary-priorities
+        '(("Oxford English-Spanish" . -10)
+          ("Collins English-Spanish" . -5)))
 #+end_src
 
 ** Lookup history
@@ -156,8 +193,11 @@ negative priority:
 #+vindex: johnson-history-max
 #+vindex: johnson-history
 The user option ~johnson-history-max~ sets the maximum number of entries
-retained in the lookup history.  The default value is ~100~ (type:
-~integer~).
+retained in the lookup history.  The default value is ~100~.
+
+#+begin_src emacs-lisp
+(setopt johnson-history-max 200)
+#+end_src
 
 The variable ~johnson-history~ stores the list of previously looked-up
 words and serves as the history list for ~completing-read~ in
@@ -184,8 +224,11 @@ directories.
 
 The default value is =~/.cache/johnson/=.  You may want to change this
 if you prefer to store caches on a faster drive, in a location that is
-excluded from backups, or alongside other application caches.  The value
-must be a directory path (type: ~directory~).
+excluded from backups, or alongside other application caches:
+
+#+begin_src emacs-lisp
+(setopt johnson-cache-directory "~/.local/cache/johnson/")
+#+end_src
 
 The directory is created automatically if it does not exist when a
 database is first opened via ~johnson-db-open~
@@ -467,17 +510,17 @@ backend with the core.  It accepts a plist with the following keys:
 - ~:name~ --- a unique string identifying the format (e.g., ="dsl"=).
 - ~:extensions~ --- a list of file extension strings used to filter files
   during directory scanning (e.g., =("dsl")=).
-- ~:detect~ --- a function =(PATH) \to BOOLEAN= that determines whether
+- ~:detect~ --- a function =(PATH) → BOOLEAN= that determines whether
   a file at PATH is a dictionary in this format.
-- ~:parse-metadata~ --- a function =(PATH) \to PLIST= that extracts
+- ~:parse-metadata~ --- a function =(PATH) → PLIST= that extracts
   metadata from the dictionary file, returning at minimum ~:name~,
   ~:source-lang~, and ~:target-lang~.
-- ~:build-index~ --- a function =(PATH CALLBACK) \to NIL= that parses
+- ~:build-index~ --- a function =(PATH CALLBACK) → NIL= that parses
   the dictionary and calls =(funcall CALLBACK HEADWORD OFFSET LENGTH)=
   for each entry.
-- ~:retrieve-entry~ --- a function =(PATH OFFSET LENGTH) \to STRING=
+- ~:retrieve-entry~ --- a function =(PATH OFFSET LENGTH) → STRING=
   that retrieves the raw entry text at the given location.
-- ~:render-entry~ --- a function =(RAW-TEXT) \to NIL= that inserts
+- ~:render-entry~ --- a function =(RAW-TEXT) → NIL= that inserts
   rendered content into the current buffer at point.
 
 If a format with the same ~:name~ is already registered, it is replaced.
