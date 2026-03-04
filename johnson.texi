@@ -42,6 +42,15 @@ User options
 * Display ordering::
 * Lookup history::
 * Cache directory::
+* Audio playback::
+* DICT protocol::
+* Images::
+* Wildcard search::
+* Full-text search::
+* Eldoc integration::
+* Scan-popup mode::
+* Bookmarks::
+* History buffer::
 
 Commands
 
@@ -54,6 +63,12 @@ Commands
 * Copying entries::
 * Dictionary list::
 * Cache management::
+* Toggling images::
+* Searching definitions::
+* Eldoc integration commands::
+* Scan-popup mode commands::
+* Managing bookmarks::
+* Browsing history::
 
 Functions
 
@@ -81,10 +96,10 @@ Faces
 
 Roadmap
 
-* Version 0.1 --- DSL: Version 01 --- DSL. 
-* Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL. 
-* Version 0.3 (current) --- MDict and DSL abbreviations: Version 03 (current) --- MDict and DSL abbreviations. 
-* Version 0.4 --- BGL (Babylon): Version 04 --- BGL (Babylon). 
+* Version 0.1 --- DSL: Version 01 --- DSL.
+* Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL.
+* Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
+* Version 0.4 (current) --- BGL, DICT, and more: Version 04 (current).
 * Future features::
 
 Indices
@@ -108,10 +123,11 @@ dependencies, relying on Emacs 30.1's built-in sqlite support for @*
 efficient headword indexing.  Dictionary files are parsed natively, @*
 without calling external tools. @*
 
-In version 0.3, the package supports the DSL (ABBYY Lingvo), @*
-StarDict, and MDict formats, including dictzip-compressed files @*
-(@samp{.dsl.dz} and @samp{.dict.dz}) and encrypted MDict files.  Future @*
-versions will add support for BGL (Babylon) format. @*
+In version 0.4, the package supports the DSL (ABBYY Lingvo), @*
+StarDict, MDict, and BGL (Babylon) formats, including @*
+dictzip-compressed files (@samp{.dsl.dz} and @samp{.dict.dz}) and @*
+encrypted MDict files.  It also provides a DICT protocol client @*
+(RFC 2229) for querying remote dictionary servers. @*
 
 The architecture is modular.  The core module (@samp{johnson.el}) provides @*
 the lookup engine, results buffer, navigation, history, and a @*
@@ -121,8 +137,10 @@ maintains one database per dictionary file in a configurable cache @*
 directory (@ref{Cache directory}).  Shared infrastructure @*
 for dictzip decompression lives in @samp{johnson-dictzip.el}.  Each @*
 dictionary format is handled by a separate backend @*
-module—=johnson-dsl.el= and =johnson-stardict.el=—that registers itself @*
-with the core via the format registry. @*
+module---@samp{johnson-dsl.el}, @samp{johnson-stardict.el}, @*
+@samp{johnson-mdict.el}, @samp{johnson-bgl.el}, and @*
+@samp{johnson-dict.el}---that registers itself with the core via the @*
+format registry. @*
 
 A typical workflow consists of three steps.  First, configure @*
 @code{johnson-dictionary-directories} to point at your dictionary files @*
@@ -142,6 +160,8 @@ Here is a sample configuration using @samp{elpaca} and @samp{use-package}: @*
   (johnson-dictionary-priorities '(("Oxford English-Spanish" . -10)
                                    ("Collins English-Spanish" . -5)))
   (johnson-history-max 200)
+  (johnson-history-persist t)
+  (johnson-display-images t)
   :bind
   ("C-c d" . johnson-lookup))
 @end lisp
@@ -152,8 +172,10 @@ contains a match for the queried word gets its own collapsible section, @*
 displayed in priority order (@ref{Display ordering}).  The buffer @*
 supports Info-like navigation: press @samp{n} and @samp{p} to move between @*
 sections, @samp{TAB} to collapse or expand a section, @samp{RET} to follow @*
-cross-references, and @samp{l} and @samp{r} to navigate back and forward through @*
-lookup history. @*
+cross-references, @samp{l} and @samp{r} to navigate back and forward through @*
+lookup history, @samp{I} to toggle inline images, @samp{S} to search within @*
+definitions, @samp{m} to bookmark an entry, @samp{M} to remove a bookmark, and @*
+@samp{H} to browse the full lookup history. @*
 
 Dictionaries are organized into groups by language pair @*
 (e.g., ``English → Spanish'').  Groups are auto-detected from dictionary @*
@@ -175,6 +197,14 @@ their indexing status and entry counts @*
 * Lookup history::
 * Cache directory::
 * Audio playback::
+* DICT protocol::
+* Images::
+* Wildcard search::
+* Full-text search::
+* Eldoc integration::
+* Scan-popup mode::
+* Bookmarks::
+* History buffer::
 @end menu
 
 @node Dictionary discovery
@@ -359,6 +389,200 @@ The command @code{johnson-clear-resource-cache} deletes all extracted @*
 resource files.  This is useful if you want to reclaim disk space or @*
 force re-extraction. @*
 
+@node DICT protocol
+@section DICT protocol
+
+@vindex johnson-dict-enabled
+@vindex johnson-dict-servers
+The user option @code{johnson-dict-enabled} is a master switch that @*
+controls whether the DICT protocol client is active.  When @code{nil} @*
+(the default), no DICT servers are contacted and no remote @*
+dictionaries appear in the dictionary list.  Set it to @code{t} to @*
+enable the DICT protocol backend: @*
+
+@lisp
+(setopt johnson-dict-enabled t)
+@end lisp
+
+The user option @code{johnson-dict-servers} specifies the list of DICT @*
+servers to query.  Each element is a @samp{(HOST . PORT)} pair.  The @*
+default value is @samp{(("dict.org" . 2628))}, which points to the @*
+public dict.org server on the standard DICT port. @*
+
+You can add additional servers: @*
+
+@lisp
+(setopt johnson-dict-servers
+        '(("dict.org" . 2628)
+          ("my-dict-server.local" . 2628)))
+@end lisp
+
+Dictionaries discovered from DICT servers appear under the ``DICT @*
+Servers'' group in the group selector.  The DICT backend communicates @*
+using the RFC 2229 protocol over a TCP connection. @*
+
+@node Images
+@section Images
+
+@vindex johnson-display-images
+The user option @code{johnson-display-images} controls whether inline @*
+images are rendered in dictionary entries.  When @code{t} (the default), @*
+images embedded in entries are displayed inline.  When @code{nil}, images @*
+are suppressed. @*
+
+Image support works across all format backends that include images: @*
+DSL @samp{[s]} tags, and HTML @samp{<img>} tags in MDict, StarDict, and @*
+BGL entries. @*
+
+@lisp
+(setopt johnson-display-images nil)   ; suppress images
+@end lisp
+
+You can toggle image display interactively via @*
+@code{johnson-toggle-images} (@ref{Toggling images}). @*
+
+@node Wildcard search
+@section Wildcard search
+
+@vindex johnson-wildcard-max-results
+The user option @code{johnson-wildcard-max-results} limits the number @*
+of headwords returned by a wildcard search.  The default value is @*
+@code{200}.  Wildcard searches can potentially match a large number of @*
+headwords; this limit prevents excessive memory use and keeps the @*
+completion interface responsive. @*
+
+@lisp
+(setopt johnson-wildcard-max-results 500)
+@end lisp
+
+Wildcard patterns use @samp{?} to match a single character and @samp{*} @*
+to match zero or more characters.  Wildcards are auto-detected in @*
+@code{johnson-lookup}: if the query contains @samp{?} or @samp{*} @*
+characters, matching headwords are collected and presented for @*
+selection rather than performing a direct lookup. @*
+
+@node Full-text search
+@section Full-text search
+
+@vindex johnson-fts-enabled
+The user option @code{johnson-fts-enabled} controls whether full-text @*
+search data is built during indexing.  The default value is @code{nil}. @*
+When set to @code{t} before indexing, the indexer stores definition text @*
+in a way that enables searching within dictionary entries, not just @*
+headwords. @*
+
+@lisp
+(setopt johnson-fts-enabled t)
+@end lisp
+
+You must re-index your dictionaries after enabling this option for @*
+the full-text data to be built.  Once enabled, the @*
+@code{johnson-search} command (@ref{Searching definitions}) @*
+becomes available for searching within definitions. @*
+
+@node Eldoc integration
+@section Eldoc integration
+
+@vindex johnson-eldoc-max-length
+The user option @code{johnson-eldoc-max-length} sets the maximum @*
+number of characters shown in the eldoc display for a dictionary @*
+definition.  The default value is @code{80}.  Longer definitions are @*
+truncated with an ellipsis. @*
+
+@lisp
+(setopt johnson-eldoc-max-length 120)
+@end lisp
+
+To enable eldoc integration, activate @code{johnson-eldoc-mode} in @*
+the desired buffer (@ref{Eldoc integration commands}). @*
+
+@node Scan-popup mode
+@section Scan-popup mode
+
+@vindex johnson-scan-trigger
+@vindex johnson-scan-idle-delay
+@vindex johnson-scan-popup-duration
+The user option @code{johnson-scan-trigger} controls what action @*
+triggers popup dictionary definitions.  The possible values are: @*
+
+@itemize
+@item
+@code{selection} (the default) --- show a popup when text is selected. @*
+@item
+@code{idle} --- show a popup for the word at point after an idle @*
+delay. @*
+@item
+@code{both} --- show a popup on both selection and idle. @*
+@end itemize
+
+@lisp
+(setopt johnson-scan-trigger 'both)
+@end lisp
+
+The user option @code{johnson-scan-idle-delay} sets the number of @*
+seconds of idle time before a popup is shown when the trigger is @*
+@code{idle} or @code{both}.  The default value is @code{1.0}. @*
+
+@lisp
+(setopt johnson-scan-idle-delay 0.5)
+@end lisp
+
+The user option @code{johnson-scan-popup-duration} sets the number @*
+of seconds a popup definition remains visible.  The default value @*
+is @code{5.0}. @*
+
+@lisp
+(setopt johnson-scan-popup-duration 10.0)
+@end lisp
+
+The popup display uses posframe if available, otherwise falls back @*
+to tooltip, and finally to the echo area. @*
+
+To enable scan-popup mode, activate @code{johnson-scan-mode} @*
+(@ref{Scan-popup mode commands}). @*
+
+@node Bookmarks
+@section Bookmarks
+
+@vindex johnson-bookmarks-file
+The user option @code{johnson-bookmarks-file} specifies the file where @*
+bookmarked dictionary entries are persisted.  The default value is @*
+@samp{~/.cache/johnson/bookmarks.el}. @*
+
+@lisp
+(setopt johnson-bookmarks-file "~/.local/share/johnson/bookmarks.el")
+@end lisp
+
+Bookmarks allow you to save dictionary entries for later reference. @*
+Each bookmark records the headword, dictionary name, and date. @*
+@xref{Managing bookmarks}, for the commands that add, remove, and @*
+list bookmarks. @*
+
+@node History buffer
+@section History buffer
+
+@vindex johnson-history-file
+@vindex johnson-history-persist
+The user option @code{johnson-history-file} specifies the file where @*
+lookup history is persisted across Emacs sessions.  The default @*
+value is @samp{~/.cache/johnson/history.el}. @*
+
+@lisp
+(setopt johnson-history-file "~/.local/share/johnson/history.el")
+@end lisp
+
+The user option @code{johnson-history-persist} controls whether lookup @*
+history is saved to disk.  When @code{t} (the default), history entries @*
+are written to @code{johnson-history-file} and restored on startup. @*
+When @code{nil}, history exists only for the current Emacs session. @*
+
+@lisp
+(setopt johnson-history-persist nil)   ; session-only history
+@end lisp
+
+@xref{Browsing history}, for commands that display and manage the @*
+history buffer. @*
+
 @node Commands
 @chapter Commands
 
@@ -372,6 +596,12 @@ force re-extraction. @*
 * Copying entries::
 * Dictionary list::
 * Cache management::
+* Toggling images::
+* Searching definitions::
+* Eldoc integration commands::
+* Scan-popup mode commands::
+* Managing bookmarks::
+* Browsing history::
 @end menu
 
 @node Looking up words
@@ -391,6 +621,14 @@ are multiple matches (e.g., @samp{(3 dicts)}). @*
 If the dictionaries have not been indexed yet, @code{johnson-lookup} prompts @*
 you to index them first.  When indexing is already in progress, the @*
 lookup is deferred and will resume automatically once indexing completes. @*
+
+If the query contains wildcard characters (@samp{?} or @samp{*}), @*
+@code{johnson-lookup} performs a wildcard search instead of a direct @*
+lookup.  Matching headwords are collected across all in-scope @*
+dictionaries (up to @code{johnson-wildcard-max-results}; see @*
+@ref{Wildcard search}) and presented for selection via @*
+@code{completing-read}.  The selected headword is then looked up @*
+normally. @*
 
 After a word is selected, the command queries all dictionaries for exact @*
 matches (case-insensitive, accent-insensitive via @*
@@ -615,6 +853,130 @@ The command @code{johnson-clear-resource-cache} deletes the @*
 @file{resources/} subdirectory of @code{johnson-cache-directory}, @*
 removing all audio files extracted from companion zip archives @*
 (@pxref{Audio playback}). @*
+
+@node Toggling images
+@section Toggling images
+
+@findex johnson-toggle-images
+The command @code{johnson-toggle-images} toggles the display of @*
+inline images in the results buffer.  When images are currently @*
+shown, the command hides them; when hidden, it re-renders the @*
+buffer with images visible.  The toggle affects the value of @*
+@code{johnson-display-images} (@ref{Images}). @*
+
+It is bound to @samp{I} in @code{johnson-mode}. @*
+
+@node Searching definitions
+@section Searching definitions
+
+@findex johnson-search
+The command @code{johnson-search} performs a full-text search across @*
+all indexed dictionary definitions.  It prompts for a search query @*
+and displays results in a tabulated list showing the headword, @*
+dictionary name, and a snippet of the matching definition with @*
+highlighted matches. @*
+
+Full-text search must be enabled via @code{johnson-fts-enabled} @*
+(@ref{Full-text search}) before indexing for this command to @*
+produce results.  If full-text data has not been indexed, the @*
+command signals an error. @*
+
+It is bound to @samp{S} in @code{johnson-mode}. @*
+
+@node Eldoc integration commands
+@section Eldoc integration
+
+@findex johnson-eldoc-mode
+The command @code{johnson-eldoc-mode} is a buffer-local minor mode @*
+that adds dictionary definitions to eldoc.  When enabled, moving @*
+point over a word displays a brief dictionary definition in the @*
+eldoc area (typically the echo area or an eldoc buffer).  The @*
+lighter is @samp{" JDict"}. @*
+
+The maximum length of the displayed definition is controlled by @*
+@code{johnson-eldoc-max-length} (@ref{Eldoc integration}). @*
+
+@lisp
+;; Enable in text-mode buffers
+(add-hook 'text-mode-hook #'johnson-eldoc-mode)
+@end lisp
+
+@node Scan-popup mode commands
+@section Scan-popup mode
+
+@findex johnson-scan-mode
+The command @code{johnson-scan-mode} is a global minor mode that @*
+shows popup dictionary definitions when you select text or after an @*
+idle delay.  The lighter is @samp{" JScan"}. @*
+
+The trigger behavior, idle delay, and popup duration are controlled @*
+by the user options @code{johnson-scan-trigger}, @*
+@code{johnson-scan-idle-delay}, and @*
+@code{johnson-scan-popup-duration} (@ref{Scan-popup mode}). @*
+
+The popup display uses posframe if the @samp{posframe} package is @*
+available, otherwise falls back to tooltip, and finally to the @*
+echo area. @*
+
+@lisp
+(johnson-scan-mode 1)   ; enable globally
+@end lisp
+
+@node Managing bookmarks
+@section Managing bookmarks
+
+@findex johnson-bookmark-add
+@findex johnson-bookmark-remove
+@findex johnson-bookmark-list
+The command @code{johnson-bookmark-add} bookmarks the dictionary @*
+entry at point for later reference.  The bookmark records the @*
+headword, dictionary name, and current date.  Bookmarks are @*
+persisted to @code{johnson-bookmarks-file} (@ref{Bookmarks}). @*
+
+It is bound to @samp{m} in @code{johnson-mode}. @*
+
+The command @code{johnson-bookmark-remove} removes the bookmark for @*
+the dictionary entry at point.  If the entry is not bookmarked, the @*
+command displays a message indicating so. @*
+
+It is bound to @samp{M} in @code{johnson-mode}. @*
+
+The command @code{johnson-bookmark-list} opens a @*
+@samp{*johnson-bookmarks*} buffer displaying all bookmarked entries @*
+in a tabulated list.  The table has three columns: Headword, @*
+Dictionary, and Date. @*
+
+In the bookmarks buffer: @*
+
+@itemize
+@item
+@samp{RET} re-looks up the bookmarked headword. @*
+@item
+@samp{d} deletes the bookmark at point. @*
+@end itemize
+
+@node Browsing history
+@section Browsing history
+
+@findex johnson-history-list
+@findex johnson-history-clear
+The command @code{johnson-history-list} opens a @*
+@samp{*johnson-history*} buffer displaying the full lookup history @*
+in a tabulated list with three columns: Headword, Time (the @*
+timestamp of the lookup), and Results (the number of dictionary @*
+matches). @*
+
+It is bound to @samp{H} in @code{johnson-mode}. @*
+
+In the history buffer, pressing @samp{RET} re-looks up the headword @*
+at point. @*
+
+The command @code{johnson-history-clear} clears all lookup history @*
+after prompting for confirmation.  This removes both the in-memory @*
+history and, if persistence is enabled, the history file on disk. @*
+
+History persistence is controlled by @code{johnson-history-persist} @*
+and @code{johnson-history-file} (@ref{History buffer}). @*
 
 @node Functions
 @chapter Functions
@@ -1116,10 +1478,10 @@ Any unrecognized color name falls back to @code{johnson-color-default-face}. @*
 @chapter Roadmap
 
 @menu
-* Version 0.1 --- DSL: Version 01 --- DSL. 
-* Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL. 
-* Version 0.3 (current) --- MDict and DSL abbreviations: Version 03 (current) --- MDict and DSL abbreviations. 
-* Version 0.4 --- BGL (Babylon): Version 04 --- BGL (Babylon). 
+* Version 0.1 --- DSL: Version 01 --- DSL.
+* Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL.
+* Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
+* Version 0.4 (current) --- BGL, DICT, and more: Version 04 (current).
 * Future features::
 @end menu
 
@@ -1183,8 +1545,8 @@ When saving, prompt the user whether they want to set the new value via defcusto
 Provide basic media support (audio pronunciation). @*
 @end itemize
 
-@node Version 03 (current) --- MDict and DSL abbreviations
-@section Version 0.3 (current) --- MDict and DSL abbreviations
+@node Version 03 --- MDict and DSL abbreviations
+@section Version 0.3 --- MDict and DSL abbreviations
 
 @itemize
 @item
@@ -1196,12 +1558,34 @@ Support for MDict's HTML+CSS content. @*
 (@samp{[p]} tag expansion). @*
 @end itemize
 
-@node Version 04 --- BGL (Babylon)
-@section Version 0.4 --- BGL (Babylon)
+@node Version 04 (current)
+@section Version 0.4 (current) --- BGL, DICT, and more
 
 @itemize
 @item
-@samp{johnson-bgl.el} backend for @samp{.bgl} files. @*
+@samp{johnson-bgl.el} backend for @samp{.bgl} files, with automatic @*
+detection via file extension and magic bytes (@code{0x12 0x34}). @*
+@item
+@samp{johnson-dict.el} DICT protocol client (RFC 2229) for remote @*
+dictionary servers. @*
+@item
+Inline image support across all format backends (DSL @samp{[s]} tags, @*
+HTML @samp{<img>} tags in MDict, StarDict, and BGL). @*
+@item
+Wildcard search using @samp{?} (single character) and @samp{*} (multiple @*
+characters) in lookups. @*
+@item
+Full-text search within dictionary definitions @*
+(@code{johnson-search}). @*
+@item
+Eldoc integration via @code{johnson-eldoc-mode}. @*
+@item
+Scan-popup mode via @code{johnson-scan-mode} (popup definitions on @*
+selection or idle). @*
+@item
+Bookmarking entries for later reference. @*
+@item
+Browsable history buffer with timestamps and result counts. @*
 @end itemize
 
 @node Future features
@@ -1212,25 +1596,7 @@ version: @*
 
 @itemize
 @item
-Extended media support (images). @*
-@item
 EPWING format. @*
-@item
-DICT protocol (RFC 2229) for remote dictionary servers. @*
-@item
-Wildcard search (@samp{?=/=*} patterns). @*
-@item
-Fuzzy/approximate matching. @*
-@item
-Full-text search within definitions. @*
-@item
-Eldoc integration. @*
-@item
-Scan-popup mode (auto-lookup on selection). @*
-@item
-Bookmarking entries. @*
-@item
-Full browsable history buffer with timestamps. @*
 @end itemize
 
 @node Indices
