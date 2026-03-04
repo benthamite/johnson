@@ -18,6 +18,7 @@
 
 (require 'cl-lib)
 (require 'johnson-dictzip)
+(require 'johnson-html)
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
@@ -265,128 +266,15 @@ for use by the renderer."
     (insert "[" text "]")
     (add-face-text-property start (point) 'johnson-italic-face)))
 
-(defun johnson-stardict--html-color-to-face (color)
-  "Map an HTML color name or hex code COLOR to a johnson face."
-  (let ((lower (downcase (string-trim color))))
-    (cond
-     ((or (string-prefix-p "#" lower)
-          (string-match-p "^rgb" lower))
-      ;; For hex/rgb colors, try to approximate.
-      'johnson-color-default-face)
-     ((or (string= lower "green") (string= lower "darkgreen"))
-      'johnson-color-green-face)
-     ((or (string= lower "red") (string= lower "darkred") (string= lower "crimson"))
-      'johnson-color-red-face)
-     ((or (string= lower "blue") (string= lower "darkblue") (string= lower "steelblue"))
-      'johnson-color-blue-face)
-     ((or (string= lower "gray") (string= lower "grey") (string= lower "dimgray")
-          (string= lower "darkgray"))
-      'johnson-color-gray-face)
-     ((or (string= lower "brown") (string= lower "saddlebrown"))
-      'johnson-color-brown-face)
-     ((or (string= lower "violet") (string= lower "purple") (string= lower "darkviolet"))
-      'johnson-color-violet-face)
-     ((or (string= lower "orange") (string= lower "darkorange"))
-      'johnson-color-orange-face)
-     (t 'johnson-color-default-face))))
-
 (defun johnson-stardict--render-type-h (data)
   "Render type `h' (HTML) DATA into the current buffer.
 Strips HTML tags and converts common formatting tags to text properties."
   (let ((text (decode-coding-string data 'utf-8))
-        (start (point)))
+        (start (point))
+        (johnson-html--current-dict-dir johnson-stardict--current-dict-dir))
     (insert text)
     (let ((end (point)))
-      ;; Process tags from end to start to preserve positions.
-      (johnson-stardict--process-html-region start end))))
-
-(defun johnson-stardict--process-html-region (start end)
-  "Process HTML tags in the region from START to END.
-Replaces tags with text properties."
-  (save-excursion
-    ;; First pass: replace <br>, <br/>, <hr>, <hr/> with newlines.
-    (goto-char start)
-    (while (re-search-forward "<br\\s-*/?>\\|<hr\\s-*/?>" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match "\n")
-        (setq end (- end len -1))))
-    ;; Replace <p> and </p> with blank lines.
-    (goto-char start)
-    (while (re-search-forward "</p>\\s-*" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match "\n\n")
-        (setq end (- end len -2))))
-    (goto-char start)
-    (while (re-search-forward "<p[^>]*>" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match "")
-        (setq end (- end len))))
-    ;; Process paired tags using a stack-based approach.
-    (let ((tag-re "<\\(/\\)?\\([a-zA-Z]+\\)\\([^>]*\\)>")
-          (stack nil))
-      (goto-char start)
-      (while (re-search-forward tag-re end t)
-        (let* ((closing-p (match-string 1))
-               (tag-name (downcase (match-string 2)))
-               (tag-attrs (or (match-string 3) ""))
-               (tag-beg (match-beginning 0))
-               (tag-end (match-end 0)))
-          ;; Delete the tag.
-          (delete-region tag-beg tag-end)
-          (setq end (- end (- tag-end tag-beg)))
-          (goto-char tag-beg)
-          (cond
-           ;; Closing tag.
-           (closing-p
-            (let ((entry (cl-find tag-name stack :key #'car :test #'equal)))
-              (when entry
-                (setq stack (remove entry stack))
-                (let ((region-start (nth 1 entry))
-                      (region-attrs (nth 2 entry)))
-                  (johnson-stardict--apply-html-tag
-                   tag-name region-start (point) region-attrs)))))
-           ;; Opening tag.
-           (t
-            (push (list tag-name (point) tag-attrs) stack))))))))
-
-(defun johnson-stardict--apply-html-tag (tag-name region-start region-end attrs)
-  "Apply rendering for HTML TAG-NAME over REGION-START to REGION-END.
-ATTRS is the raw attribute string from the opening tag."
-  (pcase tag-name
-    ("b"
-     (add-face-text-property region-start region-end 'johnson-bold-face))
-    ("strong"
-     (add-face-text-property region-start region-end 'johnson-bold-face))
-    ("i"
-     (add-face-text-property region-start region-end 'johnson-italic-face))
-    ("em"
-     (add-face-text-property region-start region-end 'johnson-italic-face))
-    ("u"
-     (add-face-text-property region-start region-end 'johnson-underline-face))
-    ("sup"
-     (add-face-text-property region-start region-end 'johnson-bold-face)
-     (put-text-property region-start region-end
-                        'display '((raise 0.3) (height 0.7))))
-    ("sub"
-     (put-text-property region-start region-end
-                        'display '((raise -0.3) (height 0.7))))
-    ("font"
-     (when (string-match "color\\s-*=\\s-*[\"']?\\([^\"' >]+\\)" attrs)
-       (let ((face (johnson-stardict--html-color-to-face (match-string 1 attrs))))
-         (add-face-text-property region-start region-end face))))
-    ("span"
-     (when (string-match "color\\s-*:\\s-*\\([^;\"' >]+\\)" attrs)
-       (let ((face (johnson-stardict--html-color-to-face (match-string 1 attrs))))
-         (add-face-text-property region-start region-end face))))
-    ("a"
-     (if (string-match "href\\s-*=\\s-*[\"']\\(?:bword://\\)?\\([^\"']+\\)[\"']" attrs)
-         (let ((target (match-string 1 attrs)))
-           (make-text-button region-start region-end
-                             'face 'johnson-ref-face
-                             'action (lambda (_btn) (johnson-lookup target))
-                             'help-echo (format "Look up \"%s\"" target)))
-       ;; No href, just make it look like a link.
-       (add-face-text-property region-start region-end 'johnson-ref-face)))))
+      (johnson-html-render-region start end))))
 
 (defun johnson-stardict--render-type-x (data)
   "Render type `x' (XDXF) DATA into the current buffer.
@@ -469,11 +357,12 @@ Handles XDXF tags like <kref>, <gr>, <ex>, <abbr>, <dtrn>."
   "Render type `g' (Pango markup) DATA into the current buffer.
 Handles <b>, <i>, <u>, <span foreground=\"...\"> tags."
   (let ((text (decode-coding-string data 'utf-8))
-        (start (point)))
+        (start (point))
+        (johnson-html--current-dict-dir johnson-stardict--current-dict-dir))
     (insert text)
     (let ((end (point)))
       ;; Process Pango tags — essentially the same as HTML.
-      (johnson-stardict--process-html-region start end))))
+      (johnson-html-render-region start end))))
 
 (defun johnson-stardict--render-type-r (data)
   "Render type `r' (resource) DATA.
