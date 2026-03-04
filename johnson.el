@@ -393,7 +393,7 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                         (plist-get dict :target-lang))
                       (johnson-db-set-metadata db \"source-path\" path)
                       (johnson-db-set-metadata db \"mtime\"
-                        (format-time-string \"%%%%s\"
+                        (format-time-string \"%%s\"
                           (file-attribute-modification-time
                             (file-attributes path))))
                       (funcall (plist-get fmt :build-index) path
