@@ -308,6 +308,7 @@ database is first opened via @code{johnson-db-open} @*
 @section Audio playback
 
 @vindex johnson-audio-player
+@vindex johnson-audio-external-players
 @findex johnson-play-sound
 @findex johnson-play-audio-at-point
 @findex johnson-insert-audio-button
@@ -318,20 +319,26 @@ play button (@samp{▶}) that plays the audio on click.  The command @*
 point and can be called interactively. @*
 
 The user option @code{johnson-audio-player} controls which program is @*
-used for playback.  It can be set to a string naming an external @*
-command, or to the symbol @code{internal} to use Emacs's built-in @*
-@code{play-sound-file}. @*
+used for playback.  The default is @code{auto}, which tries Emacs's @*
+built-in @code{play-sound-file} first; if that fails (e.g., because @*
+the Emacs binary lacks sound support), it falls back to the first @*
+available external player listed in @*
+@code{johnson-audio-external-players}.  On macOS, @samp{afplay} is @*
+always available, so audio playback should work out of the box with no @*
+configuration. @*
 
-On macOS, the default is @samp{"afplay"}, which is always available and @*
-requires no extra setup.  On other systems, the default is @*
-@code{internal}, which requires the Emacs binary to have been compiled @*
-with sound support.  Many Emacs builds lack this support; if you see @*
-the error ``This Emacs binary lacks sound support'', set @*
-@code{johnson-audio-player} to an external command: @*
+If you want to use a specific external player, set @*
+@code{johnson-audio-player} to a string naming the command: @*
 
 @lisp
-(setopt johnson-audio-player "mpv")    ; or "paplay", "aplay", etc.
+(setopt johnson-audio-player "mpv")
 @end lisp
+
+The user option @code{johnson-audio-external-players} is the list of @*
+external commands that @code{auto} mode tries, in order.  The default @*
+list is @samp{("afplay" "mpv" "paplay" "aplay")}.  You can customize @*
+this list if your preferred player is not included or if you want to @*
+change the priority order. @*
 
 @node Commands
 @chapter Commands

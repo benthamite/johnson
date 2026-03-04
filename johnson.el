@@ -77,14 +77,20 @@ during idle time."
   :type 'integer
   :group 'johnson)
 
-(defcustom johnson-audio-player
-  (if (executable-find "afplay") "afplay" 'internal)
+(defcustom johnson-audio-player 'auto
   "Audio player for pronunciation playback.
-If `internal', use Emacs `play-sound-file' (requires sound support).
-If a string, use it as an external command (e.g., \"afplay\", \"mpv\").
-The default is \"afplay\" on macOS, `internal' elsewhere."
-  :type '(choice (const :tag "Emacs built-in" internal)
+If `auto', try Emacs built-in `play-sound-file' first, then fall
+back to the first available external player (see
+`johnson-audio-external-players').
+If a string, use it as an external command (e.g., \"afplay\", \"mpv\")."
+  :type '(choice (const :tag "Auto-detect" auto)
                  (string :tag "External command"))
+  :group 'johnson)
+
+(defcustom johnson-audio-external-players '("afplay" "mpv" "paplay" "aplay")
+  "External audio players to try when `johnson-audio-player' is `auto'.
+Each entry is a command name.  The first one found on the system is used."
+  :type '(repeat string)
   :group 'johnson)
 
 ;;;; Faces
@@ -1376,20 +1382,28 @@ Dictionaries will be re-indexed on next lookup."
 
 ;;;; Audio playback
 
+(defun johnson--find-external-player ()
+  "Return the first available external player, or nil."
+  (cl-find-if #'executable-find johnson-audio-external-players))
+
 (defun johnson-play-sound (file)
   "Play the audio FILE using the configured player.
 See `johnson-audio-player'."
   (cond
-   ((eq johnson-audio-player 'internal)
-    (condition-case err
-        (play-sound-file file)
-      (error
-       (message "johnson: %s" (error-message-string err))
-       (info-other-window "(johnson) Audio playback"))))
    ((stringp johnson-audio-player)
     (start-process "johnson-audio" nil johnson-audio-player file))
+   ((eq johnson-audio-player 'auto)
+    (condition-case _
+        (play-sound-file file)
+      (error
+       (let ((player (johnson--find-external-player)))
+         (if player
+             (start-process "johnson-audio" nil player file)
+           (message "johnson: no audio player found")
+           (info-other-window "(johnson) Audio playback"))))))
    (t
-    (message "johnson: no audio player configured"))))
+    (message "johnson: invalid `johnson-audio-player' value: %S"
+             johnson-audio-player))))
 
 (defun johnson-play-audio-at-point ()
   "Play the audio file referenced by the button at point."
