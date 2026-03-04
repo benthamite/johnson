@@ -248,7 +248,7 @@ Returns a plist with :name, :source-lang, :target-lang,
   "Return non-nil if BTYPE is a BGL entry block type."
   (memq btype '(1 7 10 13)))
 
-(defun johnson-bgl--parse-entry-block (data payload-start payload-length)
+(cl-defun johnson-bgl--parse-entry-block (data payload-start payload-length)
   "Parse an entry block from DATA at PAYLOAD-START with PAYLOAD-LENGTH.
 Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples.
 DEFINITION-OFFSET and DEFINITION-LENGTH are byte positions in DATA.
@@ -289,7 +289,7 @@ Multiple triples are returned when alternate headwords are present."
                 (setq alt-pos alt-end)))))
         (nreverse results)))))
 
-(defun johnson-bgl--parse-entry-block-type-11 (data payload-start payload-length)
+(cl-defun johnson-bgl--parse-entry-block-type-11 (data payload-start payload-length)
   "Parse a type 11 entry block from DATA at PAYLOAD-START with PAYLOAD-LENGTH.
 Type 11 has 4-byte length fields instead of 1/2-byte.
 Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
