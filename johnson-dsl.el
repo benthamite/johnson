@@ -703,9 +703,11 @@ Inserts the rendered text at point."
                                   end)))
                        ;; Extract the filename between [s] and [/s].
                        (content-end (- s-end 4)) ; before [/s]
-                       (filename (string-trim
-                                  (buffer-substring-no-properties
-                                   tag-beg content-end)))
+                       (filename (subst-char-in-string
+                                  ?\\ ?/
+                                  (string-trim
+                                   (buffer-substring-no-properties
+                                    tag-beg content-end))))
                        (old-len (- s-end tag-beg)))
                   (delete-region tag-beg s-end)
                   (when (and (not (string-empty-p filename))
@@ -713,7 +715,8 @@ Inserts the rendered text at point."
                     (let ((audio-path (expand-file-name
                                        filename
                                        johnson-dsl--current-dict-dir)))
-                      (johnson-insert-audio-button audio-path)))
+                      (johnson-insert-audio-button
+                       audio-path nil johnson-dsl--current-dict-path)))
                   (setq end (+ end (- (point) tag-beg) (- old-len)))))
                ;; Opening tags: push onto stack.
                ((not closing-p)

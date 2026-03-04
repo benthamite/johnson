@@ -714,7 +714,8 @@ Returns the entry data as a decoded string."
   "Render MDict entry DATA into the current buffer.
 DATA is a decoded string containing HTML content."
   (let ((start (point))
-        (johnson-html--current-dict-dir johnson-mdict--current-dict-dir))
+        (johnson-html--current-dict-dir johnson-mdict--current-dict-dir)
+        (johnson-html--current-dict-path nil))
     (insert data)
     (johnson-html-render-region start (point))))
 

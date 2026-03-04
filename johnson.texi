@@ -340,6 +340,25 @@ list is @samp{("afplay" "mpv" "paplay" "aplay")}.  You can customize @*
 this list if your preferred player is not included or if you want to @*
 change the priority order. @*
 
+@subheading Companion zip archives
+
+@findex johnson-clear-resource-cache
+Many DSL dictionaries bundle audio in a companion @*
+@file{.dsl.files.zip} archive rather than storing individual files on @*
+disk (e.g., @file{MyDict.dsl} @expansion{} @file{MyDict.dsl.files.zip}). @*
+When a play button is clicked and the referenced audio file does not @*
+exist on disk, @code{johnson} automatically checks for a companion zip @*
+archive and extracts the file on demand.  Extracted files are cached @*
+under the @file{resources/} subdirectory of @code{johnson-cache-directory} @*
+so subsequent plays are instant. @*
+
+This feature requires the @command{unzip} command-line utility, which @*
+is available by default on macOS and most Linux distributions. @*
+
+The command @code{johnson-clear-resource-cache} deletes all extracted @*
+resource files.  This is useful if you want to reclaim disk space or @*
+force re-extraction. @*
+
 @node Commands
 @chapter Commands
 
@@ -590,6 +609,12 @@ cached dictionary buffers. @*
 
 The command reports how many cache buffers were closed and confirms that @*
 all database connections were closed. @*
+
+@findex johnson-clear-resource-cache
+The command @code{johnson-clear-resource-cache} deletes the @*
+@file{resources/} subdirectory of @code{johnson-cache-directory}, @*
+removing all audio files extracted from companion zip archives @*
+(@pxref{Audio playback}). @*
 
 @node Functions
 @chapter Functions
