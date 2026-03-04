@@ -9,9 +9,8 @@
 #+texinfo_dir_category: Emacs misc features
 #+texinfo_dir_title: Johnson: (johnson)
 #+texinfo_dir_desc: Multi-format dictionary UI for Emacs
-#+html: <img src="https://github.com/benthamite/johnson/blob/main/johnson.jpg?raw=true" align="right">
-
 * Overview
+#+html: <img src="https://github.com/benthamite/johnson/blob/main/johnson.jpg?raw=true" align="right" width="300">
 =johnson= is a multi-format dictionary UI for Emacs.  It
 provides the functionality of programs such as GoldenDict and StarDict,
 allowing you to look up words across multiple dictionaries simultaneously
