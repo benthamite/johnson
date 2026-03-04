@@ -665,7 +665,8 @@ Returns the next offset, or -1 if this is the last entry."
 Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
   (let* ((header (johnson-mdict--parse-header path))
          (title (plist-get header :title))
-         (name (if (string-empty-p title)
+         (name (if (or (string-empty-p title)
+                      (string= title "Title (No HTML code allowed)"))
                    (file-name-base path)
                  title)))
     (list :name name
