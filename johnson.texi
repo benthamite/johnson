@@ -1586,6 +1586,13 @@ selection or idle). @*
 Bookmarking entries for later reference. @*
 @item
 Browsable history buffer with timestamps and result counts. @*
+@item
+Auto-detection of non-standard 64-bit @samp{.idx} entry formats in @*
+StarDict dictionaries whose @samp{.ifo} files omit the @*
+@code{idxoffsetbits=64} declaration. @*
+@item
+Clearer error message when a StarDict @samp{.idx} file is missing @*
+(incomplete dictionary distribution). @*
 @end itemize
 
 @node Future features
