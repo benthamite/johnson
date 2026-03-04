@@ -311,28 +311,27 @@ database is first opened via @code{johnson-db-open} @*
 @findex johnson-play-sound
 @findex johnson-play-audio-at-point
 @findex johnson-insert-audio-button
-The user option @code{johnson-audio-player} controls which program plays @*
-audio files (e.g., pronunciation recordings embedded in dictionaries). @*
+Some dictionary entries contain embedded audio files, such as @*
+pronunciation recordings.  When they do, the results buffer shows a @*
+play button (@samp{▶}) that plays the audio on click.  The command @*
+@code{johnson-play-audio-at-point} does the same for the button at @*
+point and can be called interactively. @*
 
-If its value is the symbol @code{internal}, Emacs's built-in @*
-@code{play-sound-file} is used; this requires the Emacs binary to have @*
-been compiled with sound support, which many builds lack.  If the value @*
-is a string, it is treated as the name of an external command that will @*
-be invoked asynchronously with the audio file path as its sole @*
-argument.  On macOS, @samp{afplay} is always available; on GNU/Linux, @*
-@samp{mpv}, @samp{paplay}, or @samp{aplay} are common choices. @*
+The user option @code{johnson-audio-player} controls which program is @*
+used for playback.  It can be set to a string naming an external @*
+command, or to the symbol @code{internal} to use Emacs's built-in @*
+@code{play-sound-file}. @*
 
-The default is @samp{"afplay"} when that program is found at startup, @*
-@code{internal} otherwise.  To override the default: @*
+On macOS, the default is @samp{"afplay"}, which is always available and @*
+requires no extra setup.  On other systems, the default is @*
+@code{internal}, which requires the Emacs binary to have been compiled @*
+with sound support.  Many Emacs builds lack this support; if you see @*
+the error ``This Emacs binary lacks sound support'', set @*
+@code{johnson-audio-player} to an external command: @*
 
 @lisp
-(setopt johnson-audio-player "mpv")
+(setopt johnson-audio-player "mpv")    ; or "paplay", "aplay", etc.
 @end lisp
-
-When a dictionary entry contains audio references, the results buffer @*
-shows a play button (@samp{@code{▶}}) that calls @code{johnson-play-sound} on @*
-click.  The command @code{johnson-play-audio-at-point} does the same for @*
-the button at point and can be called interactively. @*
 
 @node Commands
 @chapter Commands
