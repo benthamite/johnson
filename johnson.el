@@ -1385,7 +1385,7 @@ See `johnson-audio-player'."
         (play-sound-file file)
       (error
        (message "johnson: %s" (error-message-string err))
-       (info-other-window "(johnson) Audio playback"))))
+       (describe-variable 'johnson-audio-player))))
    ((stringp johnson-audio-player)
     (start-process "johnson-audio" nil johnson-audio-player file))
    (t
