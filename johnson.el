@@ -317,7 +317,10 @@ PROPS is a plist with keys :name, :extensions, :detect,
               (when-let* ((fmt (johnson--detect-format file)))
                 (condition-case err
                     (let* ((metadata (funcall (plist-get fmt :parse-metadata) file))
-                           (name (or (plist-get metadata :name) (file-name-base file)))
+                           (raw-name (plist-get metadata :name))
+                           (name (if (and raw-name (not (string-empty-p raw-name)))
+                                     raw-name
+                                   (file-name-base file)))
                            (src (or (plist-get metadata :source-lang) ""))
                            (tgt (or (plist-get metadata :target-lang) ""))
                            (group (if (and (not (string-empty-p src))
