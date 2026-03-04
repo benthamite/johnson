@@ -1386,19 +1386,32 @@ Dictionaries will be re-indexed on next lookup."
   "Return the first available external player, or nil."
   (cl-find-if #'executable-find johnson-audio-external-players))
 
+(defun johnson--start-audio-process (player file)
+  "Start PLAYER as an async process to play FILE.
+A sentinel reports non-zero exit status."
+  (let ((proc (start-process "johnson-audio" nil player file)))
+    (set-process-sentinel
+     proc
+     (lambda (process event)
+       (unless (and (string-prefix-p "finished" event)
+                    (zerop (process-exit-status process)))
+         (message "johnson: %s exited with status %d"
+                  (process-name process)
+                  (process-exit-status process)))))))
+
 (defun johnson-play-sound (file)
   "Play the audio FILE using the configured player.
 See `johnson-audio-player'."
   (cond
    ((stringp johnson-audio-player)
-    (start-process "johnson-audio" nil johnson-audio-player file))
+    (johnson--start-audio-process johnson-audio-player file))
    ((eq johnson-audio-player 'auto)
     (condition-case _
         (play-sound-file file)
       (error
        (let ((player (johnson--find-external-player)))
          (if player
-             (start-process "johnson-audio" nil player file)
+             (johnson--start-audio-process player file)
            (message "johnson: no audio player found")
            (info-other-window "(johnson) Audio playback"))))))
    (t
