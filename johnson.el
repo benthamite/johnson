@@ -77,10 +77,12 @@ during idle time."
   :type 'integer
   :group 'johnson)
 
-(defcustom johnson-audio-player 'internal
+(defcustom johnson-audio-player
+  (if (executable-find "afplay") "afplay" 'internal)
   "Audio player for pronunciation playback.
 If `internal', use Emacs `play-sound-file' (requires sound support).
-If a string, use it as an external command (e.g., \"afplay\", \"mpv\")."
+If a string, use it as an external command (e.g., \"afplay\", \"mpv\").
+The default is \"afplay\" on macOS, `internal' elsewhere."
   :type '(choice (const :tag "Emacs built-in" internal)
                  (string :tag "External command"))
   :group 'johnson)
@@ -1379,9 +1381,11 @@ Dictionaries will be re-indexed on next lookup."
 See `johnson-audio-player'."
   (cond
    ((eq johnson-audio-player 'internal)
-    (if (fboundp 'play-sound-file)
+    (condition-case err
         (play-sound-file file)
-      (message "johnson: play-sound-file not available; set `johnson-audio-player' to an external command")))
+      (error
+       (message "johnson: %s; set `johnson-audio-player' to an external command"
+                (error-message-string err)))))
    ((stringp johnson-audio-player)
     (start-process "johnson-audio" nil johnson-audio-player file))
    (t

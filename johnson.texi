@@ -174,6 +174,7 @@ their indexing status and entry counts @*
 * Display ordering::
 * Lookup history::
 * Cache directory::
+* Audio playback::
 @end menu
 
 @node Dictionary discovery
@@ -302,6 +303,36 @@ excluded from backups, or alongside other application caches: @*
 The directory is created automatically if it does not exist when a @*
 database is first opened via @code{johnson-db-open} @*
 (@ref{Database lifecycle}). @*
+
+@node Audio playback
+@section Audio playback
+
+@vindex johnson-audio-player
+@findex johnson-play-sound
+@findex johnson-play-audio-at-point
+@findex johnson-insert-audio-button
+The user option @code{johnson-audio-player} controls which program plays @*
+audio files (e.g., pronunciation recordings embedded in dictionaries). @*
+
+If its value is the symbol @code{internal}, Emacs's built-in @*
+@code{play-sound-file} is used; this requires the Emacs binary to have @*
+been compiled with sound support, which many builds lack.  If the value @*
+is a string, it is treated as the name of an external command that will @*
+be invoked asynchronously with the audio file path as its sole @*
+argument.  On macOS, @samp{afplay} is always available; on GNU/Linux, @*
+@samp{mpv}, @samp{paplay}, or @samp{aplay} are common choices. @*
+
+The default is @samp{"afplay"} when that program is found at startup, @*
+@code{internal} otherwise.  To override the default: @*
+
+@lisp
+(setopt johnson-audio-player "mpv")
+@end lisp
+
+When a dictionary entry contains audio references, the results buffer @*
+shows a play button (@samp{@code{▶}}) that calls @code{johnson-play-sound} on @*
+click.  The command @code{johnson-play-audio-at-point} does the same for @*
+the button at point and can be called interactively. @*
 
 @node Commands
 @chapter Commands
