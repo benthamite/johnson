@@ -128,6 +128,12 @@
   "Orange color face for DSL entries."
   :group 'johnson-dsl-faces)
 
+(defface johnson-abbreviation-face
+  '((((background light)) :foreground "dark green")
+    (((background dark)) :foreground "green3"))
+  "Face for abbreviation markers ([p] tags) in DSL entries."
+  :group 'johnson-dsl-faces)
+
 ;;;; Color mapping
 
 (defconst johnson-dsl--color-alist
@@ -164,6 +170,15 @@ If NAME is nil or empty, return `johnson-color-default-face'."
 (defvar johnson-dsl--current-dict-dir nil
   "Directory of the dictionary being rendered.
 Set by `johnson-dsl-retrieve-entry' for use by the renderer.")
+
+(defvar johnson-dsl--current-dict-path nil
+  "Full path of the dictionary file being rendered.
+Set by `johnson-dsl-retrieve-entry' for use by the abbreviation loader.")
+
+(defvar johnson-dsl--abbreviation-cache (make-hash-table :test #'equal)
+  "Cache of abbreviation tables.
+Maps dict-dir to a hash table of abbreviation to expansion, or nil
+if no abbreviation file exists.")
 
 ;;;; Dictzip helpers
 
@@ -251,6 +266,82 @@ directly for indexing and retrieval."
     ('utf-16-be 2)
     ('utf-8-with-signature 3)
     (_ 0)))
+
+;;;; Abbreviation support
+
+(defun johnson-dsl--abbreviation-path (dict-path)
+  "Derive the abbreviation file path from DICT-PATH.
+For \"foo.dsl\" returns \"foo_abrv.dsl\"; for \"foo.dsl.dz\" returns
+\"foo_abrv.dsl\"."
+  (let ((base (if (johnson-dsl--dictzip-p dict-path)
+                  (file-name-sans-extension
+                   (file-name-sans-extension dict-path))
+                (file-name-sans-extension dict-path))))
+    (concat base "_abrv.dsl")))
+
+(defun johnson-dsl--load-abbreviations (dict-path)
+  "Load the abbreviation table for the dictionary at DICT-PATH.
+Returns a hash table mapping abbreviation strings to their
+expansions, or nil if no abbreviation file exists.  Results are
+cached per dictionary directory."
+  (let* ((dict-dir (file-name-directory dict-path))
+         (cached (gethash dict-dir johnson-dsl--abbreviation-cache 'missing)))
+    (if (not (eq cached 'missing))
+        ;; Cache hit: return the value (may be nil).
+        cached
+      ;; Cache miss: load abbreviations.
+      (let ((abrv-path (johnson-dsl--abbreviation-path dict-path)))
+        (if (not (file-exists-p abrv-path))
+            (progn
+              (puthash dict-dir nil johnson-dsl--abbreviation-cache)
+              nil)
+          (let ((table (make-hash-table :test #'equal))
+                (buf (johnson-dsl--get-buffer abrv-path)))
+            (with-current-buffer buf
+              (save-excursion
+                (goto-char (point-min))
+                ;; Skip metadata header lines.
+                (while (and (not (eobp))
+                            (or (looking-at "^#")
+                                (looking-at "^[\n\r]")))
+                  (forward-line 1))
+                ;; Parse entries: headword on flush-left line, body on
+                ;; indented lines.
+                (let ((headword nil))
+                  (while (not (eobp))
+                    (cond
+                     ;; Blank line: skip.
+                     ((looking-at "^[ \t]*$")
+                      (forward-line 1))
+                     ;; Indented line: body.
+                     ((looking-at "^[\t ]")
+                      (when (and headword
+                                 (not (gethash headword table)))
+                        (let* ((line (buffer-substring-no-properties
+                                      (line-beginning-position)
+                                      (line-end-position)))
+                               (trimmed (string-trim line))
+                               (stripped (replace-regexp-in-string
+                                          "\\[/?[a-z!*'][^]]*\\]" ""
+                                          trimmed)))
+                          (puthash headword stripped table)))
+                      ;; Skip remaining body lines.
+                      (forward-line 1)
+                      (while (and (not (eobp))
+                                  (looking-at "^[\t ]"))
+                        (forward-line 1))
+                      (setq headword nil))
+                     ;; Flush-left line: headword.
+                     (t
+                      (setq headword
+                            (string-trim-right
+                             (buffer-substring-no-properties
+                              (line-beginning-position)
+                              (line-end-position))
+                             "[\r]"))
+                      (forward-line 1)))))))
+            (puthash dict-dir table johnson-dsl--abbreviation-cache)
+            table))))))
 
 ;;;; Format detection
 
@@ -523,6 +614,7 @@ buffer (1-based offset, suitable for `buffer-substring-no-properties')."
 CHAR-OFFSET and NCHARS specify the entry's location as character
 positions in the decoded buffer (1-based offset)."
   (setq johnson-dsl--current-dict-dir (file-name-directory path))
+  (setq johnson-dsl--current-dict-path path)
   (let ((buf (johnson-dsl--get-buffer path)))
     (with-current-buffer buf
       (buffer-substring-no-properties char-offset (+ char-offset nchars)))))
@@ -687,8 +779,15 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
     ("com"
      (add-face-text-property region-start region-end 'johnson-comment-face))
     ("p"
-     ;; Abbreviation marker: render content as-is.
-     nil)
+     (add-face-text-property region-start region-end 'johnson-abbreviation-face)
+     (when johnson-dsl--current-dict-path
+       (let* ((abbr-table (johnson-dsl--load-abbreviations
+                           johnson-dsl--current-dict-path))
+              (text (buffer-substring-no-properties region-start region-end))
+              (expansion (and abbr-table (gethash text abbr-table))))
+         (when expansion
+           (put-text-property region-start region-end
+                              'help-echo expansion)))))
     ("'"
      (add-face-text-property region-start region-end 'johnson-stress-face))))
 
