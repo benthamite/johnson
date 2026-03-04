@@ -150,9 +150,29 @@ Returns the path to the zip file."
       (delete-directory dir t)
       (delete-directory cache-dir t))))
 
-(ert-deftest johnson-resource-test-resolve-nil-without-dict ()
-  "Returns nil when file doesn't exist and no dict-path given."
-  (should-not (johnson--resolve-audio-file "/nonexistent/test.mp3" nil)))
+(ert-deftest johnson-resource-test-resolve-scans-directory ()
+  "Finds companion zip by scanning the audio file's directory."
+  (let* ((dir (make-temp-file "johnson-res-test-" t))
+         (cache-dir (make-temp-file "johnson-res-cache-" t))
+         (johnson-cache-directory cache-dir)
+         (paths (johnson-resource-test--make-fixture-zip dir))
+         (audio-path (expand-file-name "test.mp3" dir)))
+    (unwind-protect
+        ;; Resolve WITHOUT dict-path — should find the zip by scanning.
+        (let ((resolved (johnson--resolve-audio-file audio-path)))
+          (should resolved)
+          (should (file-exists-p resolved))
+          (should (string-match-p "resources/" resolved)))
+      (delete-directory dir t)
+      (delete-directory cache-dir t))))
+
+(ert-deftest johnson-resource-test-resolve-nil-no-zip ()
+  "Returns nil when file doesn't exist and no companion zip in directory."
+  (let* ((dir (make-temp-file "johnson-res-test-" t))
+         (audio-path (expand-file-name "test.mp3" dir)))
+    (unwind-protect
+        (should-not (johnson--resolve-audio-file audio-path))
+      (delete-directory dir t))))
 
 ;;;; johnson-insert-audio-button
 
