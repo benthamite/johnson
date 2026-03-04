@@ -104,11 +104,120 @@ Returns the block data (unibyte string) or nil."
               (seq-take johnson-mdict--block-cache
                         johnson-mdict--block-cache-size))))))
 
+;;;; LZO1X decompression
+
+(defun johnson-mdict--lzo-decompress (data decompressed-size)
+  "Decompress LZO1X-1 compressed DATA, returning a unibyte string.
+DATA is a unibyte string of compressed bytes (raw LZO1X payload,
+without MDict's 8-byte block header).  DECOMPRESSED-SIZE is the
+expected output size in bytes.
+
+Pure Elisp port of the canonical LZO1X decompressor from the Linux
+kernel (lib/lzo/lzo1x_decompress.c)."
+  (let* ((ip 0)
+         (out (string-to-unibyte (make-string decompressed-size 0)))
+         (op 0)
+         (tk 0)                         ; token / working length
+         (state nil)
+         m-pos)
+    (cl-flet*
+        ((u8 ()
+           (prog1 (aref data ip) (cl-incf ip)))
+         (le16 ()
+           (prog1 (logior (aref data ip) (ash (aref data (1+ ip)) 8))
+             (cl-incf ip 2)))
+         (copy-lit (n)
+           (dotimes (_ n)
+             (aset out op (aref data ip))
+             (cl-incf op)
+             (cl-incf ip)))
+         (copy-match (len src)
+           (dotimes (_ len)
+             (aset out op (aref out src))
+             (cl-incf op)
+             (cl-incf src)))
+         (varlen (base)
+           (when (= tk 0)
+             (while (= (aref data ip) 0)
+               (cl-incf tk 255)
+               (cl-incf ip))
+             (cl-incf tk (+ base (u8))))))
+
+      (let ((b (u8)))
+        (cond
+         ((> b 17)
+          (setq tk (- b 17))
+          (if (>= tk 4)
+              (progn (copy-lit tk) (setq state :first-literal-run))
+            (setq state :match-next)))
+         (t
+          (cl-decf ip)
+          (setq state :outer))))
+
+      (catch 'lzo-eof
+        (while state
+          (pcase state
+            (:outer
+             (setq tk (u8))
+             (if (>= tk 16)
+                 (setq state :match)
+               (varlen 15)
+               (copy-lit (+ tk 3))
+               (setq state :first-literal-run)))
+            (:first-literal-run
+             (setq tk (u8))
+             (if (>= tk 16)
+                 (setq state :match)
+               (setq m-pos (- op (+ 1 #x0800) (ash tk -2) (ash (u8) 2)))
+               (copy-match 3 m-pos)
+               (setq state :match-done)))
+            (:match
+             (cond
+              ((>= tk 64)
+               (let ((next-b (u8)))
+                 (setq m-pos (- op 1
+                                (logand (ash tk -2) 7)
+                                (ash next-b 3)))
+                 (copy-match (1+ (ash tk -5)) m-pos)))
+              ((>= tk 32)
+               (setq tk (logand tk 31))
+               (varlen 31)
+               (let ((w (le16)))
+                 (setq m-pos (- op 1 (ash w -2)))
+                 (copy-match (+ tk 2) m-pos)))
+              ((>= tk 16)
+               (setq m-pos op)
+               (cl-decf m-pos (ash (logand tk 8) 11))
+               (setq tk (logand tk 7))
+               (varlen 7)
+               (let ((w (le16)))
+                 (cl-decf m-pos (ash w -2))
+                 (when (= m-pos op)
+                   (throw 'lzo-eof nil))
+                 (cl-decf m-pos #x4000)
+                 (copy-match (+ tk 2) m-pos)))
+              (t
+               (let ((next-b (u8)))
+                 (setq m-pos (- op 1 (ash tk -2) (ash next-b 2)))
+                 (copy-match 2 m-pos))))
+             (setq state :match-done))
+            (:match-done
+             (setq tk (logand (aref data (- ip 2)) 3))
+             (if (= tk 0)
+                 (setq state :outer)
+               (setq state :match-next)))
+            (:match-next
+             (copy-lit tk)
+             (setq tk (u8))
+             (setq state :match))))))
+    out))
+
 ;;;; Block decompression
 
-(defun johnson-mdict--decompress-block (data)
+(defun johnson-mdict--decompress-block (data &optional decomp-size)
   "Decompress a single MDict data block.
 DATA is a unibyte string containing the raw block (with 8-byte header).
+DECOMP-SIZE is the expected decompressed size (required for LZO blocks).
 Returns the decompressed unibyte string."
   (let ((comp-type (johnson-mdict--u32be data 0)))
     (pcase comp-type
@@ -123,7 +232,10 @@ Returns the decompressed unibyte string."
          (zlib-decompress-region (point-min) (point-max))
          (buffer-string)))
       (#x01000000
-       (error "LZO compression not yet supported"))
+       ;; LZO compression: strip 8-byte header, decompress.
+       (unless decomp-size
+         (error "LZO decompression requires decompressed size"))
+       (johnson-mdict--lzo-decompress (substring data 8) decomp-size))
       (_
        (error "Unknown MDict compression type: %08x" comp-type)))))
 
@@ -312,6 +424,7 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
               (block-index 0))
           (dolist (info block-infos)
             (let* ((comp-size (car info))
+                   (decomp-size (cdr info))
                    (block-data (substring blocks-data block-pos
                                           (+ block-pos comp-size))))
               ;; Decrypt even-indexed keyword blocks if encrypted.
@@ -322,7 +435,8 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
                         (concat (substring block-data 0 8)
                                 (johnson-mdict--decrypt-data
                                  (substring block-data 8) kb-key)))))
-              (let* ((decompressed (johnson-mdict--decompress-block block-data))
+              (let* ((decompressed (johnson-mdict--decompress-block
+                                    block-data decomp-size))
                      (entries (johnson-mdict--parse-kw-block-entries
                                decompressed num-width encoding)))
                 (push entries all-entries))
@@ -487,9 +601,10 @@ Returns a unibyte string."
         (let* ((rec-info (johnson-mdict--parse-record-section path))
                (block-info (aref (plist-get rec-info :blocks) block-index))
                (comp-size (nth 0 block-info))
+               (decomp-size (nth 1 block-info))
                (file-off (nth 2 block-info))
                (raw (johnson-mdict--read-file-region path file-off comp-size))
-               (decompressed (johnson-mdict--decompress-block raw)))
+               (decompressed (johnson-mdict--decompress-block raw decomp-size)))
           (johnson-mdict--block-cache-put cache-key decompressed)
           decompressed))))
 
