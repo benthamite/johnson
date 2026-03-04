@@ -1423,18 +1423,34 @@ Skip extraction if already cached."
                    filename zip-path exit-code)
           nil)))))
 
-(defun johnson--resolve-audio-file (audio-path dict-path)
+(defun johnson--find-resource-zips (dir)
+  "Return all `.dsl.files.zip' archives in DIR, or nil."
+  (when (file-directory-p dir)
+    (directory-files dir t "\\.dsl\\.files\\.zip\\'" t)))
+
+(defun johnson--resolve-audio-file (audio-path &optional dict-path)
   "Resolve AUDIO-PATH, extracting from a companion zip if needed.
-If AUDIO-PATH exists on disk, return it.  Otherwise, look for a
-companion `.dsl.files.zip' archive via DICT-PATH, extract the
-file, and return the cached path.  Return nil if unavailable."
-  (cond
-   ((file-exists-p audio-path) audio-path)
-   (dict-path
-    (let ((zip (johnson--resource-zip-path dict-path)))
-      (when zip
-        (johnson--extract-resource zip (file-name-nondirectory audio-path)))))
-   (t nil)))
+If AUDIO-PATH exists on disk, return it.  Otherwise, search the
+audio file's directory for companion `.dsl.files.zip' archives
+and extract the file from the first matching one.  If DICT-PATH
+is provided, try its companion zip first for efficiency.
+Return the resolved path, or nil if unavailable."
+  (if (file-exists-p audio-path)
+      audio-path
+    (let* ((filename (file-name-nondirectory audio-path))
+           (dir (file-name-directory audio-path))
+           (result nil))
+      ;; If dict-path is provided, try its specific companion zip first.
+      (when dict-path
+        (let ((zip (johnson--resource-zip-path dict-path)))
+          (when zip
+            (setq result (johnson--extract-resource zip filename)))))
+      ;; Otherwise, scan the directory for any companion zips.
+      (unless result
+        (let ((zips (johnson--find-resource-zips dir)))
+          (while (and zips (not result))
+            (setq result (johnson--extract-resource (pop zips) filename)))))
+      result)))
 
 ;;;; Audio playback
 
@@ -1474,10 +1490,11 @@ See `johnson-audio-player'."
     (message "johnson: invalid `johnson-audio-player' value: %S"
              johnson-audio-player))))
 
-(defun johnson--play-audio (file dict-path)
-  "Resolve and play audio FILE, using DICT-PATH for zip extraction.
-If the file doesn't exist on disk, attempt to extract it from a
-companion zip archive.  Report an error if unavailable."
+(defun johnson--play-audio (file &optional dict-path)
+  "Resolve and play audio FILE.
+If the file doesn't exist on disk, search its directory for a
+companion `.dsl.files.zip' archive and extract on demand.
+DICT-PATH, if provided, is used as an optimization hint."
   (let ((resolved (johnson--resolve-audio-file file dict-path)))
     (if resolved
         (johnson-play-sound resolved)
