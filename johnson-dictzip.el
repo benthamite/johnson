@@ -142,13 +142,13 @@ Returns a plist with keys:
           (setq pos xend)))
       ;; FNAME (bit 3): null-terminated string
       (when (/= (logand flg 8) 0)
-        (while (and (<= pos (point-max))
+        (while (and (< pos (point-max))
                     (/= (char-after pos) 0))
           (cl-incf pos))
         (cl-incf pos))
       ;; FCOMMENT (bit 4): null-terminated string
       (when (/= (logand flg 16) 0)
-        (while (and (<= pos (point-max))
+        (while (and (< pos (point-max))
                     (/= (char-after pos) 0))
           (cl-incf pos))
         (cl-incf pos))
@@ -186,7 +186,9 @@ HEADER is the parsed header plist.  Returns a unibyte string."
                   (insert-file-contents-literally path nil
                                                   file-offset
                                                   (+ file-offset comp-size))
-                  (zlib-decompress-region 1 (point-max) t)
+                  (unless (zlib-decompress-region 1 (point-max) t)
+                    (error "Dictzip: decompression failed for chunk %d of %s"
+                           chunk-index path))
                   (buffer-string))))
           (johnson-dictzip--chunk-cache-put cache-key result)
           result))))

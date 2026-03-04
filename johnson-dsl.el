@@ -284,17 +284,16 @@ For \"foo.dsl\" returns \"foo_abrv.dsl\"; for \"foo.dsl.dz\" returns
 Returns a hash table mapping abbreviation strings to their
 expansions, or nil if no abbreviation file exists.  Results are
 cached per dictionary directory."
-  (let* ((dict-dir (file-name-directory dict-path))
-         (cached (gethash dict-dir johnson-dsl--abbreviation-cache 'missing)))
+  (let* ((abrv-path (johnson-dsl--abbreviation-path dict-path))
+         (cached (gethash abrv-path johnson-dsl--abbreviation-cache 'missing)))
     (if (not (eq cached 'missing))
         ;; Cache hit: return the value (may be nil).
         cached
       ;; Cache miss: load abbreviations.
-      (let ((abrv-path (johnson-dsl--abbreviation-path dict-path)))
-        (if (not (file-exists-p abrv-path))
-            (progn
-              (puthash dict-dir nil johnson-dsl--abbreviation-cache)
-              nil)
+      (if (not (file-exists-p abrv-path))
+          (progn
+            (puthash abrv-path nil johnson-dsl--abbreviation-cache)
+            nil)
           (let ((table (make-hash-table :test #'equal))
                 (buf (johnson-dsl--get-buffer abrv-path)))
             (with-current-buffer buf
@@ -340,8 +339,8 @@ cached per dictionary directory."
                               (line-end-position))
                              "[\r]"))
                       (forward-line 1)))))))
-            (puthash dict-dir table johnson-dsl--abbreviation-cache)
-            table))))))
+            (puthash abrv-path table johnson-dsl--abbreviation-cache)
+            table)))))
 
 ;;;; Format detection
 
@@ -639,7 +638,7 @@ Inserts the rendered text at point."
           (tag-re "\\[/?[a-z!*'][^]]*\\]")
           (stack nil))
       (insert text)
-      (let ((end (point)))
+      (let ((end (copy-marker (point) t)))
         ;; First pass: handle <<...>> cross-references.
         (save-excursion
           (goto-char start)
@@ -655,9 +654,7 @@ Inserts the rendered text at point."
                                   'face 'johnson-ref-face
                                   'action (lambda (_btn)
                                             (johnson-lookup ref-text))
-                                  'help-echo (format "Look up \"%s\"" ref-text)))
-              ;; Adjust end marker.
-              (setq end (+ end (- (length ref-text) (- m-end m-beg)))))))
+                                  'help-echo (format "Look up \"%s\"" ref-text))))))
         ;; Second pass: process DSL tags.
         (save-excursion
           (goto-char start)
@@ -678,7 +675,6 @@ Inserts the rendered text at point."
                   (setq tag-name tag-content)))
               ;; Delete the tag text.
               (delete-region tag-beg tag-end)
-              (setq end (- end (- tag-end tag-beg)))
               (goto-char tag-beg)
               (cond
                ;; Self-closing margin tags: [m], [m0]-[m9]
@@ -697,27 +693,24 @@ Inserts the rendered text at point."
                 nil)
                ;; [s] media tag: extract filename and insert play button
                ((and (not closing-p) (equal tag-name "s"))
-                (let* ((s-end (save-excursion
-                                (if (re-search-forward "\\[/s\\]" end t)
-                                    (match-end 0)
-                                  end)))
-                       ;; Extract the filename between [s] and [/s].
-                       (content-end (- s-end 4)) ; before [/s]
-                       (filename (subst-char-in-string
-                                  ?\\ ?/
-                                  (string-trim
-                                   (buffer-substring-no-properties
-                                    tag-beg content-end))))
-                       (old-len (- s-end tag-beg)))
-                  (delete-region tag-beg s-end)
-                  (when (and (not (string-empty-p filename))
-                             johnson-dsl--current-dict-dir)
-                    (let ((audio-path (expand-file-name
-                                       filename
-                                       johnson-dsl--current-dict-dir)))
-                      (johnson-insert-audio-button
-                       audio-path nil johnson-dsl--current-dict-path)))
-                  (setq end (+ end (- (point) tag-beg) (- old-len)))))
+                (let ((s-end (save-excursion
+                               (when (re-search-forward "\\[/s\\]" end t)
+                                 (match-end 0)))))
+                  (when s-end
+                    (let* ((content-end (- s-end 4))
+                           (filename (subst-char-in-string
+                                      ?\\ ?/
+                                      (string-trim
+                                       (buffer-substring-no-properties
+                                        tag-beg content-end)))))
+                      (delete-region tag-beg s-end)
+                      (when (and (not (string-empty-p filename))
+                                 johnson-dsl--current-dict-dir)
+                        (let ((audio-path (expand-file-name
+                                           filename
+                                           johnson-dsl--current-dict-dir)))
+                          (johnson-insert-audio-button
+                           audio-path nil johnson-dsl--current-dict-path)))))))
                ;; Opening tags: push onto stack.
                ((not closing-p)
                 (push (list tag-name (point) tag-args) stack))
@@ -732,7 +725,7 @@ Inserts the rendered text at point."
                                               region-args)))))))))
         ;; Handle [trn]/[!trn] block separation: ensure blank line separation.
         ;; This is handled by the blank-line logic already in the output.
-        ))))
+        (set-marker end nil)))))
 
 (defun johnson-dsl--apply-tag (tag-name region-start region-end tag-args)
   "Apply rendering for TAG-NAME over REGION-START to REGION-END.

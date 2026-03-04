@@ -56,7 +56,7 @@ cached in `johnson-stardict--ifo-cache'."
             (error "Not a StarDict .ifo file: %s" path))
           (forward-line 1)
           (while (not (eobp))
-            (when (looking-at "^\\([a-zA-Z_]+\\)=\\(.*\\)$")
+            (when (looking-at "^\\s-*\\([a-zA-Z_]+\\)\\s-*=\\s-*\\(.*?\\)\\s-*$")
               (push (cons (match-string 1) (match-string 2)) result))
             (forward-line 1)))
         (setq result (nreverse result))
@@ -133,7 +133,8 @@ Returns a unibyte string.  Handles both plain .idx and .idx.gz files."
       (if (string-suffix-p ".idx.gz" idx-path)
           (progn
             (insert-file-contents-literally idx-path)
-            (zlib-decompress-region (point-min) (point-max))
+            (unless (zlib-decompress-region (point-min) (point-max))
+              (error "Failed to decompress .idx.gz file: %s" idx-path))
             (buffer-string))
         (insert-file-contents-literally idx-path)
         (buffer-string)))))
@@ -248,6 +249,10 @@ for use by the renderer."
                   (insert-file-contents-literally dict-path nil
                                                   byte-offset
                                                   (+ byte-offset byte-size))
+                  (let ((actual (buffer-size)))
+                    (unless (= actual byte-size)
+                      (error "StarDict .dict: expected %d bytes at offset %d, got %d"
+                             byte-size byte-offset actual)))
                   (buffer-string)))))
     (setq johnson-stardict--current-sametypesequence sametypesequence)
     (setq johnson-stardict--current-dict-dir (file-name-directory path))
@@ -284,40 +289,48 @@ Handles XDXF tags like <kref>, <gr>, <ex>, <abbr>, <dtrn>."
         (start (point)))
     (insert text)
     (let ((end (point)))
-      ;; Replace <br/> with newlines.
-      (save-excursion
-        (goto-char start)
-        (while (re-search-forward "<br\\s-*/?>\\|<br>" end t)
-          (let ((len (- (match-end 0) (match-beginning 0))))
-            (replace-match "\n")
-            (setq end (- end len -1)))))
-      ;; Process paired XDXF tags.
-      (let ((tag-re "<\\(/\\)?\\([a-zA-Z_]+\\)\\([^>]*\\)>")
-            (stack nil))
+      ;; Use a marker for end so buffer modifications are tracked
+      ;; automatically (e.g., bracket insertion in <tr> tags).
+      (let ((end-marker (copy-marker end)))
+        ;; Replace <br/> with newlines.
         (save-excursion
           (goto-char start)
-          (while (re-search-forward tag-re end t)
-            (let* ((closing-p (match-string 1))
-                   (tag-name (downcase (match-string 2)))
-                   (tag-attrs (or (match-string 3) ""))
-                   (tag-beg (match-beginning 0))
-                   (tag-end (match-end 0)))
-              ;; Delete the tag.
-              (delete-region tag-beg tag-end)
-              (setq end (- end (- tag-end tag-beg)))
-              (goto-char tag-beg)
-              (cond
-               ;; Closing tag.
-               (closing-p
-                (let ((entry (cl-find tag-name stack :key #'car :test #'equal)))
-                  (when entry
-                    (setq stack (remove entry stack))
-                    (let ((region-start (nth 1 entry)))
-                      (johnson-stardict--apply-xdxf-tag
-                       tag-name region-start (point))))))
-               ;; Opening tag.
-               (t
-                (push (list tag-name (point) tag-attrs) stack))))))))))
+          (while (re-search-forward "<br\\s-*/?>\\|<br>" end-marker t)
+            (replace-match "\n")))
+        ;; Process paired XDXF tags.
+        (let ((tag-re "<\\(/\\)?\\([a-zA-Z_]+\\)\\([^>]*\\)>")
+              (stack nil))
+          (save-excursion
+            (goto-char start)
+            (while (re-search-forward tag-re end-marker t)
+              (let* ((closing-p (match-string 1))
+                     (tag-name (downcase (match-string 2)))
+                     (tag-attrs (or (match-string 3) ""))
+                     (tag-beg (match-beginning 0))
+                     (tag-end (match-end 0)))
+                ;; Delete the tag.
+                (delete-region tag-beg tag-end)
+                (goto-char tag-beg)
+                (cond
+                 ;; Closing tag.
+                 (closing-p
+                  (let ((entry (cl-find tag-name stack :key #'car :test #'equal)))
+                    (when entry
+                      (setq stack (remove entry stack))
+                      (let ((region-start (nth 1 entry)))
+                        (johnson-stardict--apply-xdxf-tag
+                         tag-name region-start (point))
+                        (when (markerp region-start)
+                          (set-marker region-start nil))))))
+                 ;; Opening tag: use markers so positions track insertions.
+                 (t
+                  (push (list tag-name (copy-marker (point)) tag-attrs)
+                        stack))))))
+          ;; Clean up any remaining markers on the stack.
+          (dolist (entry stack)
+            (when (markerp (nth 1 entry))
+              (set-marker (nth 1 entry) nil))))
+        (set-marker end-marker nil)))))
 
 (defun johnson-stardict--apply-xdxf-tag (tag-name region-start region-end)
   "Apply rendering for XDXF TAG-NAME over REGION-START to REGION-END."
@@ -392,6 +405,8 @@ DATA is raw WAV audio bytes; written to a temp file for playback."
       (with-temp-file temp-file
         (set-buffer-multibyte nil)
         (insert data))
+      (when (boundp 'johnson--temp-audio-files)
+        (push temp-file johnson--temp-audio-files))
       (johnson-insert-audio-button temp-file))))
 
 ;;;; Field splitting for sametypesequence
@@ -414,7 +429,7 @@ Returns a list of (TYPE-CHAR . DATA-BYTES) cons cells."
               (setq pos data-len))
           ;; Non-last fields: for lowercase types, find null terminator.
           ;; For uppercase types, read 4-byte size prefix.
-          (if (<= type-char ?z)  ; lowercase
+          (if (and (>= type-char ?a) (<= type-char ?z))  ; lowercase
               ;; Find null terminator.
               (let ((end pos))
                 (while (and (< end data-len)
