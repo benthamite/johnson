@@ -116,7 +116,13 @@ The buffer contains the raw decompressed gzip stream as unibyte data."
 
 (defun johnson-bgl--decompress-into-buffer (path)
   "Decompress the gzip stream from BGL file PATH into the current buffer.
-Expects the current buffer to be unibyte and writable."
+Expects the current buffer to be unibyte and writable.
+
+Some BGL files produced by Babylon have a zeroed-out CRC32 in the
+gzip trailer.  Standard gzip decompression (via `jka-compr') rejects
+these with a CRC error even though the deflate data is intact.  We
+call gzip directly via `call-process' and tolerate exit code 1 (CRC
+error) provided that output was produced."
   (let* ((gz-offset (johnson-bgl--gzip-offset path))
          (temp-file (make-temp-file "johnson-bgl-" nil ".gz")))
     (unwind-protect
@@ -127,10 +133,15 @@ Expects the current buffer to be unibyte and writable."
             (insert-file-contents-literally path nil gz-offset)
             (let ((coding-system-for-write 'no-conversion))
               (write-region (point-min) (point-max) temp-file nil 'silent)))
-          ;; Read it back with auto-decompression.
-          (let ((auto-compression-mode t))
-            (jka-compr-install)
-            (insert-file-contents (concat temp-file))))
+          ;; Decompress via gzip subprocess.  We use call-process
+          ;; rather than jka-compr because some BGL files have invalid
+          ;; gzip CRC32 (zeroed out), causing gzip to exit 1 even
+          ;; though the deflate payload decompresses fully.
+          (let ((exit-code (call-process "gzip" temp-file t nil
+                                         "-c" "-q" "-d")))
+            (when (and (/= exit-code 0) (= (buffer-size) 0))
+              (error "BGL decompression failed for %s (gzip exit %d)"
+                     (file-name-nondirectory path) exit-code))))
       (delete-file temp-file))))
 
 ;;;; Header parsing
