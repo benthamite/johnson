@@ -7,9 +7,6 @@
 
 ;; This file is NOT part of GNU Emacs.
 
-;; Named after Samuel Johnson, author of "A Dictionary of the English
-;; Language" (1755).
-
 ;;; Commentary:
 
 ;; `johnson' is a multi-format dictionary UI for Emacs, providing the
