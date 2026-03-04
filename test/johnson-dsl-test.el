@@ -314,5 +314,100 @@
       (should btn)
       (should (equal (button-label btn) "reference")))))
 
+;;;; Abbreviation support
+
+(ert-deftest johnson-dsl-test-abbreviation-path-plain ()
+  "Derives abbreviation path from a plain DSL file."
+  (should (equal (johnson-dsl--abbreviation-path "/tmp/dict/foo.dsl")
+                 "/tmp/dict/foo_abrv.dsl")))
+
+(ert-deftest johnson-dsl-test-abbreviation-path-dictzip ()
+  "Derives abbreviation path from a dictzip DSL file."
+  (should (equal (johnson-dsl--abbreviation-path "/tmp/dict/foo.dsl.dz")
+                 "/tmp/dict/foo_abrv.dsl")))
+
+(ert-deftest johnson-dsl-test-load-abbreviations ()
+  "Loads abbreviation table from the test fixture."
+  (johnson-dsl-test--kill-cache-buffers)
+  (clrhash johnson-dsl--abbreviation-cache)
+  (let* ((dict-path (johnson-dsl-test--fixture "test-dict.dsl"))
+         (table (johnson-dsl--load-abbreviations dict-path)))
+    (johnson-dsl-test--kill-cache-buffers)
+    (clrhash johnson-dsl--abbreviation-cache)
+    (should (hash-table-p table))
+    (should (equal (gethash "noun" table) "sustantivo"))
+    (should (equal (gethash "f" table) "femenino"))
+    (should (equal (gethash "m" table) "masculino"))
+    (should (equal (gethash "adj" table) "adjetivo"))))
+
+(ert-deftest johnson-dsl-test-load-abbreviations-missing ()
+  "Returns nil when no abbreviation file exists."
+  (johnson-dsl-test--kill-cache-buffers)
+  (clrhash johnson-dsl--abbreviation-cache)
+  (let* ((dict-path (johnson-dsl-test--fixture "test-dict-alternation.dsl"))
+         (table (johnson-dsl--load-abbreviations dict-path)))
+    (johnson-dsl-test--kill-cache-buffers)
+    (clrhash johnson-dsl--abbreviation-cache)
+    (should (null table))))
+
+(ert-deftest johnson-dsl-test-load-abbreviations-cache ()
+  "Abbreviation loader caches results per directory."
+  (johnson-dsl-test--kill-cache-buffers)
+  (clrhash johnson-dsl--abbreviation-cache)
+  (let* ((dict-path (johnson-dsl-test--fixture "test-dict.dsl"))
+         (table1 (johnson-dsl--load-abbreviations dict-path))
+         (table2 (johnson-dsl--load-abbreviations dict-path)))
+    (johnson-dsl-test--kill-cache-buffers)
+    (clrhash johnson-dsl--abbreviation-cache)
+    ;; Same object returned from cache.
+    (should (eq table1 table2))))
+
+(ert-deftest johnson-dsl-test-render-p-face ()
+  "[p] tags apply `johnson-abbreviation-face'."
+  (with-temp-buffer
+    (let ((johnson-dsl--current-dict-path nil))
+      (johnson-dsl-render-entry "\t[p]noun[/p]")
+      (let ((pos (point-min))
+            (found nil))
+        (while (and (< pos (point-max)) (not found))
+          (let ((face (get-text-property pos 'face)))
+            (when (and face (or (eq face 'johnson-abbreviation-face)
+                                (and (listp face)
+                                     (memq 'johnson-abbreviation-face face))))
+              (setq found t)))
+          (setq pos (1+ pos)))
+        (should found)))))
+
+(ert-deftest johnson-dsl-test-render-p-help-echo ()
+  "[p] tags get `help-echo' when abbreviation file exists."
+  (johnson-dsl-test--kill-cache-buffers)
+  (clrhash johnson-dsl--abbreviation-cache)
+  (with-temp-buffer
+    (let ((johnson-dsl--current-dict-path
+           (johnson-dsl-test--fixture "test-dict.dsl")))
+      (johnson-dsl-render-entry "\t[p]noun[/p]")
+      (let ((echo (get-text-property (point-min) 'help-echo)))
+        (should (equal echo "sustantivo")))))
+  (johnson-dsl-test--kill-cache-buffers)
+  (clrhash johnson-dsl--abbreviation-cache))
+
+(ert-deftest johnson-dsl-test-render-p-no-abrv-file ()
+  "[p] tags render without error when no abbreviation file exists."
+  (johnson-dsl-test--kill-cache-buffers)
+  (clrhash johnson-dsl--abbreviation-cache)
+  (with-temp-buffer
+    (let ((johnson-dsl--current-dict-path
+           (johnson-dsl-test--fixture "test-dict-alternation.dsl")))
+      (johnson-dsl-render-entry "\t[p]noun[/p]")
+      ;; Should still have the face, but no help-echo.
+      (let ((face (get-text-property (point-min) 'face))
+            (echo (get-text-property (point-min) 'help-echo)))
+        (should (or (eq face 'johnson-abbreviation-face)
+                    (and (listp face)
+                         (memq 'johnson-abbreviation-face face))))
+        (should (null echo)))))
+  (johnson-dsl-test--kill-cache-buffers)
+  (clrhash johnson-dsl--abbreviation-cache))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here

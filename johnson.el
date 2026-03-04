@@ -1328,6 +1328,8 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
         (kill-buffer buf)
         (cl-incf count)))
     (johnson--close-all-dbs)
+    (when (boundp 'johnson-dsl--abbreviation-cache)
+      (clrhash johnson-dsl--abbreviation-cache))
     (setq johnson--dictionaries nil)
     (setq johnson--indexed-p nil)
     (message "Closed %d cache buffer%s and all database connections"
