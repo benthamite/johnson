@@ -21,6 +21,8 @@
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-insert-audio-button "johnson")
 
+(defvar johnson-cache-directory)
+
 ;;;; Binary integer helpers — from unibyte strings
 
 (defsubst johnson-mdict--u16be (data pos)
@@ -70,6 +72,10 @@ Maps path to a sorted vector of record offsets.")
 (defvar johnson-mdict--current-dict-dir nil
   "Directory of the dictionary being rendered.
 Set by `johnson-mdict-retrieve-entry' for use by the renderer.")
+
+(defvar johnson-mdict--current-dict-path nil
+  "Full path of the MDX file being rendered.
+Set by `johnson-mdict-retrieve-entry' for use by MDD resource lookup.")
 
 ;;;; Block cache (simple LRU)
 
@@ -693,6 +699,7 @@ where record-offset is the byte offset into the decompressed record stream."
 RECORD-OFFSET is the offset into the decompressed record stream.
 Returns the entry data as a decoded string."
   (setq johnson-mdict--current-dict-dir (file-name-directory path))
+  (setq johnson-mdict--current-dict-path path)
   (let* ((header (johnson-mdict--parse-header path))
          (encoding (plist-get header :encoding))
          (loc (johnson-mdict--locate-record path record-offset))
@@ -729,17 +736,121 @@ Returns the entry data as a decoded string."
 DATA is a decoded string containing HTML content."
   (let ((start (point))
         (johnson-html--current-dict-dir johnson-mdict--current-dict-dir)
-        (johnson-html--current-dict-path nil))
+        (johnson-html--current-dict-path johnson-mdict--current-dict-path)
+        (johnson-html--resolve-resource-fn #'johnson-mdict--resolve-resource))
     (insert data)
     (johnson-html-render-region start (point))))
 
 ;;;; MDD resource lookup
+
+(defvar johnson-mdict--mdd-index-cache (make-hash-table :test #'equal)
+  "Cache of MDD keyword indices.
+Maps mdd-path to a sorted vector of (KEY . OFFSET) pairs.")
+
+(defvar johnson-mdict--mdd-record-cache (make-hash-table :test #'equal)
+  "Cache of MDD record section metadata.
+Maps mdd-path to record section plist.")
 
 (defun johnson-mdict--mdd-path (mdx-path)
   "Return the .mdd file path corresponding to MDX-PATH, or nil."
   (let ((mdd (concat (file-name-sans-extension mdx-path) ".mdd")))
     (when (file-exists-p mdd)
       mdd)))
+
+(defun johnson-mdict--build-mdd-index (mdd-path)
+  "Build and cache the keyword index for MDD file at MDD-PATH.
+Returns a sorted vector of (KEY . OFFSET) pairs."
+  (or (gethash mdd-path johnson-mdict--mdd-index-cache)
+      (let* ((keywords (johnson-mdict--parse-keyword-section mdd-path))
+             ;; Normalize keys to forward-slash, lowercased for lookup.
+             (entries (mapcar (lambda (pair)
+                                (cons (downcase
+                                       (subst-char-in-string ?\\ ?/ (car pair)))
+                                      (cdr pair)))
+                              keywords))
+             (sorted (sort entries (lambda (a b) (string< (car a) (car b)))))
+             (vec (vconcat sorted)))
+        ;; Also parse record section for later retrieval.
+        (johnson-mdict--parse-record-section mdd-path)
+        (puthash mdd-path vec johnson-mdict--mdd-index-cache)
+        vec)))
+
+(defun johnson-mdict--mdd-binary-search (vec key)
+  "Binary search VEC for KEY.
+VEC is a sorted vector of (KEY . OFFSET) pairs.
+Returns the offset if found, nil otherwise."
+  (let ((lo 0)
+        (hi (1- (length vec)))
+        (result nil))
+    (while (<= lo hi)
+      (let* ((mid (/ (+ lo hi) 2))
+             (mid-key (car (aref vec mid))))
+        (cond
+         ((string< key mid-key) (setq hi (1- mid)))
+         ((string< mid-key key) (setq lo (1+ mid)))
+         (t (setq result (cdr (aref vec mid))
+                  lo (1+ hi))))))
+    result))
+
+(defun johnson-mdict--mdd-lookup (mdd-path resource-key)
+  "Look up RESOURCE-KEY in the MDD file at MDD-PATH.
+Returns raw bytes as a unibyte string, or nil."
+  (let* ((index (johnson-mdict--build-mdd-index mdd-path))
+         (normalized-key (downcase (subst-char-in-string ?\\ ?/ resource-key)))
+         ;; Try with and without leading slash.
+         (offset (or (johnson-mdict--mdd-binary-search index normalized-key)
+                     (johnson-mdict--mdd-binary-search
+                      index (concat "/" normalized-key)))))
+    (when offset
+      (let* ((loc (johnson-mdict--locate-record mdd-path offset))
+             (block-idx (car loc))
+             (local-offset (cdr loc))
+             (block-data (johnson-mdict--read-record-block mdd-path block-idx))
+             (next-off (johnson-mdict--next-offset mdd-path offset))
+             (entry-span (if (= next-off -1)
+                             (- (length block-data) local-offset)
+                           (- next-off offset)))
+             (avail (- (length block-data) local-offset)))
+        (if (<= entry-span avail)
+            (substring block-data local-offset
+                       (+ local-offset entry-span))
+          ;; Spans multiple blocks.
+          (let ((parts (list (substring block-data local-offset)))
+                (remaining (- entry-span avail))
+                (bi (1+ block-idx)))
+            (while (> remaining 0)
+              (let* ((next-block (johnson-mdict--read-record-block mdd-path bi))
+                     (take (min remaining (length next-block))))
+                (push (substring next-block 0 take) parts)
+                (cl-decf remaining take)
+                (cl-incf bi)))
+            (apply #'concat (nreverse parts))))))))
+
+(defun johnson-mdict--resolve-resource (mdx-path resource-name)
+  "Resolve RESOURCE-NAME for the MDict dictionary at MDX-PATH.
+Tries disk first, then MDD lookup.  Writes to resource cache on
+MDD hit.  Returns the local file path or nil."
+  (let* ((dir (file-name-directory mdx-path))
+         (disk-path (expand-file-name resource-name dir)))
+    (if (file-exists-p disk-path)
+        disk-path
+      ;; Try MDD.
+      (let ((mdd (johnson-mdict--mdd-path mdx-path)))
+        (when mdd
+          (let ((data (johnson-mdict--mdd-lookup mdd resource-name)))
+            (when data
+              ;; Write to resource cache.
+              (let* ((cache-dir (expand-file-name
+                                 (md5 mdx-path)
+                                 (expand-file-name
+                                  "resources" johnson-cache-directory)))
+                     (cached (expand-file-name resource-name cache-dir)))
+                (make-directory (file-name-directory cached) t)
+                (let ((coding-system-for-write 'no-conversion))
+                  (with-temp-file cached
+                    (set-buffer-multibyte nil)
+                    (insert data)))
+                cached))))))))
 
 ;;;; Cache clearing
 
@@ -748,6 +859,8 @@ DATA is a decoded string containing HTML content."
   (clrhash johnson-mdict--header-cache)
   (clrhash johnson-mdict--record-meta-cache)
   (clrhash johnson-mdict--offset-cache)
+  (clrhash johnson-mdict--mdd-index-cache)
+  (clrhash johnson-mdict--mdd-record-cache)
   (setq johnson-mdict--block-cache nil))
 
 ;;;; Format registration

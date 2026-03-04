@@ -22,6 +22,8 @@
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
 (declare-function johnson-insert-audio-button "johnson")
+(declare-function johnson--image-file-p "johnson")
+(declare-function johnson--insert-image "johnson")
 
 ;;;; Faces
 
@@ -631,8 +633,19 @@ Inserts the rendered text at point."
                               line))
                           lines))
          (text (string-join stripped "\n")))
-    ;; Remove {{...}} media references.
-    (setq text (replace-regexp-in-string "{{[^}]*}}" "" text))
+    ;; Process {{...}} media references: render images, strip others.
+    (setq text
+          (replace-regexp-in-string
+           "{{\\([^}]*\\)}}"
+           (lambda (match)
+             (let ((filename (match-string 1 match)))
+               (if (and (fboundp 'johnson--image-file-p)
+                        johnson-dsl--current-dict-dir
+                        (johnson--image-file-p filename))
+                   ;; Mark for post-insertion (can't insert into a string).
+                   (format "\0IMG\0%s\0" filename)
+                 "")))
+           text))
     ;; Insert and parse tags in-place.
     (let ((start (point))
           (tag-re "\\[/?[a-z!*'][^]]*\\]")
@@ -691,7 +704,7 @@ Inserts the rendered text at point."
                ;; [/m] closing: just remove the tag (already deleted)
                ((and closing-p (string-match "^m[0-9]?$" tag-name))
                 nil)
-               ;; [s] media tag: extract filename and insert play button
+               ;; [s] media tag: extract filename and insert image or play button
                ((and (not closing-p) (equal tag-name "s"))
                 (let ((s-end (save-excursion
                                (when (re-search-forward "\\[/s\\]" end t)
@@ -706,11 +719,14 @@ Inserts the rendered text at point."
                       (delete-region tag-beg s-end)
                       (when (and (not (string-empty-p filename))
                                  johnson-dsl--current-dict-dir)
-                        (let ((audio-path (expand-file-name
-                                           filename
-                                           johnson-dsl--current-dict-dir)))
-                          (johnson-insert-audio-button
-                           audio-path nil johnson-dsl--current-dict-path)))))))
+                        (let ((path (expand-file-name
+                                     filename
+                                     johnson-dsl--current-dict-dir)))
+                          (if (and (fboundp 'johnson--image-file-p)
+                                   (johnson--image-file-p path))
+                              (johnson--insert-image path)
+                            (johnson-insert-audio-button
+                             path nil johnson-dsl--current-dict-path))))))))
                ;; Opening tags: push onto stack.
                ((not closing-p)
                 (push (list tag-name (point) tag-args) stack))
@@ -725,6 +741,19 @@ Inserts the rendered text at point."
                                               region-args)))))))))
         ;; Handle [trn]/[!trn] block separation: ensure blank line separation.
         ;; This is handled by the blank-line logic already in the output.
+        ;; Process deferred {{image}} markers.
+        (save-excursion
+          (goto-char start)
+          (while (re-search-forward "\0IMG\0\\([^\0]+\\)\0" end t)
+            (let* ((filename (match-string 1))
+                   (m-beg (match-beginning 0))
+                   (m-end (match-end 0)))
+              (delete-region m-beg m-end)
+              (goto-char m-beg)
+              (when johnson-dsl--current-dict-dir
+                (let ((path (expand-file-name
+                             filename johnson-dsl--current-dict-dir)))
+                  (johnson--insert-image path))))))
         (set-marker end nil)))))
 
 (defun johnson-dsl--apply-tag (tag-name region-start region-end tag-args)
