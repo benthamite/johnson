@@ -228,8 +228,9 @@ Returns a unibyte string."
 
 (defun johnson-mdict--decrypt-data (data checksum-bytes)
   "Decrypt MDict encrypted DATA using CHECKSUM-BYTES.
-CHECKSUM-BYTES is a 4-byte unibyte string (little-endian Adler-32
-of the keyword section header).  Returns a new unibyte string."
+CHECKSUM-BYTES is a 4-byte unibyte string (bytes 4-8 of the
+compressed block, i.e. the Adler-32 checksum).  Returns a new
+unibyte string."
   ;; Key = RIPEMD-128(checksum_bytes + "\x95\x36\x00\x00")
   (let* ((key-input (concat checksum-bytes "\x95\x36\x00\x00"))
          (key (johnson-ripemd128-hash key-input))
@@ -280,9 +281,6 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
            (total-kw-block-size (progn (cl-incf pos num-width)
                                        (johnson-mdict--read-number
                                         kw-header-data pos num-width)))
-           ;; For v2.0, checksum is the last 4 bytes of the header.
-           (checksum-bytes (when (= num-width 8)
-                             (substring kw-header-data 40 44)))
            ;; File positions.
            (index-start (+ kw-offset kw-header-size))
            (blocks-start (+ index-start index-comp-size))
@@ -290,10 +288,16 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
       ;; Read keyword block info (index) data.
       (let ((index-data (johnson-mdict--read-file-region
                          path index-start index-comp-size)))
-        ;; Decrypt block info if encrypted.
+        ;; Decrypt the block info payload if encrypted.
+        ;; Key is derived from bytes 4-8 (the Adler-32 checksum) of the
+        ;; compressed index data.  Only the payload after the 8-byte
+        ;; compression header is encrypted.
         (when (= encrypted 2)
-          (setq index-data (johnson-mdict--decrypt-data
-                            index-data checksum-bytes)))
+          (let ((key-bytes (substring index-data 4 8)))
+            (setq index-data
+                  (concat (substring index-data 0 8)
+                          (johnson-mdict--decrypt-data
+                           (substring index-data 8) key-bytes)))))
         ;; Decompress (v2.0 always compresses; v1.2 may not).
         (when (= num-width 8)
           (setq index-data (johnson-mdict--decompress-block index-data)))
@@ -311,19 +315,25 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
                    (block-data (substring blocks-data block-pos
                                           (+ block-pos comp-size))))
               ;; Decrypt even-indexed keyword blocks if encrypted.
+              ;; Key from bytes 4-8, only payload after 8-byte header.
               (when (and (= encrypted 2) (= (mod block-index 2) 0))
-                (setq block-data (johnson-mdict--decrypt-data
-                                  block-data checksum-bytes)))
+                (let ((kb-key (substring block-data 4 8)))
+                  (setq block-data
+                        (concat (substring block-data 0 8)
+                                (johnson-mdict--decrypt-data
+                                 (substring block-data 8) kb-key)))))
               (let* ((decompressed (johnson-mdict--decompress-block block-data))
                      (entries (johnson-mdict--parse-kw-block-entries
                                decompressed num-width encoding)))
-                (setq all-entries (nconc all-entries entries)))
+                (push entries all-entries))
               (cl-incf block-pos comp-size)
               (cl-incf block-index)))
           ;; Cache the keyword section end for record section parsing.
           (puthash (concat path ":kw-end") kw-section-end
                    johnson-mdict--header-cache)
-          all-entries)))))
+          ;; all-entries is a list of sub-lists (pushed in reverse
+          ;; block order); flatten into a single list.
+          (apply #'nconc (nreverse all-entries)))))))
 
 (defun johnson-mdict--parse-kw-block-infos (data num-blocks num-width encoding)
   "Parse keyword block info entries from DATA.
@@ -361,10 +371,10 @@ Returns the number of bytes consumed."
       (let* ((text-size (johnson-mdict--u16be data pos))
              (null-size (if (eq encoding 'utf-16le) 2 1)))
         (+ 2 text-size null-size))
-    ;; v1.2: 1-byte size (in chars), then text, then null byte.
+    ;; v1.2: 1-byte size (in chars), then text (no null terminator).
     (let* ((char-count (aref data pos))
            (byte-size (if (eq encoding 'utf-16le) (* char-count 2) char-count)))
-      (+ 1 byte-size 1))))
+      (+ 1 byte-size))))
 
 (defun johnson-mdict--parse-kw-block-entries (data num-width encoding)
   "Parse keyword entries from a decompressed keyword block.
@@ -492,9 +502,11 @@ parse them from scratch)."
   (unless (gethash path johnson-mdict--offset-cache)
     (let* ((pairs (or entries
                       (johnson-mdict--parse-keyword-section path)))
-           (offsets (mapcar #'cdr pairs))
-           (unique (cl-remove-duplicates (sort offsets #'<))))
-      (puthash path (vconcat unique) johnson-mdict--offset-cache))))
+           (offsets (sort (mapcar #'cdr pairs) #'<)))
+      ;; `delete-dups' is O(n) on a sorted list, unlike
+      ;; `cl-remove-duplicates' which is O(n²).
+      (puthash path (vconcat (delete-dups offsets))
+               johnson-mdict--offset-cache))))
 
 (defun johnson-mdict--next-offset (path entry-offset)
   "Find the next record offset after ENTRY-OFFSET in PATH.
