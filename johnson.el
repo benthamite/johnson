@@ -69,7 +69,7 @@ queries against the full headword index."
 The first batch is rendered synchronously when results are
 displayed; remaining results are rendered in the background
 during idle time."
-  :type 'natnum
+  :type '(integer 1 100)
   :group 'johnson)
 
 (defcustom johnson-history-max 100
@@ -135,8 +135,8 @@ Each element has keys :path, :format-name, :name,
 (defvar johnson--indexing-process nil
   "The child Emacs process used for async indexing.")
 
-(defvar johnson--indexing-callback nil
-  "Function to call when async indexing completes.")
+(defvar johnson--indexing-callbacks nil
+  "List of functions to call when async indexing completes.")
 
 (defvar johnson--navigating-history nil
   "Non-nil when navigating history (suppresses nav-push).")
@@ -162,6 +162,9 @@ Each element has keys :path, :format-name, :name,
 (defvar-local johnson--render-marker nil
   "Marker at the insertion point for the next deferred batch.")
 
+(defvar-local johnson--temp-audio-files nil
+  "List of temporary audio file paths to delete when the buffer is killed.")
+
 ;;;; Format registry
 
 ;;;###autoload
@@ -183,9 +186,12 @@ PROPS is a plist with keys :name, :extensions, :detect,
 (defun johnson--detect-format (path)
   "Return the format plist for file at PATH, or nil."
   (cl-find-if (lambda (fmt)
-                (condition-case nil
+                (condition-case err
                     (funcall (plist-get fmt :detect) path)
-                  (error nil)))
+                  (error
+                   (message "johnson: format detection error for %s: %s"
+                            path (error-message-string err))
+                   nil)))
               johnson--formats))
 
 (defun johnson--file-extensions ()
@@ -338,17 +344,17 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
             (johnson-db-set-metadata db "source-lang" (plist-get dict :source-lang))
             (johnson-db-set-metadata db "target-lang" (plist-get dict :target-lang))
             (johnson-db-set-metadata db "source-path" path)
-            (johnson-db-set-metadata db "mtime"
-                                     (format-time-string
-                                      "%s"
-                                      (file-attribute-modification-time
-                                       (file-attributes path))))
             (funcall (plist-get fmt :build-index) path
                      (lambda (headword offset length)
                        (push (list headword offset length) entries)
                        (cl-incf count)))
             (johnson-db-insert-entries-batch db (nreverse entries))
             (johnson-db-set-metadata db "entry-count" (number-to-string count))
+            (johnson-db-set-metadata db "mtime"
+                                     (format-time-string
+                                      "%s"
+                                      (file-attribute-modification-time
+                                       (file-attributes path))))
             (when (buffer-live-p buf)
               (with-current-buffer buf
                 (let ((inhibit-read-only t))
@@ -400,10 +406,6 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                       (johnson-db-set-metadata db \"target-lang\"
                         (plist-get dict :target-lang))
                       (johnson-db-set-metadata db \"source-path\" path)
-                      (johnson-db-set-metadata db \"mtime\"
-                        (format-time-string \"%%s\"
-                          (file-attribute-modification-time
-                            (file-attributes path))))
                       (funcall (plist-get fmt :build-index) path
                         (lambda (headword offset length)
                           (push (list headword offset length) entries)
@@ -411,11 +413,15 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                       (johnson-db-insert-entries-batch db (nreverse entries))
                       (johnson-db-set-metadata db \"entry-count\"
                         (number-to-string count))
+                      (johnson-db-set-metadata db \"mtime\"
+                        (format-time-string \"%%s\"
+                          (file-attribute-modification-time
+                            (file-attributes path))))
                       (message \"JOHNSON-INDEX-PROGRESS %%d %%d indexed %%d %%s\"
                                done total count name)))
                 (error
                  (cl-incf errors)
-                 (message \"JOHNSON-INDEX-ERROR %%d %%d %%s %%s\"
+                 (message \"JOHNSON-INDEX-ERROR %%d %%d %%s\\t%%s\"
                           done total name (error-message-string err))))))
           (message \"JOHNSON-INDEX-DONE %%d %%d\" total errors)
           (message \"JOHNSON-INDEX-COMPLETION building...\")
@@ -430,7 +436,21 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
   "Process filter for the child indexing process PROC.
 Parses structured messages from OUTPUT and updates the progress buffer."
   (let ((buf (process-get proc 'johnson-buf)))
-    (when (buffer-live-p buf)
+    ;; Prepend any buffered partial line from the previous call.
+    (let ((pending (process-get proc 'johnson-pending)))
+      (when pending
+        (setq output (concat pending output))
+        (process-put proc 'johnson-pending nil)))
+    ;; If output doesn't end with a newline, save the trailing partial line.
+    (unless (string-suffix-p "\n" output)
+      (let ((last-nl (string-match-p "\n[^\n]*\\'" output)))
+        (if last-nl
+            (progn
+              (process-put proc 'johnson-pending (substring output (1+ last-nl)))
+              (setq output (substring output 0 (1+ last-nl))))
+          (process-put proc 'johnson-pending output)
+          (setq output nil))))
+    (when (and output (buffer-live-p buf))
       (with-current-buffer buf
         (let ((inhibit-read-only t))
           (dolist (line (split-string output "\n" t))
@@ -452,7 +472,7 @@ Parses structured messages from OUTPUT and updates the progress buffer."
                                 done total name status
                                 (johnson--format-number count)))))
              ((string-match
-               "^JOHNSON-INDEX-ERROR \\([0-9]+\\) \\([0-9]+\\) \\(.*?\\) \\(.*\\)"
+               "^JOHNSON-INDEX-ERROR \\([0-9]+\\) \\([0-9]+\\) \\([^\t]*\\)\t\\(.*\\)"
                line)
               (let ((done (match-string 1 line))
                     (total (match-string 2 line))
@@ -499,11 +519,11 @@ Called when the process finishes."
             (let ((inhibit-read-only t))
               (goto-char (point-max))
               (insert (format "\nProcess exited with code %d.\n" exit-code))))))
-      (when johnson--indexing-callback
-        (let ((cb johnson--indexing-callback))
-          (setq johnson--indexing-callback nil)
+      (when johnson--indexing-callbacks
+        (let ((cbs johnson--indexing-callbacks))
+          (setq johnson--indexing-callbacks nil)
           (when (zerop exit-code)
-            (funcall cb)))))))
+            (mapc #'funcall cbs)))))))
 
 ;;;###autoload
 (defun johnson-index (&optional callback)
@@ -525,7 +545,7 @@ In batch/noninteractive mode, indexing runs synchronously."
         (insert (format "Indexing %d dictionaries (starting background process)...\n" total))
         (special-mode)))
     (display-buffer buf)
-    (setq johnson--indexing-callback callback)
+    (when callback (push callback johnson--indexing-callbacks))
     (if noninteractive
         ;; Synchronous for batch mode (tests).
         (progn
@@ -554,10 +574,10 @@ In batch/noninteractive mode, indexing runs synchronously."
             (let ((inhibit-read-only t))
               (goto-char (point-max))
               (insert (format "\nDone. %d dictionaries processed.\n" total))))
-          (when johnson--indexing-callback
-            (let ((cb johnson--indexing-callback))
-              (setq johnson--indexing-callback nil)
-              (funcall cb))))
+          (when johnson--indexing-callbacks
+            (let ((cbs johnson--indexing-callbacks))
+              (setq johnson--indexing-callbacks nil)
+              (mapc #'funcall cbs))))
       ;; Async: spawn a child emacs --batch process.
       (setq johnson--indexing-in-progress t)
       (let* ((load-dir (file-name-directory (locate-library "johnson")))
@@ -586,7 +606,7 @@ In batch/noninteractive mode, indexing runs synchronously."
     (kill-process johnson--indexing-process))
   (setq johnson--indexing-in-progress nil)
   (setq johnson--indexing-process nil)
-  (setq johnson--indexing-callback nil)
+  (setq johnson--indexing-callbacks nil)
   (message "johnson: indexing stopped"))
 
 (defun johnson--ensure-indexed ()
@@ -653,17 +673,19 @@ database queries across all dictionaries."
               (when (>= (length string) johnson-completion-min-chars)
                 (if comp-db
                     ;; Unified completion index: single query.
-                    (condition-case nil
+                    (condition-case err
                         (dolist (row (johnson-db-query-completion
                                      comp-db string 200))
                           (let ((hw (car row))
                                 (cnt (cadr row)))
                             (push hw candidates)
                             (puthash hw cnt last-counts)))
-                      (error nil))
+                      (error
+                       (message "johnson: completion query error: %s"
+                                (error-message-string err))))
                   ;; Fallback: per-dictionary queries.
                   (dolist (dict (johnson--dictionaries-in-scope))
-                    (condition-case nil
+                    (condition-case err
                         (let* ((path (plist-get dict :path))
                                (db (johnson--get-db path))
                                (words (johnson-db-query-prefix db string 200)))
@@ -671,7 +693,9 @@ database queries across all dictionaries."
                             (push w candidates)
                             (puthash w (1+ (or (gethash w last-counts) 0))
                                      last-counts)))
-                      (error nil)))))
+                      (error
+                       (message "johnson: completion query error: %s"
+                                (error-message-string err)))))))
               (setq last-candidates (delete-dups candidates)))))
         (complete-with-action action last-candidates string pred)))))
 
@@ -682,13 +706,15 @@ database queries across all dictionaries."
 Returns a list of (DICT-PLIST . MATCHES) sorted by priority."
   (let ((results nil))
     (dolist (dict johnson--dictionaries)
-      (condition-case nil
+      (condition-case err
           (let* ((path (plist-get dict :path))
                  (db (johnson--get-db path))
                  (matches (johnson-db-query-exact db word)))
             (when matches
               (push (cons dict matches) results)))
-        (error nil)))
+        (error
+         (message "johnson: query error for %s: %s"
+                  (plist-get dict :name) (error-message-string err)))))
     (sort (nreverse results)
           (lambda (a b)
             (< (or (plist-get (car a) :priority) 0)
@@ -706,8 +732,8 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
     ;; Indexing started or in progress; schedule lookup after completion
     ;; if called interactively.
     (when (and (called-interactively-p 'any) johnson--indexing-in-progress)
-      (setq johnson--indexing-callback
-            (lambda () (call-interactively #'johnson-lookup))))
+      (push (lambda () (call-interactively #'johnson-lookup))
+            johnson--indexing-callbacks))
     (user-error "Dictionaries are being indexed; lookup will resume when done"))
   (unless word
     (let ((default (thing-at-point 'word t)))
@@ -780,7 +806,14 @@ Called by a timer scheduled from `johnson--display-results'."
             (delete-region johnson--render-marker (point-max))
             ;; Render this batch
             (dolist (result batch)
-              (johnson--render-one-result result))
+              (condition-case err
+                  (johnson--render-one-result result)
+                (error
+                 (insert (propertize
+                          (format "[Error rendering %s: %s]\n"
+                                  (plist-get (car result) :name)
+                                  (error-message-string err))
+                          'face 'error)))))
             ;; Update state
             (setq johnson--pending-results remaining)
             (if remaining
@@ -905,12 +938,20 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     map)
   "Keymap for `johnson-mode'.")
 
+(defun johnson--cleanup-temp-audio-files ()
+  "Delete any temporary audio files created during rendering."
+  (dolist (file johnson--temp-audio-files)
+    (when (file-exists-p file)
+      (condition-case nil (delete-file file) (error nil))))
+  (setq johnson--temp-audio-files nil))
+
 (define-derived-mode johnson-mode special-mode "Johnson"
   "Major mode for displaying dictionary lookup results.
 \\{johnson-mode-map}"
   (setq truncate-lines nil)
   (setq word-wrap t)
-  (add-hook 'kill-buffer-hook #'johnson--cancel-pending-render nil t))
+  (add-hook 'kill-buffer-hook #'johnson--cancel-pending-render nil t)
+  (add-hook 'kill-buffer-hook #'johnson--cleanup-temp-audio-files nil t))
 
 ;;;; Section navigation
 
@@ -1178,14 +1219,17 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
 (defun johnson-dict-list-reindex ()
   "Re-index the dictionary at point."
   (interactive)
-  (when-let* ((id (tabulated-list-get-id)))
-    (let* ((dict (cl-find-if (lambda (d) (equal (plist-get d :path) id))
-                             johnson--dictionaries))
-           (name (plist-get dict :name)))
+  (when-let* ((id (tabulated-list-get-id))
+              (dict (cl-find-if (lambda (d) (equal (plist-get d :path) id))
+                                johnson--dictionaries)))
+    (let* ((name (plist-get dict :name)))
       (message "Re-indexing %s..." name)
       ;; Force staleness by deleting the index file first.
       (let ((index-path (johnson-db--index-path id)))
         (when (file-exists-p index-path)
+          (let ((db (gethash id johnson--db-cache)))
+            (when db
+              (condition-case nil (johnson-db-close db) (error nil))))
           (remhash id johnson--db-cache)
           (delete-file index-path)))
       (johnson--index-one-dict-sync dict (get-buffer-create " *johnson-reindex*"))
@@ -1532,7 +1576,7 @@ Removes the `resources/' subdirectory of `johnson-cache-directory'."
   (interactive)
   (let ((dir (expand-file-name "resources" johnson-cache-directory)))
     (if (file-directory-p dir)
-        (progn
+        (when (or noninteractive (yes-or-no-p (format "Delete resource cache %s? " dir)))
           (delete-directory dir t)
           (message "Deleted resource cache: %s" dir))
       (message "No resource cache to delete"))))

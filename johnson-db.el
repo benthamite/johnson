@@ -149,14 +149,15 @@ Returns a list of (HEADWORD BYTE-OFFSET BYTE-LENGTH) triples."
 (defun johnson-db-query-prefix (db prefix &optional limit)
   "Query DB for headwords matching the normalized PREFIX.
 Returns a list of distinct headword strings.  LIMIT defaults to 100."
-  (let ((normalized (johnson-db-normalize prefix))
-        (limit (or limit 100)))
+  (let* ((normalized (johnson-db-normalize prefix))
+         (escaped (replace-regexp-in-string "[%_]" "\\\\\\&" normalized))
+         (limit (or limit 100)))
     (mapcar #'car
             (sqlite-select db
                            "SELECT DISTINCT headword FROM entries
-                            WHERE headword_normalized LIKE ?
+                            WHERE headword_normalized LIKE ? ESCAPE '\\'
                             LIMIT ?"
-                           (list (concat normalized "%") limit)))))
+                           (list (concat escaped "%") limit)))))
 
 (defun johnson-db-entry-count (db)
   "Return the total number of entries in DB."
@@ -171,16 +172,17 @@ the actual file modification time."
   (let ((index-path (johnson-db--index-path dict-path)))
     (if (not (file-exists-p index-path))
         t
-      (let* ((db (sqlite-open index-path))
-             (stored-mtime (caar (sqlite-select db
-                                                "SELECT value FROM metadata WHERE key = ?"
-                                                '("mtime"))))
-             (actual-mtime (format-time-string
-                            "%s"
-                            (file-attribute-modification-time
-                             (file-attributes dict-path)))))
-        (sqlite-close db)
-        (not (equal stored-mtime actual-mtime))))))
+      (let ((db (sqlite-open index-path)))
+        (unwind-protect
+            (let* ((stored-mtime (caar (sqlite-select db
+                                                      "SELECT value FROM metadata WHERE key = ?"
+                                                      '("mtime"))))
+                   (actual-mtime (format-time-string
+                                  "%s"
+                                  (file-attribute-modification-time
+                                   (file-attributes dict-path)))))
+              (not (equal stored-mtime actual-mtime)))
+          (sqlite-close db))))))
 
 (defun johnson-db-stale-quick-p (dict-path)
   "Fast filesystem-only staleness check for DICT-PATH.
@@ -256,14 +258,19 @@ should be aggregated.  Returns the total number of unique headwords."
                headword_normalized TEXT NOT NULL,
                dict_count INTEGER NOT NULL DEFAULT 1)")
           ;; Bulk insert in a single transaction.
-          (sqlite-execute db "BEGIN TRANSACTION")
-          (maphash (lambda (hw count)
-                     (sqlite-execute db
-                       "INSERT INTO completions (headword, headword_normalized, dict_count)
-                        VALUES (?, ?, ?)"
-                       (list hw (johnson-db-normalize hw) count)))
-                   agg)
-          (sqlite-execute db "COMMIT")
+          (condition-case err
+              (progn
+                (sqlite-execute db "BEGIN TRANSACTION")
+                (maphash (lambda (hw count)
+                           (sqlite-execute db
+                             "INSERT INTO completions (headword, headword_normalized, dict_count)
+                              VALUES (?, ?, ?)"
+                             (list hw (johnson-db-normalize hw) count)))
+                         agg)
+                (sqlite-execute db "COMMIT"))
+            (error
+             (sqlite-execute db "ROLLBACK")
+             (signal (car err) (cdr err))))
           ;; Create index after all inserts.
           (sqlite-execute db
             "CREATE INDEX idx_comp_normalized ON completions(headword_normalized)")
@@ -273,13 +280,14 @@ should be aggregated.  Returns the total number of unique headwords."
 (defun johnson-db-query-completion (db prefix &optional limit)
   "Query the unified completion DB for headwords matching PREFIX.
 Returns a list of (HEADWORD DICT-COUNT) pairs.  LIMIT defaults to 200."
-  (let ((normalized (johnson-db-normalize prefix))
-        (limit (or limit 200)))
+  (let* ((normalized (johnson-db-normalize prefix))
+         (escaped (replace-regexp-in-string "[%_]" "\\\\\\&" normalized))
+         (limit (or limit 200)))
     (sqlite-select db
                    "SELECT headword, dict_count FROM completions
-                    WHERE headword_normalized LIKE ?
+                    WHERE headword_normalized LIKE ? ESCAPE '\\'
                     LIMIT ?"
-                   (list (concat normalized "%") limit))))
+                   (list (concat escaped "%") limit))))
 
 (provide 'johnson-db)
 ;;; johnson-db.el ends here

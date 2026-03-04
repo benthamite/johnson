@@ -229,7 +229,8 @@ Returns the decompressed unibyte string."
        (with-temp-buffer
          (set-buffer-multibyte nil)
          (insert (substring data 8))
-         (zlib-decompress-region (point-min) (point-max))
+         (unless (zlib-decompress-region (point-min) (point-max))
+           (error "MDict: zlib decompression failed"))
          (buffer-string)))
       (#x01000000
        ;; LZO compression: strip 8-byte header, decompress.
@@ -404,7 +405,7 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
         ;; Key is derived from bytes 4-8 (the Adler-32 checksum) of the
         ;; compressed index data.  Only the payload after the 8-byte
         ;; compression header is encrypted.
-        (when (= encrypted 2)
+        (when (/= (logand encrypted 2) 0)
           (let ((key-bytes (substring index-data 4 8)))
             (setq index-data
                   (concat (substring index-data 0 8)
@@ -429,7 +430,7 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
                                           (+ block-pos comp-size))))
               ;; Decrypt even-indexed keyword blocks if encrypted.
               ;; Key from bytes 4-8, only payload after 8-byte header.
-              (when (and (= encrypted 2) (= (mod block-index 2) 0))
+              (when (and (/= (logand encrypted 2) 0) (= (mod block-index 2) 0))
                 (let ((kb-key (substring block-data 4 8)))
                   (setq block-data
                         (concat (substring block-data 0 8)
@@ -481,10 +482,12 @@ DATA is the index data, POS is the current position.
 NUM-WIDTH is 4 or 8, ENCODING is the coding system.
 Returns the number of bytes consumed."
   (if (= num-width 8)
-      ;; v2.0: 2-byte size (BE, in bytes), then text, then null terminator.
+      ;; v2.0: 2-byte size (BE, in basic units), then text, then null
+      ;; terminator.  For UTF-16LE, the size is in 2-byte code units.
       (let* ((text-size (johnson-mdict--u16be data pos))
+             (byte-size (if (eq encoding 'utf-16le) (* text-size 2) text-size))
              (null-size (if (eq encoding 'utf-16le) 2 1)))
-        (+ 2 text-size null-size))
+        (+ 2 byte-size null-size))
     ;; v1.2: 1-byte size (in chars), then text (no null terminator).
     (let* ((char-count (aref data pos))
            (byte-size (if (eq encoding 'utf-16le) (* char-count 2) char-count)))
@@ -697,15 +700,26 @@ Returns the entry data as a decoded string."
          (local-offset (cdr loc))
          (block-data (johnson-mdict--read-record-block path block-idx))
          (next-offset (johnson-mdict--next-offset path record-offset))
-         (entry-size
+         (entry-span
           (if (= next-offset -1)
-              ;; Last entry: extends to end of block.
               (- (length block-data) local-offset)
-            ;; Compute local end within the block.
-            (min (- next-offset record-offset)
-                 (- (length block-data) local-offset))))
-         (entry-data (substring block-data local-offset
-                                (+ local-offset entry-size))))
+            (- next-offset record-offset)))
+         (avail (- (length block-data) local-offset))
+         (entry-data
+          (if (<= entry-span avail)
+              (substring block-data local-offset
+                         (+ local-offset entry-span))
+            ;; Entry spans multiple record blocks — concatenate.
+            (let ((parts (list (substring block-data local-offset)))
+                  (remaining (- entry-span avail))
+                  (bi (1+ block-idx)))
+              (while (> remaining 0)
+                (let* ((next-block (johnson-mdict--read-record-block path bi))
+                       (take (min remaining (length next-block))))
+                  (push (substring next-block 0 take) parts)
+                  (cl-decf remaining take)
+                  (cl-incf bi)))
+              (apply #'concat (nreverse parts))))))
     (decode-coding-string entry-data encoding)))
 
 ;;;; Entry rendering

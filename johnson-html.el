@@ -93,16 +93,16 @@ ATTRS is the raw attribute string from the opening tag."
       ((string-match "href\\s-*=\\s-*[\"']sound://\\([^\"']+\\)[\"']" attrs)
        (let ((filename (subst-char-in-string
                         ?\\ ?/ (match-string 1 attrs))))
-         ;; Remove the link text and insert an audio button instead.
-         (delete-region region-start region-end)
-         (goto-char region-start)
-         (when (and (not (string-empty-p filename))
-                    johnson-html--current-dict-dir)
-           (let ((audio-path (expand-file-name
-                              filename
-                              johnson-html--current-dict-dir)))
-             (johnson-insert-audio-button
-              audio-path nil johnson-html--current-dict-path)))))
+         (if (and (not (string-empty-p filename))
+                  johnson-html--current-dict-dir)
+             (let ((audio-path (expand-file-name
+                                filename
+                                johnson-html--current-dict-dir)))
+               (delete-region region-start region-end)
+               (goto-char region-start)
+               (johnson-insert-audio-button
+                audio-path nil johnson-html--current-dict-path))
+           (add-face-text-property region-start region-end 'johnson-ref-face))))
       ;; bword:// and entry:// links -> cross-reference button
       ((string-match "href\\s-*=\\s-*[\"']\\(?:bword://\\|entry://\\)?\\([^\"']+\\)[\"']" attrs)
        (let ((target (match-string 1 attrs)))
@@ -173,15 +173,21 @@ Replaces tags with text properties."
   (save-excursion
     ;; Strip <style>...</style> and <script>...</script> blocks.
     (goto-char start)
-    (while (re-search-forward "<style[^>]*>[^<]*\\(?:<[^/][^<]*\\)*</style>" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match "")
-        (setq end (- end len))))
+    (while (re-search-forward "<style[^>]*>" end t)
+      (let ((style-start (match-beginning 0)))
+        (when (re-search-forward "</style>" end t)
+          (let ((style-end (point)))
+            (delete-region style-start style-end)
+            (setq end (- end (- style-end style-start)))
+            (goto-char style-start)))))
     (goto-char start)
-    (while (re-search-forward "<script[^>]*>[^<]*\\(?:<[^/][^<]*\\)*</script>" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match "")
-        (setq end (- end len))))
+    (while (re-search-forward "<script[^>]*>" end t)
+      (let ((script-start (match-beginning 0)))
+        (when (re-search-forward "</script>" end t)
+          (let ((script-end (point)))
+            (delete-region script-start script-end)
+            (setq end (- end (- script-end script-start)))
+            (goto-char script-start)))))
     ;; Replace <br>, <br/>, <hr>, <hr/> with newlines.
     (goto-char start)
     (while (re-search-forward "<br\\s-*/?>\\|<hr\\s-*/?>" end t)
