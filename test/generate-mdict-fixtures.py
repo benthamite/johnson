@@ -243,19 +243,15 @@ def build_mdx(entries, encrypt=False, title="Test Dict"):
     # compression header) of each block as the key source, and only
     # encrypts the payload after the 8-byte compression header.
     if encrypt:
-        # Encrypt block info payload.
+        # Encrypted="2" only encrypts the keyword block info (index),
+        # NOT the keyword blocks themselves.
         bi_key = ripemd128(block_info_compressed[4:8] + b"\x95\x36\x00\x00")
         block_info_encrypted = (block_info_compressed[:8]
                                 + mdict_encrypt(block_info_compressed[8:], bi_key))
-        # Encrypt even-indexed keyword blocks (block 0) payload.
-        kb_key = ripemd128(kw_block_compressed[4:8] + b"\x95\x36\x00\x00")
-        kw_block_encrypted = (kw_block_compressed[:8]
-                              + mdict_encrypt(kw_block_compressed[8:], kb_key))
     else:
         block_info_encrypted = block_info_compressed
-        kw_block_encrypted = kw_block_compressed
 
-    keyword_section = kw_header + kw_checksum + block_info_encrypted + kw_block_encrypted
+    keyword_section = kw_header + kw_checksum + block_info_encrypted + kw_block_compressed
 
     # -- Record section --
     rec_block_compressed = make_zlib_block(record_data)

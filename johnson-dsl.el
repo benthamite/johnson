@@ -377,6 +377,18 @@ non-BOM content starts with `#'."
 
 ;;;; Metadata parsing
 
+(defconst johnson-dsl--language-aliases
+  '(("Egnlish" . "English")
+    ("GermanNewSpelling" . "German")
+    ("PortugueseStandard" . "Portuguese")
+    ("SpanishModernSort" . "Spanish")
+    ("SpanishTraditionalSort" . "Spanish"))
+  "Map non-standard DSL language names to standard forms.")
+
+(defun johnson-dsl--normalize-language (name)
+  "Normalize DSL language NAME to a standard form."
+  (or (cdr (assoc name johnson-dsl--language-aliases)) name))
+
 (defun johnson-dsl-parse-metadata (path)
   "Parse metadata headers from the DSL dictionary at PATH.
 Handles both plain and dictzip-compressed (.dsl.dz) files.
@@ -417,8 +429,8 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
           (setq target-lang (match-string 1))))
         (forward-line 1)))
     (list :name (or name "")
-          :source-lang (or source-lang "")
-          :target-lang (or target-lang ""))))
+          :source-lang (johnson-dsl--normalize-language (or source-lang ""))
+          :target-lang (johnson-dsl--normalize-language (or target-lang "")))))
 
 ;;;; Headword expansion
 
