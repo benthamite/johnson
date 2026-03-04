@@ -21,10 +21,10 @@ dependencies, relying on Emacs 30.1's built-in sqlite support for
 efficient headword indexing.  Dictionary files are parsed natively,
 without calling external tools.
 
-In version 0.2, the package supports the DSL (ABBYY Lingvo) and
-StarDict formats, including dictzip-compressed files (=.dsl.dz= and
-=.dict.dz=).  Future versions will add support for MDict and BGL
-(Babylon) formats.
+In version 0.3, the package supports the DSL (ABBYY Lingvo),
+StarDict, and MDict formats, including dictzip-compressed files
+(=.dsl.dz= and =.dict.dz=) and encrypted MDict files.  Future
+versions will add support for BGL (Babylon) format.
 
 The architecture is modular.  The core module (=johnson.el=) provides
 the lookup engine, results buffer, navigation, history, and a
@@ -1013,7 +1013,7 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
 - [X] Completion-at-point (CAPF) backend.
 - [X] Plain-text entry copying.
 
-** Version 0.2 (current) --- StarDict and compressed DSL
+** Version 0.2 --- StarDict and compressed DSL
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-v02
 :ID:       B2C3D4E5-F6A7-8901-BCDE-F12345678901
@@ -1030,15 +1030,15 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
     - When saving, prompt the user whether they want to set the new value via defcustom, for the current session, or to set it manually in their init file; in the latter case, copy the new value to the kill ring and display instructions on how to use it.
 - [X] Provide basic media support (audio pronunciation).
   
-** Version 0.3 --- MDict and DSL abbreviations
+** Version 0.3 (current) --- MDict and DSL abbreviations
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-v03
 :ID:       C3D4E5F6-A7B8-9012-CDEF-123456789012
 :END:
 
-- [ ] =johnson-mdict.el= backend for =.mdx= and =.mdd= files.
-- [ ] Support for MDict's HTML+CSS content.
-- [ ] =_abrv.dsl= abbreviation table support for DSL dictionaries
+- [X] =johnson-mdict.el= backend for =.mdx= and =.mdd= files.
+- [X] Support for MDict's HTML+CSS content.
+- [X] =_abrv.dsl= abbreviation table support for DSL dictionaries
   (=[p]= tag expansion).
 
 ** Version 0.4 --- BGL (Babylon)
