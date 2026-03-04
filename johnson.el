@@ -1384,7 +1384,7 @@ See `johnson-audio-player'."
     (condition-case err
         (play-sound-file file)
       (error
-       (message "johnson: %s; see (johnson) Audio playback"
+       (message "johnson: %s; for help, run: M-: (info \"(johnson) Audio playback\") RET"
                 (error-message-string err)))))
    ((stringp johnson-audio-player)
     (start-process "johnson-audio" nil johnson-audio-player file))
