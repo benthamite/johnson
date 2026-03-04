@@ -7,12 +7,10 @@
 
 ;;; Commentary:
 
-;; This module provides the MDict (.mdx/.mdd) format backend for the
-;; johnson dictionary package.  It handles parsing of MDict v1.2 and
-;; v2.0 binary files, including header parsing, keyword index/block
-;; decompression, record retrieval, and HTML rendering via
-;; johnson-html.  Supports zlib compression and Encrypted="2"
-;; keyword index decryption via RIPEMD-128.
+;; This module provides the MDict format backend for the johnson
+;; dictionary package.  It handles parsing of MDict .mdx (dictionary)
+;; and .mdd (resource) files, including support for v1.2 and v2.0
+;; formats, zlib compression, and Encrypted="2" keyword decryption.
 
 ;;; Code:
 
@@ -23,16 +21,7 @@
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-insert-audio-button "johnson")
 
-;;;; Binary integer helpers
-
-(defsubst johnson-mdict--u8 (data pos)
-  "Read unsigned 8-bit integer from unibyte DATA at byte POS."
-  (aref data pos))
-
-(defsubst johnson-mdict--u16le (data pos)
-  "Read unsigned 16-bit little-endian integer from DATA at POS."
-  (logior (aref data pos)
-          (ash (aref data (+ pos 1)) 8)))
+;;;; Binary integer helpers — from unibyte strings
 
 (defsubst johnson-mdict--u16be (data pos)
   "Read unsigned 16-bit big-endian integer from DATA at POS."
@@ -45,13 +34,6 @@
           (ash (aref data (+ pos 1)) 16)
           (ash (aref data (+ pos 2)) 8)
           (aref data (+ pos 3))))
-
-(defsubst johnson-mdict--u32le (data pos)
-  "Read unsigned 32-bit little-endian integer from DATA at POS."
-  (logior (aref data pos)
-          (ash (aref data (+ pos 1)) 8)
-          (ash (aref data (+ pos 2)) 16)
-          (ash (aref data (+ pos 3)) 24)))
 
 (defsubst johnson-mdict--u64be (data pos)
   "Read unsigned 64-bit big-endian integer from DATA at POS."
@@ -71,31 +53,19 @@ WIDTH is 4 or 8 bytes."
       (johnson-mdict--u64be data pos)
     (johnson-mdict--u32be data pos)))
 
-;;;; Adler-32
-
-(defun johnson-mdict--adler32 (data)
-  "Compute the Adler-32 checksum of unibyte DATA.
-Returns a 32-bit integer."
-  (let ((a 1) (b 0)
-        (len (length data)))
-    (dotimes (i len)
-      (setq a (mod (+ a (aref data i)) 65521))
-      (setq b (mod (+ b a) 65521)))
-    (logior (ash b 16) a)))
-
 ;;;; Internal variables
 
 (defvar johnson-mdict--header-cache (make-hash-table :test #'equal)
   "Cache of parsed MDict headers.
 Maps file path to a header plist.")
 
-(defvar johnson-mdict--keyword-cache (make-hash-table :test #'equal)
-  "Cache of parsed keyword lists.
-Maps file path to vector of (HEADWORD . RECORD-OFFSET) pairs.")
+(defvar johnson-mdict--record-meta-cache (make-hash-table :test #'equal)
+  "Cache of parsed record section metadata.
+Maps file path to a plist with :blocks and :data-start.")
 
-(defvar johnson-mdict--record-index-cache (make-hash-table :test #'equal)
-  "Cache of record block index data.
-Maps file path to a plist with :record-blocks-offset and :blocks.")
+(defvar johnson-mdict--offset-cache (make-hash-table :test #'equal)
+  "Cache of sorted record offsets per dictionary path.
+Maps path to a sorted vector of record offsets.")
 
 (defvar johnson-mdict--current-dict-dir nil
   "Directory of the dictionary being rendered.
@@ -168,8 +138,7 @@ Returns a plist with keys:
   :encrypted   - encryption flag integer
   :title       - dictionary title string
   :description - description string
-  :header-end  - file byte offset past the header
-  :data-offset - synonym for :header-end (where keyword section starts)"
+  :header-end  - file byte offset past the header"
   (or (gethash path johnson-mdict--header-cache)
       (let ((header (johnson-mdict--do-parse-header path)))
         (puthash path header johnson-mdict--header-cache)
@@ -191,7 +160,6 @@ Returns a plist with keys:
              (header-text (decode-coding-string
                            (substring raw 4 (+ 4 header-size))
                            'utf-16le))
-             ;; Parse version, encoding, encrypted, title, description from XML attrs.
              (version (johnson-mdict--extract-header-attr
                        header-text "GeneratedByEngineVersion"))
              (ver-float (if version (string-to-number version) 2.0))
@@ -217,8 +185,7 @@ Returns a plist with keys:
               :encrypted (string-to-number encrypted-str)
               :title title
               :description description
-              :header-end total-read
-              :data-offset total-read)))))
+              :header-end total-read)))))
 
 (defun johnson-mdict--extract-header-attr (header-text attr)
   "Extract the value of ATTR from MDict HEADER-TEXT.
@@ -247,14 +214,22 @@ HEADER-TEXT is the decoded XML-like header string."
       'iso-8859-1)
      (t 'utf-8))))
 
+;;;; File reading helper
+
+(defun johnson-mdict--read-file-region (path start size)
+  "Read SIZE bytes from PATH starting at file offset START.
+Returns a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally path nil start (+ start size))
+    (buffer-string)))
+
 ;;;; Keyword section: decryption
 
 (defun johnson-mdict--decrypt-data (data checksum-bytes)
   "Decrypt MDict encrypted DATA using CHECKSUM-BYTES.
 CHECKSUM-BYTES is a 4-byte unibyte string (little-endian Adler-32
-of the keyword section header).  Returns a new unibyte string.
-Used for both keyword index blocks and keyword data blocks when
-Encrypted=\"2\"."
+of the keyword section header).  Returns a new unibyte string."
   ;; Key = RIPEMD-128(checksum_bytes + "\x95\x36\x00\x00")
   (let* ((key-input (concat checksum-bytes "\x95\x36\x00\x00"))
          (key (johnson-ripemd128-hash key-input))
@@ -277,93 +252,78 @@ Encrypted=\"2\"."
 
 (defun johnson-mdict--parse-keyword-section (path)
   "Parse the keyword section of the MDict file at PATH.
-Returns a vector of (HEADWORD . RECORD-OFFSET) cons cells."
-  (or (gethash path johnson-mdict--keyword-cache)
-      (let ((result (johnson-mdict--do-parse-keyword-section path)))
-        (puthash path result johnson-mdict--keyword-cache)
-        result)))
-
-(defun johnson-mdict--do-parse-keyword-section (path)
-  "Internal: parse the keyword section from PATH."
+Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
   (let* ((header (johnson-mdict--parse-header path))
          (num-width (plist-get header :num-width))
          (encoding (plist-get header :encoding))
          (encrypted (plist-get header :encrypted))
          (kw-offset (plist-get header :header-end)))
-    (with-temp-buffer
-      (set-buffer-multibyte nil)
-      ;; Read keyword section header.
-      ;; For v2.0: 5 * 8 bytes = 40 bytes (+ 4 bytes checksum)
-      ;; For v1.2: 4 * 4 bytes = 16 bytes
-      (let* ((kw-header-size (if (= num-width 8) 44 16))
-             (_ (insert-file-contents-literally path nil kw-offset
-                                                (+ kw-offset kw-header-size)))
-             (raw (buffer-string))
-             (pos 0)
-             (num-blocks (johnson-mdict--read-number raw pos num-width))
-             (_num-entries (progn (cl-incf pos num-width)
-                                  (johnson-mdict--read-number raw pos num-width)))
-             (index-decompressed-size
-              (when (= num-width 8)
-                (cl-incf pos num-width)
-                (johnson-mdict--read-number raw pos num-width)))
-             (index-size (progn (cl-incf pos num-width)
-                                (johnson-mdict--read-number raw pos num-width)))
-             (_block-size (progn (cl-incf pos num-width)
-                                  (johnson-mdict--read-number raw pos num-width)))
-             ;; Checksum (4 bytes after the 5 numbers for v2.0).
-             (checksum-bytes
-              (when (= num-width 8)
-                (substring raw 40 44)))
-             ;; File position where keyword index data starts.
-             (index-start (+ kw-offset kw-header-size)))
-        ;; Ignore index-decompressed-size warning.
-        (ignore index-decompressed-size)
-        ;; Read the keyword index data.
-        (erase-buffer)
-        (insert-file-contents-literally path nil index-start
-                                        (+ index-start index-size))
-        (let ((index-data (buffer-string)))
-          ;; Decrypt if needed.
-          (when (= encrypted 2)
-            (setq index-data
-                  (johnson-mdict--decrypt-data
-                   index-data checksum-bytes)))
-          ;; For v2.0, index data may be compressed.
-          (when (= num-width 8)
-            (setq index-data
-                  (johnson-mdict--decompress-block index-data)))
-          ;; Parse keyword block info entries from index data.
-          (let ((block-infos (johnson-mdict--parse-kw-block-infos
-                              index-data num-blocks num-width encoding))
-                ;; File position where keyword blocks start.
-                (blocks-start (+ index-start index-size))
-                (all-entries nil))
-            ;; Read and parse each keyword block.
-            (dolist (info block-infos)
-              (let* ((comp-size (car info))
-                     (decomp-size (cdr info)))
-                ;; Ignore decomp-size for now (used for validation).
-                (ignore decomp-size)
-                (erase-buffer)
-                (insert-file-contents-literally path nil blocks-start
-                                                (+ blocks-start comp-size))
-                (let* ((block-data (buffer-string))
-                       ;; Decrypt keyword blocks if encrypted.
-                       (block-data (if (= encrypted 2)
-                                       (johnson-mdict--decrypt-data
-                                        block-data checksum-bytes)
-                                     block-data))
-                       (decompressed
-                        (johnson-mdict--decompress-block block-data))
-                       (entries (johnson-mdict--parse-kw-block-entries
-                                 decompressed num-width encoding)))
-                  (setq all-entries (nconc all-entries entries)))
-                (cl-incf blocks-start comp-size)))
-            ;; Store keyword section end offset for record section.
-            (puthash (concat path ":kw-end") blocks-start
-                     johnson-mdict--header-cache)
-            (vconcat all-entries)))))))
+    ;; Read keyword section header.
+    ;; v2.0: 5 * 8 = 40 bytes + 4 bytes checksum = 44 bytes
+    ;; v1.2: 4 * 4 = 16 bytes (no checksum in older format)
+    (let* ((kw-header-size (if (= num-width 8) 44 16))
+           (kw-header-data (johnson-mdict--read-file-region
+                            path kw-offset kw-header-size))
+           (pos 0)
+           (num-blocks (johnson-mdict--read-number kw-header-data pos num-width))
+           (_num-entries (progn (cl-incf pos num-width)
+                                (johnson-mdict--read-number
+                                 kw-header-data pos num-width)))
+           ;; v2.0 has decomp_info_size field, v1.2 does not.
+           (_decomp-info-size
+            (when (= num-width 8)
+              (cl-incf pos num-width)
+              (johnson-mdict--read-number kw-header-data pos num-width)))
+           (index-comp-size (progn (cl-incf pos num-width)
+                                   (johnson-mdict--read-number
+                                    kw-header-data pos num-width)))
+           (total-kw-block-size (progn (cl-incf pos num-width)
+                                       (johnson-mdict--read-number
+                                        kw-header-data pos num-width)))
+           ;; For v2.0, checksum is the last 4 bytes of the header.
+           (checksum-bytes (when (= num-width 8)
+                             (substring kw-header-data 40 44)))
+           ;; File positions.
+           (index-start (+ kw-offset kw-header-size))
+           (blocks-start (+ index-start index-comp-size))
+           (kw-section-end (+ blocks-start total-kw-block-size)))
+      ;; Read keyword block info (index) data.
+      (let ((index-data (johnson-mdict--read-file-region
+                         path index-start index-comp-size)))
+        ;; Decrypt block info if encrypted.
+        (when (= encrypted 2)
+          (setq index-data (johnson-mdict--decrypt-data
+                            index-data checksum-bytes)))
+        ;; Decompress (v2.0 always compresses; v1.2 may not).
+        (when (= num-width 8)
+          (setq index-data (johnson-mdict--decompress-block index-data)))
+        ;; Parse block info to get per-block sizes.
+        (let ((block-infos (johnson-mdict--parse-kw-block-infos
+                            index-data num-blocks num-width encoding))
+              ;; Read all keyword blocks data.
+              (blocks-data (johnson-mdict--read-file-region
+                            path blocks-start total-kw-block-size))
+              (block-pos 0)
+              (all-entries nil)
+              (block-index 0))
+          (dolist (info block-infos)
+            (let* ((comp-size (car info))
+                   (block-data (substring blocks-data block-pos
+                                          (+ block-pos comp-size))))
+              ;; Decrypt even-indexed keyword blocks if encrypted.
+              (when (and (= encrypted 2) (= (mod block-index 2) 0))
+                (setq block-data (johnson-mdict--decrypt-data
+                                  block-data checksum-bytes)))
+              (let* ((decompressed (johnson-mdict--decompress-block block-data))
+                     (entries (johnson-mdict--parse-kw-block-entries
+                               decompressed num-width encoding)))
+                (setq all-entries (nconc all-entries entries)))
+              (cl-incf block-pos comp-size)
+              (cl-incf block-index)))
+          ;; Cache the keyword section end for record section parsing.
+          (puthash (concat path ":kw-end") kw-section-end
+                   johnson-mdict--header-cache)
+          all-entries)))))
 
 (defun johnson-mdict--parse-kw-block-infos (data num-blocks num-width encoding)
   "Parse keyword block info entries from DATA.
@@ -373,41 +333,38 @@ Returns a list of (COMP-SIZE . DECOMP-SIZE) cons cells."
   (let ((pos 0)
         (infos nil))
     (dotimes (_ num-blocks)
-      ;; Each entry: num-entries, first-word-size, first-word, last-word-size,
-      ;; last-word, comp-size, decomp-size.
-      (let* (;; Number of entries in this block.
-             (_num-entries-in-block
-              (johnson-mdict--read-number data pos num-width))
-             (_ (cl-incf pos num-width))
-             ;; First word size (in bytes for v2.0, chars for v1.2).
-             (first-size (johnson-mdict--parse-kw-text-size data pos num-width encoding))
-             (_ (cl-incf pos (car first-size)))
-             ;; Last word.
-             (last-size (johnson-mdict--parse-kw-text-size data pos num-width encoding))
-             (_ (cl-incf pos (car last-size)))
-             ;; Compressed and decompressed sizes.
-             (comp-size (johnson-mdict--read-number data pos num-width))
-             (_ (cl-incf pos num-width))
-             (decomp-size (johnson-mdict--read-number data pos num-width))
-             (_ (cl-incf pos num-width)))
-        (push (cons comp-size decomp-size) infos)))
+      ;; Number of entries in this block.
+      (let ((_num-entries-in-block
+             (johnson-mdict--read-number data pos num-width)))
+        (cl-incf pos num-width)
+        ;; First headword: skip text field.
+        (let ((skip (johnson-mdict--skip-kw-text data pos num-width encoding)))
+          (cl-incf pos skip))
+        ;; Last headword: skip text field.
+        (let ((skip (johnson-mdict--skip-kw-text data pos num-width encoding)))
+          (cl-incf pos skip))
+        ;; Compressed and decompressed sizes.
+        (let ((comp-size (johnson-mdict--read-number data pos num-width))
+              (decomp-size (johnson-mdict--read-number
+                            data (+ pos num-width) num-width)))
+          (cl-incf pos (* 2 num-width))
+          (push (cons comp-size decomp-size) infos))))
     (nreverse infos)))
 
-(defun johnson-mdict--parse-kw-text-size (data pos num-width encoding)
-  "Parse a keyword text field size and skip the text.
+(defun johnson-mdict--skip-kw-text (data pos num-width encoding)
+  "Compute how many bytes to skip for a keyword text field.
 DATA is the index data, POS is the current position.
-Returns (TOTAL-BYTES-CONSUMED)."
+NUM-WIDTH is 4 or 8, ENCODING is the coding system.
+Returns the number of bytes consumed."
   (if (= num-width 8)
-      ;; v2.0: 2-byte size (big-endian, in bytes), then text, then null terminator.
+      ;; v2.0: 2-byte size (BE, in bytes), then text, then null terminator.
       (let* ((text-size (johnson-mdict--u16be data pos))
-             (null-size (if (eq encoding 'utf-16le) 2 1))
-             (total (+ 2 text-size null-size)))
-        (cons total nil))
+             (null-size (if (eq encoding 'utf-16le) 2 1)))
+        (+ 2 text-size null-size))
     ;; v1.2: 1-byte size (in chars), then text, then null byte.
     (let* ((char-count (aref data pos))
-           (byte-size (if (eq encoding 'utf-16le) (* char-count 2) char-count))
-           (total (+ 1 byte-size 1)))
-      (cons total nil))))
+           (byte-size (if (eq encoding 'utf-16le) (* char-count 2) char-count)))
+      (+ 1 byte-size 1))))
 
 (defun johnson-mdict--parse-kw-block-entries (data num-width encoding)
   "Parse keyword entries from a decompressed keyword block.
@@ -421,8 +378,8 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
     (while (< pos data-len)
       (let* ((record-offset (johnson-mdict--read-number data pos num-width))
              (_ (cl-incf pos num-width))
-             ;; Find null terminator.
              (text-start pos)
+             ;; Find null terminator.
              (text-end
               (if (= null-size 2)
                   ;; UTF-16LE: look for \0\0.
@@ -450,10 +407,10 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
   "Parse the record section index of the MDict file at PATH.
 Returns a plist with:
   :blocks - vector of (COMP-SIZE DECOMP-SIZE FILE-OFFSET) triples
-  :record-blocks-offset - file offset where record block data starts"
-  (or (gethash path johnson-mdict--record-index-cache)
+  :data-start - file offset where record block data starts"
+  (or (gethash path johnson-mdict--record-meta-cache)
       (let ((result (johnson-mdict--do-parse-record-section path)))
-        (puthash path result johnson-mdict--record-index-cache)
+        (puthash path result johnson-mdict--record-meta-cache)
         result)))
 
 (defun johnson-mdict--do-parse-record-section (path)
@@ -461,46 +418,36 @@ Returns a plist with:
   (let* ((header (johnson-mdict--parse-header path))
          (num-width (plist-get header :num-width))
          ;; Record section starts where keyword section ended.
-         (kw-end (gethash (concat path ":kw-end")
-                          johnson-mdict--header-cache))
-         (rec-offset (or kw-end
-                         ;; If not cached, we need to parse keywords first.
-                         (progn
-                           (johnson-mdict--parse-keyword-section path)
-                           (gethash (concat path ":kw-end")
-                                    johnson-mdict--header-cache)))))
-    (with-temp-buffer
-      (set-buffer-multibyte nil)
-      ;; Record section header:
-      ;; v2.0: num-blocks(8) + num-entries(8) + info-size(8) + blocks-total-size(8) = 32
-      ;; v1.2: num-blocks(4) + num-entries(4) + info-size(4) + blocks-total-size(4) = 16
-      (let* ((rec-header-size (* 4 num-width)))
-        (insert-file-contents-literally path nil rec-offset
-                                        (+ rec-offset rec-header-size))
-        (let* ((raw (buffer-string))
-               (num-blocks (johnson-mdict--read-number raw 0 num-width))
-               ;; Skip num-entries.
-               (info-size (johnson-mdict--read-number
-                           raw (* 2 num-width) num-width))
-               ;; Block info entries follow the header.
-               (info-start (+ rec-offset rec-header-size)))
-          (erase-buffer)
-          (insert-file-contents-literally path nil info-start
-                                          (+ info-start info-size))
-          (let* ((info-raw (buffer-string))
-                 (blocks (make-vector num-blocks nil))
-                 (blocks-data-start (+ info-start info-size))
-                 (file-off blocks-data-start))
-            (dotimes (i num-blocks)
-              (let* ((base (* i 2 num-width))
-                     (comp-size (johnson-mdict--read-number
-                                 info-raw base num-width))
-                     (decomp-size (johnson-mdict--read-number
-                                   info-raw (+ base num-width) num-width)))
-                (aset blocks i (list comp-size decomp-size file-off))
-                (cl-incf file-off comp-size)))
-            (list :blocks blocks
-                  :record-blocks-offset blocks-data-start)))))))
+         (kw-end (or (gethash (concat path ":kw-end")
+                              johnson-mdict--header-cache)
+                     ;; If not cached, parse keywords first to set it.
+                     (progn
+                       (johnson-mdict--parse-keyword-section path)
+                       (gethash (concat path ":kw-end")
+                                johnson-mdict--header-cache)))))
+    ;; Record section header: 4 fields of num-width each.
+    (let* ((rec-header-size (* 4 num-width))
+           (rec-header-data (johnson-mdict--read-file-region
+                             path kw-end rec-header-size))
+           (num-blocks (johnson-mdict--read-number rec-header-data 0 num-width))
+           ;; Skip num-entries (field 2).
+           (info-size (johnson-mdict--read-number
+                       rec-header-data (* 2 num-width) num-width))
+           ;; Block info entries follow the header.
+           (info-start (+ kw-end rec-header-size))
+           (info-data (johnson-mdict--read-file-region
+                       path info-start info-size))
+           (blocks (make-vector num-blocks nil))
+           (data-start (+ info-start info-size))
+           (file-off data-start))
+      (dotimes (i num-blocks)
+        (let* ((base (* i 2 num-width))
+               (comp-size (johnson-mdict--read-number info-data base num-width))
+               (decomp-size (johnson-mdict--read-number
+                             info-data (+ base num-width) num-width)))
+          (aset blocks i (list comp-size decomp-size file-off))
+          (cl-incf file-off comp-size)))
+      (list :blocks blocks :data-start data-start))))
 
 ;;;; Record retrieval
 
@@ -531,14 +478,42 @@ Returns a unibyte string."
                (block-info (aref (plist-get rec-info :blocks) block-index))
                (comp-size (nth 0 block-info))
                (file-off (nth 2 block-info))
-               (raw (with-temp-buffer
-                      (set-buffer-multibyte nil)
-                      (insert-file-contents-literally
-                       path nil file-off (+ file-off comp-size))
-                      (buffer-string)))
+               (raw (johnson-mdict--read-file-region path file-off comp-size))
                (decompressed (johnson-mdict--decompress-block raw)))
           (johnson-mdict--block-cache-put cache-key decompressed)
           decompressed))))
+
+;;;; Offset cache for entry size computation
+
+(defun johnson-mdict--ensure-offset-cache (path entries)
+  "Ensure the sorted offset cache exists for PATH.
+ENTRIES is a list of (HEADWORD . OFFSET) cons cells (or nil to
+parse them from scratch)."
+  (unless (gethash path johnson-mdict--offset-cache)
+    (let* ((pairs (or entries
+                      (johnson-mdict--parse-keyword-section path)))
+           (offsets (mapcar #'cdr pairs))
+           (unique (cl-remove-duplicates (sort offsets #'<))))
+      (puthash path (vconcat unique) johnson-mdict--offset-cache))))
+
+(defun johnson-mdict--next-offset (path entry-offset)
+  "Find the next record offset after ENTRY-OFFSET in PATH.
+Returns the next offset, or -1 if this is the last entry."
+  (johnson-mdict--ensure-offset-cache path nil)
+  (let* ((offsets (gethash path johnson-mdict--offset-cache))
+         (len (length offsets))
+         ;; Binary search for entry-offset.
+         (lo 0)
+         (hi (1- len)))
+    (while (< lo hi)
+      (let ((mid (/ (+ lo hi) 2)))
+        (if (< (aref offsets mid) entry-offset)
+            (setq lo (1+ mid))
+          (setq hi mid))))
+    ;; lo should now point to entry-offset's position.
+    (if (< (1+ lo) len)
+        (aref offsets (1+ lo))
+      -1)))
 
 ;;;; Format detection
 
@@ -575,75 +550,46 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
   "Parse the MDict dictionary at PATH, calling CALLBACK for each entry.
 CALLBACK is called as (funcall CALLBACK headword record-offset 0)
 where record-offset is the byte offset into the decompressed record stream."
-  (let ((keywords (johnson-mdict--parse-keyword-section path)))
-    (cl-loop for entry across keywords
-             do (funcall callback (car entry) (cdr entry) 0))))
+  (let ((entries (johnson-mdict--parse-keyword-section path)))
+    ;; Build and cache the sorted offset vector.
+    (johnson-mdict--ensure-offset-cache path entries)
+    (dolist (entry entries)
+      (funcall callback (car entry) (cdr entry) 0))))
 
 ;;;; Entry retrieval
 
 (defun johnson-mdict-retrieve-entry (path record-offset _byte-size)
   "Retrieve the entry data from the MDict dictionary at PATH.
 RECORD-OFFSET is the offset into the decompressed record stream.
-Returns a raw unibyte string."
+Returns the entry data as a decoded string."
   (setq johnson-mdict--current-dict-dir (file-name-directory path))
-  (let* ((loc (johnson-mdict--locate-record path record-offset))
+  (let* ((header (johnson-mdict--parse-header path))
+         (encoding (plist-get header :encoding))
+         (loc (johnson-mdict--locate-record path record-offset))
          (block-idx (car loc))
          (local-offset (cdr loc))
          (block-data (johnson-mdict--read-record-block path block-idx))
-         (header (johnson-mdict--parse-header path))
-         (encoding (plist-get header :encoding)))
-    ;; Entry data starts at local-offset.
-    ;; Find end: for MDict, entries end at the start of the next entry
-    ;; or end of the block.  Since we stored cumulative offsets, we need
-    ;; to find the length by looking at the next keyword's offset.
-    ;; For simplicity, extract from local-offset to the next null-terminated
-    ;; boundary or end of block.
-    ;;
-    ;; Actually, in MDict the record size is determined by the difference
-    ;; between consecutive record offsets.  We compute it from the keyword list.
-    (let* ((keywords (johnson-mdict--parse-keyword-section path))
-           (entry-size (johnson-mdict--find-entry-size
-                        keywords record-offset (length block-data) local-offset))
-           (entry-data (substring block-data local-offset
-                                  (+ local-offset entry-size))))
-      ;; Return the decoded text.
-      (encode-coding-string
-       (decode-coding-string entry-data encoding)
-       'utf-8))))
-
-(defun johnson-mdict--find-entry-size (keywords record-offset block-data-len local-offset)
-  "Find the size of the entry at RECORD-OFFSET.
-KEYWORDS is the keyword vector.  BLOCK-DATA-LEN is the decompressed
-block length.  LOCAL-OFFSET is the offset within the block.
-Returns the number of bytes."
-  (let ((next-offset nil)
-        (len (length keywords)))
-    ;; Find the next record offset after this one.
-    (dotimes (i len)
-      (let ((offset (cdr (aref keywords i))))
-        (when (and (> offset record-offset)
-                   (or (null next-offset)
-                       (< offset next-offset)))
-          (setq next-offset offset))))
-    (if next-offset
-        ;; The entry size is the difference between offsets, but capped
-        ;; at the remaining block data.
-        (min (- next-offset record-offset)
-             (- block-data-len local-offset))
-      ;; Last entry: extends to end of block.
-      (- block-data-len local-offset))))
+         (next-offset (johnson-mdict--next-offset path record-offset))
+         (entry-size
+          (if (= next-offset -1)
+              ;; Last entry: extends to end of block.
+              (- (length block-data) local-offset)
+            ;; Compute local end within the block.
+            (min (- next-offset record-offset)
+                 (- (length block-data) local-offset))))
+         (entry-data (substring block-data local-offset
+                                (+ local-offset entry-size))))
+    (decode-coding-string entry-data encoding)))
 
 ;;;; Entry rendering
 
-(defun johnson-mdict-render-entry (raw-data)
-  "Render MDict entry RAW-DATA into the current buffer.
-RAW-DATA is a UTF-8 encoded string containing HTML content."
-  (let ((text (decode-coding-string raw-data 'utf-8))
-        (start (point))
+(defun johnson-mdict-render-entry (data)
+  "Render MDict entry DATA into the current buffer.
+DATA is a decoded string containing HTML content."
+  (let ((start (point))
         (johnson-html--current-dict-dir johnson-mdict--current-dict-dir))
-    (insert text)
-    (let ((end (point)))
-      (johnson-html-render-region start end))))
+    (insert data)
+    (johnson-html-render-region start (point))))
 
 ;;;; MDD resource lookup
 
@@ -658,8 +604,8 @@ RAW-DATA is a UTF-8 encoded string containing HTML content."
 (defun johnson-mdict-clear-caches ()
   "Clear all MDict caches."
   (clrhash johnson-mdict--header-cache)
-  (clrhash johnson-mdict--keyword-cache)
-  (clrhash johnson-mdict--record-index-cache)
+  (clrhash johnson-mdict--record-meta-cache)
+  (clrhash johnson-mdict--offset-cache)
   (setq johnson-mdict--block-cache nil))
 
 ;;;; Format registration

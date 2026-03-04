@@ -1,7 +1,7 @@
 ;;; johnson.el --- Multi-format dictionary UI for Emacs -*- lexical-binding: t; -*-
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: dictionaries, i18n
 
@@ -17,7 +17,7 @@
 ;; implements native Elisp parsing for all supported formats — no
 ;; external tools required.
 ;;
-;; Supported formats (v0.2): DSL (ABBYY Lingvo), StarDict.
+;; Supported formats (v0.3): DSL (ABBYY Lingvo), StarDict, MDict.
 ;;
 ;; Usage:
 ;;   M-x johnson-lookup            Look up a word
@@ -1330,6 +1330,14 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     (johnson--close-all-dbs)
     (when (boundp 'johnson-dsl--abbreviation-cache)
       (clrhash johnson-dsl--abbreviation-cache))
+    (when (boundp 'johnson-mdict--header-cache)
+      (clrhash johnson-mdict--header-cache))
+    (when (boundp 'johnson-mdict--record-meta-cache)
+      (clrhash johnson-mdict--record-meta-cache))
+    (when (boundp 'johnson-mdict--offset-cache)
+      (clrhash johnson-mdict--offset-cache))
+    (when (boundp 'johnson-mdict--block-cache)
+      (setq johnson-mdict--block-cache nil))
     (setq johnson--dictionaries nil)
     (setq johnson--indexed-p nil)
     (message "Closed %d cache buffer%s and all database connections"
@@ -1391,6 +1399,7 @@ See `johnson-audio-player'."
 
 (require 'johnson-dsl nil t)
 (require 'johnson-stardict nil t)
+(require 'johnson-mdict nil t)
 
 (provide 'johnson)
 ;;; johnson.el ends here

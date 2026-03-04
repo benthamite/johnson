@@ -62,6 +62,11 @@
   (should-not (johnson-mdict-detect
                (johnson-mdict-test--fixture "test-stardict.ifo"))))
 
+(ert-deftest johnson-mdict-test-detect-rejects-wrong-extension ()
+  "Rejects a file without .mdx extension."
+  (should-not (johnson-mdict-detect
+               (johnson-mdict-test--fixture "test-stardict.dict"))))
+
 ;;;; Metadata parsing
 
 (ert-deftest johnson-mdict-test-parse-metadata ()
@@ -111,11 +116,25 @@
   (let ((keywords (johnson-mdict--parse-keyword-section
                    (johnson-mdict-test--fixture "test-mdict.mdx"))))
     (should (= (length keywords) 3))
-    (let ((headwords (cl-loop for entry across keywords
-                              collect (car entry))))
+    (let ((headwords (mapcar #'car keywords)))
       (should (member "apple" headwords))
       (should (member "cat" headwords))
       (should (member "hello" headwords)))))
+
+(ert-deftest johnson-mdict-test-parse-keywords-offsets ()
+  "Keyword entries have correct record offsets."
+  (johnson-mdict-test--cleanup)
+  (let* ((keywords (johnson-mdict--parse-keyword-section
+                    (johnson-mdict-test--fixture "test-mdict.mdx")))
+         (apple (cl-find "apple" keywords :key #'car :test #'equal))
+         (cat (cl-find "cat" keywords :key #'car :test #'equal))
+         (hello (cl-find "hello" keywords :key #'car :test #'equal)))
+    ;; "apple" should be first (offset 0).
+    (should (= (cdr apple) 0))
+    ;; "cat" should come after "apple".
+    (should (> (cdr cat) 0))
+    ;; "hello" should come after "cat".
+    (should (> (cdr hello) (cdr cat)))))
 
 (ert-deftest johnson-mdict-test-parse-keywords-encrypted ()
   "Parses keyword section from encrypted fixture."
@@ -123,11 +142,27 @@
   (let ((keywords (johnson-mdict--parse-keyword-section
                    (johnson-mdict-test--fixture "test-mdict-encrypted.mdx"))))
     (should (= (length keywords) 3))
-    (let ((headwords (cl-loop for entry across keywords
-                              collect (car entry))))
+    (let ((headwords (mapcar #'car keywords)))
       (should (member "apple" headwords))
       (should (member "cat" headwords))
       (should (member "hello" headwords)))))
+
+;;;; Offset cache
+
+(ert-deftest johnson-mdict-test-next-offset ()
+  "Binary search finds the next offset correctly."
+  (johnson-mdict-test--cleanup)
+  (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
+         (keywords (johnson-mdict--parse-keyword-section path)))
+    (johnson-mdict--ensure-offset-cache path keywords)
+    ;; First entry's next offset should be the second entry's offset.
+    (let* ((apple (cl-find "apple" keywords :key #'car :test #'equal))
+           (cat (cl-find "cat" keywords :key #'car :test #'equal))
+           (hello (cl-find "hello" keywords :key #'car :test #'equal)))
+      (should (= (johnson-mdict--next-offset path (cdr apple)) (cdr cat)))
+      (should (= (johnson-mdict--next-offset path (cdr cat)) (cdr hello)))
+      ;; Last entry returns -1.
+      (should (= (johnson-mdict--next-offset path (cdr hello)) -1)))))
 
 ;;;; Record retrieval
 
@@ -136,12 +171,11 @@
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path))
-         (apple-entry (cl-find "apple" keywords
-                               :key #'car :test #'equal)))
+         (apple-entry (cl-find "apple" keywords :key #'car :test #'equal)))
     (should apple-entry)
-    (let ((raw (johnson-mdict-retrieve-entry path (cdr apple-entry) 0)))
-      (let ((text (decode-coding-string raw 'utf-8)))
-        (should (string-match-p "round fruit" text))))))
+    (let ((text (johnson-mdict-retrieve-entry path (cdr apple-entry) 0)))
+      (should (stringp text))
+      (should (string-match-p "round fruit" text)))))
 
 (ert-deftest johnson-mdict-test-retrieve-all-entries ()
   "Retrieves all entries and verifies content."
@@ -149,12 +183,10 @@
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path)))
     (let* ((cat-entry (cl-find "cat" keywords :key #'car :test #'equal))
-           (raw (johnson-mdict-retrieve-entry path (cdr cat-entry) 0))
-           (text (decode-coding-string raw 'utf-8)))
+           (text (johnson-mdict-retrieve-entry path (cdr cat-entry) 0)))
       (should (string-match-p "feline" text)))
     (let* ((hello-entry (cl-find "hello" keywords :key #'car :test #'equal))
-           (raw (johnson-mdict-retrieve-entry path (cdr hello-entry) 0))
-           (text (decode-coding-string raw 'utf-8)))
+           (text (johnson-mdict-retrieve-entry path (cdr hello-entry) 0)))
       (should (string-match-p "greeting" text)))))
 
 (ert-deftest johnson-mdict-test-retrieve-encrypted ()
@@ -163,9 +195,8 @@
   (let* ((path (johnson-mdict-test--fixture "test-mdict-encrypted.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path))
          (apple-entry (cl-find "apple" keywords :key #'car :test #'equal)))
-    (let ((raw (johnson-mdict-retrieve-entry path (cdr apple-entry) 0)))
-      (let ((text (decode-coding-string raw 'utf-8)))
-        (should (string-match-p "round fruit" text))))))
+    (let ((text (johnson-mdict-retrieve-entry path (cdr apple-entry) 0)))
+      (should (string-match-p "round fruit" text)))))
 
 ;;;; Rendering
 
@@ -175,9 +206,9 @@
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path))
          (apple-entry (cl-find "apple" keywords :key #'car :test #'equal))
-         (raw (johnson-mdict-retrieve-entry path (cdr apple-entry) 0)))
+         (data (johnson-mdict-retrieve-entry path (cdr apple-entry) 0)))
     (with-temp-buffer
-      (johnson-mdict-render-entry raw)
+      (johnson-mdict-render-entry data)
       (let ((text (buffer-substring-no-properties (point-min) (point-max))))
         ;; Tags should be removed.
         (should-not (string-match-p "<b>" text))
@@ -187,6 +218,19 @@
       (let ((pos (text-property-any (point-min) (point-max)
                                     'face 'johnson-bold-face)))
         (should pos)))))
+
+(ert-deftest johnson-mdict-test-render-removes-tags ()
+  "All HTML tags are removed from rendered output."
+  (johnson-mdict-test--cleanup)
+  (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
+         (keywords (johnson-mdict--parse-keyword-section path))
+         (cat-entry (cl-find "cat" keywords :key #'car :test #'equal))
+         (data (johnson-mdict-retrieve-entry path (cdr cat-entry) 0)))
+    (with-temp-buffer
+      (johnson-mdict-render-entry data)
+      (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+        (should-not (string-match-p "<" text))
+        (should-not (string-match-p ">" text))))))
 
 ;;;; Index building
 
@@ -202,7 +246,17 @@
     (let ((headwords (mapcar #'car entries)))
       (should (member "apple" headwords))
       (should (member "cat" headwords))
-      (should (member "hello" headwords)))))
+      (should (member "hello" headwords)))
+    ;; All size values should be 0 (MDict uses offset-based sizing).
+    (should (cl-every (lambda (e) (= (nth 2 e) 0)) entries))))
+
+(ert-deftest johnson-mdict-test-build-index-populates-offset-cache ()
+  "build-index populates the offset cache."
+  (johnson-mdict-test--cleanup)
+  (let ((path (johnson-mdict-test--fixture "test-mdict.mdx")))
+    (johnson-mdict-build-index path (lambda (_hw _off _sz)))
+    (should (gethash path johnson-mdict--offset-cache))
+    (should (> (length (gethash path johnson-mdict--offset-cache)) 0))))
 
 ;;;; Full integration
 
@@ -224,10 +278,10 @@
       ;; 4. Retrieve and render "apple".
       (let* ((apple-entry (cl-find "apple" entries :key #'car :test #'equal)))
         (should apple-entry)
-        (let ((raw (johnson-mdict-retrieve-entry
-                    path (nth 1 apple-entry) (nth 2 apple-entry))))
+        (let ((data (johnson-mdict-retrieve-entry
+                     path (nth 1 apple-entry) (nth 2 apple-entry))))
           (with-temp-buffer
-            (johnson-mdict-render-entry raw)
+            (johnson-mdict-render-entry data)
             (let ((text (buffer-substring-no-properties
                          (point-min) (point-max))))
               (should (string-match-p "round fruit" text)))))))))
@@ -243,13 +297,34 @@
                                   (push (list hw offset size) entries)))
     (should (= (length entries) 3))
     (let* ((cat-entry (cl-find "cat" entries :key #'car :test #'equal))
-           (raw (johnson-mdict-retrieve-entry
-                 path (nth 1 cat-entry) (nth 2 cat-entry))))
+           (data (johnson-mdict-retrieve-entry
+                  path (nth 1 cat-entry) (nth 2 cat-entry))))
       (with-temp-buffer
-        (johnson-mdict-render-entry raw)
+        (johnson-mdict-render-entry data)
         (let ((text (buffer-substring-no-properties
                      (point-min) (point-max))))
           (should (string-match-p "feline" text)))))))
+
+(ert-deftest johnson-mdict-test-full-integration-all-entries ()
+  "Full round-trip: all entries from unencrypted fixture."
+  (johnson-mdict-test--cleanup)
+  (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
+         (entries nil))
+    (johnson-mdict-build-index path
+                                (lambda (hw offset size)
+                                  (push (list hw offset size) entries)))
+    ;; Retrieve and render every entry.
+    (dolist (entry entries)
+      (let ((data (johnson-mdict-retrieve-entry
+                   path (nth 1 entry) (nth 2 entry))))
+        (should (stringp data))
+        (should (> (length data) 0))
+        (with-temp-buffer
+          (johnson-mdict-render-entry data)
+          (let ((text (buffer-substring-no-properties
+                       (point-min) (point-max))))
+            ;; No HTML tags remaining.
+            (should-not (string-match-p "<b>" text))))))))
 
 ;;;; Binary helpers
 
@@ -265,19 +340,12 @@
   (let ((data (string #x00 #x00 #x00 #x00 #x00 #x00 #x00 #x03)))
     (should (= (johnson-mdict--u64be data 0) 3))))
 
-(ert-deftest johnson-mdict-test-u32le ()
-  "Reads 32-bit little-endian integers correctly."
-  (let ((data (string #x01 #x00 #x00 #x00)))
-    (should (= (johnson-mdict--u32le data 0) 1)))
-  (let ((data (string #x00 #x00 #x01 #x00)))
-    (should (= (johnson-mdict--u32le data 0) 65536))))
-
-(ert-deftest johnson-mdict-test-adler32 ()
-  "Computes Adler-32 checksum correctly."
-  ;; Known value: adler32("Wikipedia") = 0x11E60398
-  (let ((result (johnson-mdict--adler32
-                 (encode-coding-string "Wikipedia" 'utf-8))))
-    (should (= result #x11E60398))))
+(ert-deftest johnson-mdict-test-u16be ()
+  "Reads 16-bit big-endian integers correctly."
+  (let ((data (string #x00 #x05)))
+    (should (= (johnson-mdict--u16be data 0) 5)))
+  (let ((data (string #x01 #x00)))
+    (should (= (johnson-mdict--u16be data 0) 256))))
 
 (provide 'johnson-mdict-test)
 ;;; johnson-mdict-test.el ends here
