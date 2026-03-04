@@ -434,14 +434,6 @@ Returns a list of (HEADWORD . RECORD-OFFSET) cons cells."
                    (decomp-size (cdr info))
                    (block-data (substring blocks-data block-pos
                                           (+ block-pos comp-size))))
-              ;; Decrypt even-indexed keyword blocks if encrypted.
-              ;; Key from bytes 4-8, only payload after 8-byte header.
-              (when (and (/= (logand encrypted 2) 0) (= (mod block-index 2) 0))
-                (let ((kb-key (substring block-data 4 8)))
-                  (setq block-data
-                        (concat (substring block-data 0 8)
-                                (johnson-mdict--decrypt-data
-                                 (substring block-data 8) kb-key)))))
               (let* ((decompressed (johnson-mdict--decompress-block
                                     block-data decomp-size))
                      (entries (johnson-mdict--parse-kw-block-entries
