@@ -271,7 +271,8 @@ for use by the renderer."
 Strips HTML tags and converts common formatting tags to text properties."
   (let ((text (decode-coding-string data 'utf-8))
         (start (point))
-        (johnson-html--current-dict-dir johnson-stardict--current-dict-dir))
+        (johnson-html--current-dict-dir johnson-stardict--current-dict-dir)
+        (johnson-html--current-dict-path nil))
     (insert text)
     (let ((end (point)))
       (johnson-html-render-region start end))))
@@ -358,7 +359,8 @@ Handles XDXF tags like <kref>, <gr>, <ex>, <abbr>, <dtrn>."
 Handles <b>, <i>, <u>, <span foreground=\"...\"> tags."
   (let ((text (decode-coding-string data 'utf-8))
         (start (point))
-        (johnson-html--current-dict-dir johnson-stardict--current-dict-dir))
+        (johnson-html--current-dict-dir johnson-stardict--current-dict-dir)
+        (johnson-html--current-dict-path nil))
     (insert text)
     (let ((end (point)))
       ;; Process Pango tags — essentially the same as HTML.

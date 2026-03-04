@@ -25,6 +25,10 @@
 Callers should set this before calling `johnson-html-render-region'
 so that relative sound:// paths can be resolved.")
 
+(defvar johnson-html--current-dict-path nil
+  "Full path of the dictionary file being rendered.
+Used to locate companion zip archives for audio extraction.")
+
 ;;;; Color mapping
 
 (defun johnson-html-color-to-face (color)
@@ -87,7 +91,8 @@ ATTRS is the raw attribute string from the opening tag."
      (cond
       ;; sound:// links -> audio button
       ((string-match "href\\s-*=\\s-*[\"']sound://\\([^\"']+\\)[\"']" attrs)
-       (let ((filename (match-string 1 attrs)))
+       (let ((filename (subst-char-in-string
+                        ?\\ ?/ (match-string 1 attrs))))
          ;; Remove the link text and insert an audio button instead.
          (delete-region region-start region-end)
          (goto-char region-start)
@@ -96,7 +101,8 @@ ATTRS is the raw attribute string from the opening tag."
            (let ((audio-path (expand-file-name
                               filename
                               johnson-html--current-dict-dir)))
-             (johnson-insert-audio-button audio-path)))))
+             (johnson-insert-audio-button
+              audio-path nil johnson-html--current-dict-path)))))
       ;; bword:// and entry:// links -> cross-reference button
       ((string-match "href\\s-*=\\s-*[\"']\\(?:bword://\\|entry://\\)?\\([^\"']+\\)[\"']" attrs)
        (let ((target (match-string 1 attrs)))

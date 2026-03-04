@@ -1380,6 +1380,62 @@ Dictionaries will be re-indexed on next lookup."
           (cl-incf count)))
       (message "Deleted %d index file%s" count (if (= count 1) "" "s")))))
 
+;;;; Resource extraction from companion zip archives
+
+(defun johnson--resource-zip-path (dict-path)
+  "Derive the companion `.dsl.files.zip' archive path from DICT-PATH.
+Strip `.dz' if present, then append `.files.zip'.
+Return the path if it exists, nil otherwise."
+  (let* ((base (if (string-suffix-p ".dz" dict-path t)
+                   (file-name-sans-extension dict-path)
+                 dict-path))
+         (zip (concat base ".files.zip")))
+    (when (file-exists-p zip)
+      zip)))
+
+(defun johnson--resource-cache-dir (zip-path)
+  "Return the cache subdirectory for resources from ZIP-PATH.
+The directory is `johnson-cache-directory/resources/<md5-of-zip-path>/'."
+  (expand-file-name (md5 zip-path)
+                    (expand-file-name "resources" johnson-cache-directory)))
+
+(defun johnson--extract-resource (zip-path filename)
+  "Extract FILENAME from ZIP-PATH to the resource cache directory.
+Uses `unzip -p' to extract to stdout, then writes to disk.
+Return the cached file path on success, nil on failure.
+Skip extraction if already cached."
+  (let* ((cache-dir (johnson--resource-cache-dir zip-path))
+         (cached (expand-file-name filename cache-dir)))
+    (if (file-exists-p cached)
+        cached
+      (make-directory (file-name-directory cached) t)
+      (let ((exit-code
+             (with-temp-buffer
+               (set-buffer-multibyte nil)
+               (let ((code (call-process "unzip" nil t nil "-p" zip-path filename)))
+                 (when (and (zerop code) (> (buffer-size) 0))
+                   (let ((coding-system-for-write 'no-conversion))
+                     (write-region (point-min) (point-max) cached nil 'silent)))
+                 code))))
+        (if (file-exists-p cached)
+            cached
+          (message "johnson: failed to extract %s from %s (exit %s)"
+                   filename zip-path exit-code)
+          nil)))))
+
+(defun johnson--resolve-audio-file (audio-path dict-path)
+  "Resolve AUDIO-PATH, extracting from a companion zip if needed.
+If AUDIO-PATH exists on disk, return it.  Otherwise, look for a
+companion `.dsl.files.zip' archive via DICT-PATH, extract the
+file, and return the cached path.  Return nil if unavailable."
+  (cond
+   ((file-exists-p audio-path) audio-path)
+   (dict-path
+    (let ((zip (johnson--resource-zip-path dict-path)))
+      (when zip
+        (johnson--extract-resource zip (file-name-nondirectory audio-path)))))
+   (t nil)))
+
 ;;;; Audio playback
 
 (defun johnson--find-external-player ()
@@ -1418,27 +1474,51 @@ See `johnson-audio-player'."
     (message "johnson: invalid `johnson-audio-player' value: %S"
              johnson-audio-player))))
 
+(defun johnson--play-audio (file dict-path)
+  "Resolve and play audio FILE, using DICT-PATH for zip extraction.
+If the file doesn't exist on disk, attempt to extract it from a
+companion zip archive.  Report an error if unavailable."
+  (let ((resolved (johnson--resolve-audio-file file dict-path)))
+    (if resolved
+        (johnson-play-sound resolved)
+      (message "Audio file not found: %s" file))))
+
 (defun johnson-play-audio-at-point ()
   "Play the audio file referenced by the button at point."
   (interactive)
-  (let ((file (get-text-property (point) 'johnson-audio-file)))
+  (let ((file (get-text-property (point) 'johnson-audio-file))
+        (dict-path (get-text-property (point) 'johnson-audio-dict-path)))
     (if file
-        (if (file-exists-p file)
-            (johnson-play-sound file)
-          (message "Audio file not found: %s" file))
+        (johnson--play-audio file dict-path)
       (message "No audio at point"))))
 
-(defun johnson-insert-audio-button (file &optional label)
-  "Insert a play button for audio FILE with optional LABEL."
+(defun johnson-insert-audio-button (file &optional label dict-path)
+  "Insert a play button for audio FILE with optional LABEL.
+DICT-PATH, if non-nil, is the dictionary file path used to locate
+a companion zip archive for on-demand extraction."
   (let ((start (point))
         (text (or label "\u25B6")))
     (insert text)
     (make-text-button start (point)
                       'face 'johnson-audio-button-face
                       'johnson-audio-file file
-                      'action (lambda (_btn) (johnson-play-sound file))
+                      'johnson-audio-dict-path dict-path
+                      'action (lambda (_btn)
+                                (johnson--play-audio file dict-path))
                       'help-echo (format "Play %s" (file-name-nondirectory file)))
     (insert " ")))
+
+;;;###autoload
+(defun johnson-clear-resource-cache ()
+  "Delete all extracted resource files from the cache.
+Removes the `resources/' subdirectory of `johnson-cache-directory'."
+  (interactive)
+  (let ((dir (expand-file-name "resources" johnson-cache-directory)))
+    (if (file-directory-p dir)
+        (progn
+          (delete-directory dir t)
+          (message "Deleted resource cache: %s" dir))
+      (message "No resource cache to delete"))))
 
 ;;;; Load built-in format backends
 
