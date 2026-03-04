@@ -17,6 +17,8 @@
 
 (declare-function johnson-lookup "johnson")
 (declare-function johnson-insert-audio-button "johnson")
+(declare-function johnson--image-file-p "johnson")
+(declare-function johnson--insert-image "johnson")
 
 ;;;; Internal variables
 
@@ -28,6 +30,12 @@ so that relative sound:// paths can be resolved.")
 (defvar johnson-html--current-dict-path nil
   "Full path of the dictionary file being rendered.
 Used to locate companion zip archives for audio extraction.")
+
+(defvar johnson-html--resolve-resource-fn nil
+  "When non-nil, a function to resolve resource paths.
+Called with (DICT-PATH RESOURCE-NAME), should return a local file
+path or nil.  Set by format backends (e.g., MDict for MDD lookup)
+before calling `johnson-html-render-region'.")
 
 ;;;; Color mapping
 
@@ -211,6 +219,43 @@ Replaces tags with text properties."
       (let ((len (- (match-end 0) (match-beginning 0))))
         (replace-match "\n")
         (setq end (- end len -1))))
+    ;; Process <img> tags (self-closing).
+    (goto-char start)
+    (while (re-search-forward "<img\\s-+\\([^>]*\\)/?>\\|<img\\s-+\\([^>]*\\)>" end t)
+      (let* ((attrs (or (match-string 1) (match-string 2) ""))
+             (tag-beg (match-beginning 0))
+             (tag-end (match-end 0)))
+        (delete-region tag-beg tag-end)
+        (setq end (- end (- tag-end tag-beg)))
+        (goto-char tag-beg)
+        (when (string-match "src\\s-*=\\s-*[\"']\\([^\"']+\\)[\"']" attrs)
+          (let* ((src (match-string 1 attrs))
+                 (resolved
+                  (cond
+                   ;; Try disk relative to dict dir.
+                   ((and johnson-html--current-dict-dir
+                         (let ((f (expand-file-name src johnson-html--current-dict-dir)))
+                           (when (file-exists-p f) f))))
+                   ;; Try resource resolver (e.g., MDD).
+                   ((and johnson-html--resolve-resource-fn
+                         johnson-html--current-dict-path)
+                    (funcall johnson-html--resolve-resource-fn
+                             johnson-html--current-dict-path src))
+                   (t nil))))
+            (when resolved
+              (if (and (fboundp 'johnson--image-file-p)
+                       (johnson--image-file-p resolved))
+                  (let ((before (point)))
+                    (johnson--insert-image resolved)
+                    (setq end (+ end (- (point) before))))
+                (when (and (fboundp 'johnson-insert-audio-button)
+                           (string-match-p
+                            "\\.\\(?:wav\\|mp3\\|ogg\\|spx\\|opus\\)\\'"
+                            resolved))
+                  (let ((before (point)))
+                    (johnson-insert-audio-button
+                     resolved nil johnson-html--current-dict-path)
+                    (setq end (+ end (- (point) before)))))))))))
     ;; Process paired tags using a stack-based approach.
     (let ((tag-re "<\\(/\\)?\\([a-zA-Z]+\\)\\([^>]*\\)>")
           (stack nil))

@@ -1,7 +1,7 @@
 ;;; johnson.el --- Multi-format dictionary UI for Emacs -*- lexical-binding: t; -*-
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
-;; Version: 0.3.0
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: dictionaries, i18n
 
@@ -14,7 +14,7 @@
 ;; implements native Elisp parsing for all supported formats — no
 ;; external tools required.
 ;;
-;; Supported formats (v0.3): DSL (ABBYY Lingvo), StarDict, MDict.
+;; Supported formats (v0.4): DSL (ABBYY Lingvo), StarDict, MDict, BGL (Babylon), DICT protocol.
 ;;
 ;; Usage:
 ;;   M-x johnson-lookup            Look up a word
@@ -90,6 +90,66 @@ Each entry is a command name.  The first one found on the system is used."
   :type '(repeat string)
   :group 'johnson)
 
+(defcustom johnson-display-images t
+  "Whether to display inline images in dictionary entries.
+When nil, images are replaced with `[image: FILENAME]' placeholders."
+  :type 'boolean
+  :group 'johnson)
+
+(defcustom johnson-wildcard-max-results 200
+  "Maximum number of results returned by wildcard search."
+  :type 'integer
+  :group 'johnson)
+
+(defcustom johnson-fts-enabled nil
+  "Whether full-text search indexing is enabled.
+When non-nil, definitions are indexed for full-text search during
+the indexing process.  This significantly increases index size and
+indexing time."
+  :type 'boolean
+  :group 'johnson)
+
+(defcustom johnson-eldoc-max-length 80
+  "Maximum length of eldoc definition strings."
+  :type 'integer
+  :group 'johnson)
+
+(defcustom johnson-scan-trigger 'selection
+  "What triggers scan-popup lookups.
+`selection' triggers on text selection, `idle' triggers after idle
+delay, `both' triggers on either."
+  :type '(choice (const :tag "Text selection" selection)
+                 (const :tag "Idle timer" idle)
+                 (const :tag "Both" both))
+  :group 'johnson)
+
+(defcustom johnson-scan-idle-delay 1.0
+  "Idle delay in seconds before scan-popup looks up word at point."
+  :type 'float
+  :group 'johnson)
+
+(defcustom johnson-scan-popup-duration 5.0
+  "Duration in seconds to display the scan popup."
+  :type 'float
+  :group 'johnson)
+
+(defcustom johnson-bookmarks-file
+  (expand-file-name "bookmarks.el" "~/.cache/johnson/")
+  "File where bookmarks are persisted."
+  :type 'file
+  :group 'johnson)
+
+(defcustom johnson-history-file
+  (expand-file-name "history.el" "~/.cache/johnson/")
+  "File where the timestamped history log is persisted."
+  :type 'file
+  :group 'johnson)
+
+(defcustom johnson-history-persist t
+  "Whether to persist the timestamped history log to disk."
+  :type 'boolean
+  :group 'johnson)
+
 ;;;; Faces
 
 (defface johnson-section-header-face
@@ -161,6 +221,33 @@ Each element has keys :path, :format-name, :name,
 
 (defvar-local johnson--temp-audio-files nil
   "List of temporary audio file paths to delete when the buffer is killed.")
+
+(defvar johnson--bookmarks nil
+  "In-memory list of bookmarked entries.
+Each element is a plist (:headword STRING :dictionary STRING
+:timestamp FLOAT :path STRING).")
+
+(defvar johnson--bookmarks-loaded nil
+  "Non-nil when bookmarks have been loaded from disk.")
+
+(defvar johnson--history-log nil
+  "Timestamped history of lookups.
+Each element is a plist (:word STRING :timestamp FLOAT :dict-count INTEGER).")
+
+(defvar johnson--history-log-loaded nil
+  "Non-nil when history log has been loaded from disk.")
+
+(defvar johnson--eldoc-cache (make-hash-table :test #'equal)
+  "LRU cache for eldoc definitions.  Maps word to plain-text result.")
+
+(defvar johnson--scan-idle-timer nil
+  "Idle timer for `johnson-scan-mode'.")
+
+(defvar johnson--scan-last-word nil
+  "Last word looked up by `johnson-scan-mode' (debounce).")
+
+(defvar johnson--scan-hide-timer nil
+  "Timer to hide the scan popup.")
 
 ;;;; Format registry
 
@@ -250,7 +337,18 @@ PROPS is a plist with keys :name, :extensions, :detect,
                    (message "johnson: error reading %s: %s"
                             (file-name-nondirectory file)
                             (error-message-string err))))))))))
-    (setq johnson--dictionaries (nreverse dicts))))
+    (setq johnson--dictionaries (nreverse dicts))
+    ;; Append network-based dictionaries (e.g., DICT protocol).
+    (dolist (fmt johnson--formats)
+      (when-let* ((discover-fn (plist-get fmt :discover)))
+        (condition-case err
+            (let ((net-dicts (funcall discover-fn)))
+              (setq johnson--dictionaries
+                    (append johnson--dictionaries net-dicts)))
+          (error
+           (message "johnson: discovery error for %s: %s"
+                    (plist-get fmt :name)
+                    (error-message-string err))))))))
 
 (defun johnson--ensure-dictionaries ()
   "Ensure dictionaries have been discovered."
@@ -375,6 +473,7 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
         (require 'johnson)
         (setq johnson-dictionary-directories '%S)
         (setq johnson-cache-directory %S)
+        (setq johnson-fts-enabled %S)
         (johnson--discover)
         (let ((total (length johnson--dictionaries))
               (done 0)
@@ -390,6 +489,33 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                   (if (not (johnson-db-stale-p path))
                       (let* ((db (johnson--get-db path))
                              (count (johnson-db-entry-count db)))
+                        (when (and johnson-fts-enabled
+                                   (not (johnson-db-fts-indexed-p db))
+                                   (plist-get fmt :retrieve-entry))
+                          (message \"JOHNSON-INDEX-FTS %%s\" name)
+                          (condition-case fts-err
+                              (let ((retrieve-fn (plist-get fmt :retrieve-entry))
+                                    (rows (sqlite-select db
+                                            \"SELECT headword, byte_offset, byte_length FROM entries\"))
+                                    (fts-count 0))
+                                (sqlite-execute db \"BEGIN TRANSACTION\")
+                                (dolist (row rows)
+                                  (let* ((hw (nth 0 row))
+                                         (off (nth 1 row))
+                                         (len (nth 2 row))
+                                         (raw (funcall retrieve-fn path off len))
+                                         (plain (johnson--entry-to-plain-text
+                                                 raw format-name)))
+                                    (when (and plain (not (string-empty-p plain)))
+                                      (johnson-db-insert-fts db hw plain)
+                                      (cl-incf fts-count))))
+                                (sqlite-execute db \"COMMIT\")
+                                (johnson-db-set-fts-indexed db)
+                                (message \"JOHNSON-INDEX-FTS-DONE %%s %%d\" name fts-count))
+                            (error
+                             (ignore-errors (sqlite-execute db \"ROLLBACK\"))
+                             (message \"JOHNSON-INDEX-FTS-ERROR %%s %%s\"
+                                      name (error-message-string fts-err)))))
                         (message \"JOHNSON-INDEX-PROGRESS %%d %%d up-to-date %%d %%s\"
                                  done total count name))
                     (let ((db (johnson--get-db path))
@@ -407,7 +533,35 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                         (lambda (headword offset length)
                           (push (list headword offset length) entries)
                           (cl-incf count)))
-                      (johnson-db-insert-entries-batch db (nreverse entries))
+                      (setq entries (nreverse entries))
+                      (johnson-db-insert-entries-batch db entries)
+                      (when (and johnson-fts-enabled
+                                 (not (johnson-db-fts-indexed-p db))
+                                 (plist-get fmt :retrieve-entry))
+                        (message \"JOHNSON-INDEX-FTS %%s\" name)
+                        (condition-case fts-err
+                            (let ((retrieve-fn (plist-get fmt :retrieve-entry))
+                                  (fts-count 0))
+                              (sqlite-execute (johnson--get-db path)
+                                              \"BEGIN TRANSACTION\")
+                              (dolist (entry entries)
+                                (let* ((hw (nth 0 entry))
+                                       (off (nth 1 entry))
+                                       (len (nth 2 entry))
+                                       (raw (funcall retrieve-fn path off len))
+                                       (plain (johnson--entry-to-plain-text
+                                               raw format-name)))
+                                  (when (and plain (not (string-empty-p plain)))
+                                    (johnson-db-insert-fts db hw plain)
+                                    (cl-incf fts-count))))
+                              (sqlite-execute (johnson--get-db path) \"COMMIT\")
+                              (johnson-db-set-fts-indexed db)
+                              (message \"JOHNSON-INDEX-FTS-DONE %%s %%d\" name fts-count))
+                          (error
+                           (ignore-errors
+                             (sqlite-execute (johnson--get-db path) \"ROLLBACK\"))
+                           (message \"JOHNSON-INDEX-FTS-ERROR %%s %%s\"
+                                    name (error-message-string fts-err)))))
                       (johnson-db-set-metadata db \"entry-count\"
                         (number-to-string count))
                       (johnson-db-set-metadata db \"mtime\"
@@ -427,7 +581,8 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                  (count (johnson-db-rebuild-completion-index paths)))
             (message \"JOHNSON-INDEX-COMPLETION done %%d\" count))))"
      dirs
-     (expand-file-name johnson-cache-directory))))
+     (expand-file-name johnson-cache-directory)
+     johnson-fts-enabled)))
 
 (defun johnson--index-process-filter (proc output)
   "Process filter for the child indexing process PROC.
@@ -486,6 +641,17 @@ Parses structured messages from OUTPUT and updates the progress buffer."
                 (when (> errs 0)
                   (insert (format " (%d errors)" errs))))
               (insert ".\n"))
+             ((string-match "^JOHNSON-INDEX-FTS \\(.*\\)" line)
+              (goto-char (point-max))
+              (insert (format "    FTS indexing %s...\n" (match-string 1 line))))
+             ((string-match "^JOHNSON-INDEX-FTS-DONE \\(\\S-+\\) \\([0-9]+\\)" line)
+              (goto-char (point-max))
+              (insert (format "    FTS done (%s entries)\n"
+                              (johnson--format-number
+                               (string-to-number (match-string 2 line))))))
+             ((string-match "^JOHNSON-INDEX-FTS-ERROR \\(\\S-+\\) \\(.*\\)" line)
+              (goto-char (point-max))
+              (insert (format "    FTS error: %s\n" (match-string 2 line))))
              ((string-match "^JOHNSON-INDEX-COMPLETION building" line)
               (goto-char (point-max))
               (insert "\nBuilding completion index..."))
@@ -618,8 +784,13 @@ Returns non-nil if dictionaries are ready for querying."
    (t
     ;; Use the fast filesystem-only check (no sqlite opens) to avoid
     ;; blocking Emacs when there are hundreds of dictionaries.
+    ;; Skip formats that don't use file-based indexing (e.g., DICT protocol).
     (let ((stale (cl-remove-if-not
-                  (lambda (d) (johnson-db-stale-quick-p (plist-get d :path)))
+                  (lambda (d)
+                    (let ((fmt (johnson--get-format
+                                (plist-get d :format-name))))
+                      (and (not (plist-get fmt :skip-index))
+                           (johnson-db-stale-quick-p (plist-get d :path)))))
                   johnson--dictionaries)))
       (if (null stale)
           (progn (setq johnson--indexed-p t) t)
@@ -705,10 +876,19 @@ Returns a list of (DICT-PLIST . MATCHES) sorted by priority."
     (dolist (dict johnson--dictionaries)
       (condition-case err
           (let* ((path (plist-get dict :path))
-                 (db (johnson--get-db path))
-                 (matches (johnson-db-query-exact db word)))
-            (when matches
-              (push (cons dict matches) results)))
+                 (format-name (plist-get dict :format-name))
+                 (fmt (johnson--get-format format-name))
+                 (query-fn (and fmt (plist-get fmt :query-exact))))
+            (if query-fn
+                ;; Format-specific query (e.g., DICT protocol).
+                (let ((matches (funcall query-fn path word)))
+                  (when matches
+                    (push (cons dict matches) results)))
+              ;; Standard DB-based query.
+              (let* ((db (johnson--get-db path))
+                     (matches (johnson-db-query-exact db word)))
+                (when matches
+                  (push (cons dict matches) results)))))
         (error
          (message "johnson: query error for %s: %s"
                   (plist-get dict :name) (error-message-string err)))))
@@ -740,11 +920,30 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
                   nil nil nil 'johnson-history default))))
   (when (or (null word) (string-empty-p word))
     (user-error "No word given"))
+  ;; Wildcard handling: if word contains ? or *, expand first.
+  (when (johnson--wildcard-pattern-p word)
+    (let ((matches nil))
+      (dolist (dict johnson--dictionaries)
+        (condition-case nil
+            (let* ((path (plist-get dict :path))
+                   (db (johnson--get-db path))
+                   (hits (johnson-db-query-wildcard
+                          db word johnson-wildcard-max-results)))
+              (dolist (hw hits)
+                (push hw matches)))
+          (error nil)))
+      (setq matches (delete-dups matches))
+      (if (null matches)
+          (user-error "No matches for wildcard pattern \"%s\"" word)
+        (setq word (completing-read
+                    (format "Wildcard matches (%d): " (length matches))
+                    matches nil t)))))
   (unless (equal word (car johnson-history))
     (push word johnson-history)
     (when (> (length johnson-history) johnson-history-max)
       (setcdr (nthcdr (1- johnson-history-max) johnson-history) nil)))
   (let ((results (johnson--query-all-exact word)))
+    (johnson--history-log-push word (length results))
     (johnson--display-results word results)))
 
 ;;;; Results buffer
@@ -931,6 +1130,11 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     (define-key map "o" #'johnson-ace-link)
     (define-key map "w" #'johnson-copy-entry)
     (define-key map "W" #'johnson-copy-dictionary-name)
+    (define-key map "I" #'johnson-toggle-images)
+    (define-key map "S" #'johnson-search)
+    (define-key map "m" #'johnson-bookmark-add)
+    (define-key map "M" #'johnson-bookmark-remove)
+    (define-key map "H" #'johnson-history-list)
     (define-key map "q" #'quit-window)
     map)
   "Keymap for `johnson-mode'.")
@@ -1401,6 +1605,11 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
       (clrhash johnson-mdict--offset-cache))
     (when (boundp 'johnson-mdict--block-cache)
       (setq johnson-mdict--block-cache nil))
+    (when (boundp 'johnson-mdict--mdd-index-cache)
+      (clrhash johnson-mdict--mdd-index-cache))
+    (when (boundp 'johnson-mdict--mdd-record-cache)
+      (clrhash johnson-mdict--mdd-record-cache))
+    (clrhash johnson--eldoc-cache)
     (setq johnson--dictionaries nil)
     (setq johnson--indexed-p nil)
     (message "Closed %d cache buffer%s and all database connections"
@@ -1578,11 +1787,517 @@ Removes the `resources/' subdirectory of `johnson-cache-directory'."
           (message "Deleted resource cache: %s" dir))
       (message "No resource cache to delete"))))
 
+;;;; Image support
+
+(defconst johnson--image-extensions
+  '("png" "jpg" "jpeg" "gif" "bmp" "svg" "tiff" "webp" "ico")
+  "File extensions recognized as images.")
+
+(defun johnson--image-file-p (filename)
+  "Return non-nil if FILENAME has an image extension."
+  (let ((ext (downcase (or (file-name-extension filename) ""))))
+    (member ext johnson--image-extensions)))
+
+(defun johnson--insert-image (file-path &optional max-width)
+  "Insert an inline image from FILE-PATH at point.
+MAX-WIDTH defaults to the current window width in pixels.
+Falls back to a placeholder if display is unavailable or file
+is missing.  Respects `johnson-display-images'."
+  (if (not johnson-display-images)
+      (insert (format "[image: %s]" (file-name-nondirectory file-path)))
+    (if (and (display-graphic-p) (file-exists-p file-path))
+        (let* ((max-w (or max-width (window-body-width nil t)))
+               (img (create-image file-path nil nil :max-width max-w)))
+          (insert-image img (format "[image: %s]"
+                                    (file-name-nondirectory file-path))))
+      (insert (format "[image: %s]" (file-name-nondirectory file-path))))))
+
+(defun johnson-toggle-images ()
+  "Toggle inline image display and refresh the results buffer."
+  (interactive)
+  (setq johnson-display-images (not johnson-display-images))
+  (message "Images %s" (if johnson-display-images "enabled" "disabled"))
+  (when (and johnson--current-word (derived-mode-p 'johnson-mode))
+    (johnson-refresh)))
+
+;;;; Wildcard search
+
+(defun johnson--wildcard-pattern-p (string)
+  "Return non-nil if STRING contains unescaped `?' or `*'."
+  (string-match-p "[?*]" string))
+
+;;;; Full-text search
+
+(defun johnson--entry-to-plain-text (raw-text format-name)
+  "Strip markup from RAW-TEXT according to FORMAT-NAME.
+Returns plain text suitable for FTS indexing or eldoc display."
+  (with-temp-buffer
+    (insert raw-text)
+    (goto-char (point-min))
+    (pcase format-name
+      ("dsl"
+       ;; Strip [tag]...[/tag], <<refs>>, {{media}}.
+       (while (re-search-forward "\\[/?[a-z!*'][^]]*\\]" nil t)
+         (replace-match ""))
+       (goto-char (point-min))
+       (while (re-search-forward "<<\\([^>]+\\)>>" nil t)
+         (replace-match "\\1"))
+       (goto-char (point-min))
+       (while (re-search-forward "{{[^}]*}}" nil t)
+         (replace-match "")))
+      (_
+       ;; Strip HTML tags for stardict, mdict, bgl, dict-protocol.
+       (while (re-search-forward "<[^>]+>" nil t)
+         (replace-match ""))))
+    ;; Decode common HTML entities.
+    (goto-char (point-min))
+    (while (re-search-forward "&amp;" nil t) (replace-match "&" t t))
+    (goto-char (point-min))
+    (while (re-search-forward "&lt;" nil t) (replace-match "<" t t))
+    (goto-char (point-min))
+    (while (re-search-forward "&gt;" nil t) (replace-match ">" t t))
+    (goto-char (point-min))
+    (while (re-search-forward "&nbsp;" nil t) (replace-match " " t t))
+    (goto-char (point-min))
+    (while (re-search-forward "&quot;" nil t) (replace-match "\"" t t))
+    (goto-char (point-min))
+    (while (re-search-forward "&#\\([0-9]+\\);" nil t)
+      (replace-match (string (string-to-number (match-string 1))) t t))
+    ;; Collapse whitespace and trim.
+    (goto-char (point-min))
+    (while (re-search-forward "[ \t\n\r]+" nil t)
+      (replace-match " "))
+    (string-trim (buffer-string))))
+
+(defun johnson--query-all-fts (query)
+  "Run full-text search for QUERY across all dictionaries.
+Returns a list of (DICT-PLIST HEADWORD SNIPPET) triples."
+  (let ((results nil))
+    (dolist (dict johnson--dictionaries)
+      (condition-case err
+          (let* ((path (plist-get dict :path))
+                 (db (johnson--get-db path))
+                 (matches (johnson-db-query-fts db query 20)))
+            (dolist (match matches)
+              (push (list dict (car match) (cadr match)) results)))
+        (error
+         (message "johnson: FTS error for %s: %s"
+                  (plist-get dict :name) (error-message-string err)))))
+    (nreverse results)))
+
+;;;###autoload
+(defun johnson-search (query)
+  "Search dictionary definitions for QUERY using full-text search.
+Requires `johnson-fts-enabled' to have been non-nil during indexing."
+  (interactive "sFull-text search: ")
+  (johnson--ensure-dictionaries)
+  (unless (johnson--ensure-indexed)
+    (user-error "Dictionaries are being indexed"))
+  (let ((results (johnson--query-all-fts query)))
+    (if (null results)
+        (message "No full-text results for \"%s\"" query)
+      (let ((buf (get-buffer-create "*johnson*")))
+        (with-current-buffer buf
+          (let ((inhibit-read-only t))
+            (unless (derived-mode-p 'johnson-mode)
+              (johnson-mode))
+            (johnson--cancel-pending-render)
+            (erase-buffer)
+            (setq johnson--current-word (format "[FTS: %s]" query))
+            (insert (propertize (format "Full-text search: \"%s\" (%d results)\n\n"
+                                        query (length results))
+                                'face 'johnson-section-header-face))
+            (dolist (result results)
+              (let* ((dict (nth 0 result))
+                     (headword (nth 1 result))
+                     (snippet (nth 2 result)))
+                (let ((start (point)))
+                  (insert headword)
+                  (make-text-button start (point)
+                                    'face 'johnson-ref-face
+                                    'action (lambda (_btn)
+                                              (johnson-lookup headword))
+                                    'help-echo (format "Look up \"%s\"" headword)))
+                (insert (format "  [%s]\n" (plist-get dict :name)))
+                (let ((start (point)))
+                  ;; Highlight >>> <<< markers in snippet.
+                  (insert "  " snippet "\n\n")
+                  (save-excursion
+                    (goto-char start)
+                    (while (re-search-forward ">>>\\([^<]*\\)<<<" nil t)
+                      (let ((m-start (match-beginning 0))
+                            (text (match-string 1)))
+                        (replace-match text t t)
+                        (add-face-text-property
+                         m-start (+ m-start (length text))
+                         'highlight)))))))
+            (goto-char (point-min))))
+        (pop-to-buffer buf)))))
+
+;;;; Eldoc integration
+
+(defun johnson-eldoc-function (callback &rest _args)
+  "Eldoc documentation function for johnson dictionaries.
+CALLBACK is called with the definition string."
+  (when-let* ((word (thing-at-point 'word t)))
+    (let ((cached (gethash word johnson--eldoc-cache)))
+      (if cached
+          (funcall callback cached)
+        (condition-case nil
+            (progn
+              (johnson--ensure-dictionaries)
+              (when johnson--indexed-p
+                (let ((results (johnson--query-all-exact word)))
+                  (when results
+                    (let* ((first-result (car results))
+                           (dict (car first-result))
+                           (match (cadr first-result))
+                           (fmt (johnson--get-format
+                                 (plist-get dict :format-name)))
+                           (path (plist-get dict :path))
+                           (raw (funcall (plist-get fmt :retrieve-entry)
+                                         path (nth 1 match) (nth 2 match)))
+                           (plain (johnson--entry-to-plain-text
+                                   raw (plist-get dict :format-name)))
+                           (truncated (if (> (length plain)
+                                             johnson-eldoc-max-length)
+                                          (concat
+                                           (substring plain 0
+                                                      johnson-eldoc-max-length)
+                                           "...")
+                                        plain)))
+                      ;; LRU cache: cap at 50 entries.
+                      (when (> (hash-table-count johnson--eldoc-cache) 50)
+                        (clrhash johnson--eldoc-cache))
+                      (puthash word truncated johnson--eldoc-cache)
+                      (funcall callback truncated))))))
+          (error nil)))))
+  nil)
+
+;;;###autoload
+(define-minor-mode johnson-eldoc-mode
+  "Minor mode providing eldoc integration with johnson dictionaries."
+  :lighter " JDict"
+  (if johnson-eldoc-mode
+      (add-hook 'eldoc-documentation-functions
+                #'johnson-eldoc-function nil t)
+    (remove-hook 'eldoc-documentation-functions
+                 #'johnson-eldoc-function t)))
+
+;;;; Scan-popup mode
+
+(defun johnson-scan--show-popup (word definition)
+  "Display a popup with DEFINITION for WORD.
+Uses posframe if available, otherwise tooltip, otherwise echo area."
+  (when johnson--scan-hide-timer
+    (cancel-timer johnson--scan-hide-timer))
+  (cond
+   ((and (fboundp 'posframe-show)
+         (display-graphic-p))
+    (posframe-show " *johnson-scan*"
+                   :string (format "%s: %s" word definition)
+                   :timeout johnson-scan-popup-duration
+                   :position (point)))
+   ((display-graphic-p)
+    (tooltip-show (format "%s: %s" word definition))
+    (setq johnson--scan-hide-timer
+          (run-with-timer johnson-scan-popup-duration nil
+                          (lambda () (tooltip-hide)))))
+   (t
+    (message "%s: %s" word
+             (truncate-string-to-width definition 60 nil nil "...")))))
+
+(defun johnson-scan--lookup-word (word)
+  "Look up WORD for scan-popup display."
+  (when (and word
+             (not (string-empty-p word))
+             (not (equal word johnson--scan-last-word)))
+    (setq johnson--scan-last-word word)
+    (condition-case nil
+        (progn
+          (johnson--ensure-dictionaries)
+          (when johnson--indexed-p
+            (let ((results (johnson--query-all-exact word)))
+              (when results
+                (let* ((first-result (car results))
+                       (dict (car first-result))
+                       (match (cadr first-result))
+                       (fmt (johnson--get-format
+                             (plist-get dict :format-name)))
+                       (path (plist-get dict :path))
+                       (raw (funcall (plist-get fmt :retrieve-entry)
+                                     path (nth 1 match) (nth 2 match)))
+                       (plain (johnson--entry-to-plain-text
+                               raw (plist-get dict :format-name)))
+                       (truncated (truncate-string-to-width
+                                   plain 200 nil nil "...")))
+                  (johnson-scan--show-popup word truncated))))))
+      (error nil))))
+
+(defvar johnson-scan-mode)
+
+(defun johnson-scan--on-selection ()
+  "Hook for `activate-mark-hook' in scan mode."
+  (when (and johnson-scan-mode (use-region-p))
+    (let ((text (string-trim
+                 (buffer-substring-no-properties
+                  (region-beginning) (region-end)))))
+      (when (and (> (length text) 0) (<= (length text) 50))
+        (johnson-scan--lookup-word text)))))
+
+(defun johnson-scan--on-idle ()
+  "Idle timer callback for scan mode."
+  (when johnson-scan-mode
+    (let ((word (thing-at-point 'word t)))
+      (johnson-scan--lookup-word word))))
+
+;;;###autoload
+(define-minor-mode johnson-scan-mode
+  "Global minor mode for scan-popup dictionary lookups.
+When enabled, looking up words via selection or idle timer."
+  :global t
+  :lighter " JScan"
+  :group 'johnson
+  (if johnson-scan-mode
+      (progn
+        (when (memq johnson-scan-trigger '(selection both))
+          (add-hook 'activate-mark-hook #'johnson-scan--on-selection))
+        (when (memq johnson-scan-trigger '(idle both))
+          (setq johnson--scan-idle-timer
+                (run-with-idle-timer johnson-scan-idle-delay t
+                                     #'johnson-scan--on-idle))))
+    (remove-hook 'activate-mark-hook #'johnson-scan--on-selection)
+    (when johnson--scan-idle-timer
+      (cancel-timer johnson--scan-idle-timer)
+      (setq johnson--scan-idle-timer nil))
+    (setq johnson--scan-last-word nil)))
+
+;;;; Bookmarks
+
+(defun johnson--load-bookmarks ()
+  "Load bookmarks from `johnson-bookmarks-file'."
+  (unless johnson--bookmarks-loaded
+    (when (file-exists-p johnson-bookmarks-file)
+      (condition-case nil
+          (setq johnson--bookmarks
+                (with-temp-buffer
+                  (insert-file-contents johnson-bookmarks-file)
+                  (read (current-buffer))))
+        (error (setq johnson--bookmarks nil))))
+    (setq johnson--bookmarks-loaded t)))
+
+(defun johnson--save-bookmarks ()
+  "Save bookmarks to `johnson-bookmarks-file'."
+  (make-directory (file-name-directory johnson-bookmarks-file) t)
+  (with-temp-file johnson-bookmarks-file
+    (let ((print-length nil)
+          (print-level nil))
+      (prin1 johnson--bookmarks (current-buffer)))))
+
+(defun johnson-bookmark-add ()
+  "Bookmark the entry at point."
+  (interactive)
+  (unless (derived-mode-p 'johnson-mode)
+    (user-error "Not in a johnson buffer"))
+  (johnson--load-bookmarks)
+  (let* ((section (get-text-property (point) 'johnson-section))
+         (dict-name (or section
+                        (save-excursion
+                          (let ((header (previous-single-property-change
+                                        (point) 'johnson-section-header)))
+                            (when header
+                              (get-text-property header
+                                                 'johnson-section-header))))))
+         (headword johnson--current-word))
+    (unless headword
+      (user-error "No entry to bookmark"))
+    ;; Duplicate check.
+    (if (cl-find-if (lambda (b)
+                      (and (equal (plist-get b :headword) headword)
+                           (equal (plist-get b :dictionary) dict-name)))
+                    johnson--bookmarks)
+        (message "Already bookmarked: %s" headword)
+      (push (list :headword headword
+                  :dictionary (or dict-name "")
+                  :timestamp (float-time)
+                  :path "")
+            johnson--bookmarks)
+      (johnson--save-bookmarks)
+      (message "Bookmarked: %s" headword))))
+
+(defun johnson-bookmark-remove ()
+  "Remove the bookmark for the entry at point."
+  (interactive)
+  (unless (derived-mode-p 'johnson-mode)
+    (user-error "Not in a johnson buffer"))
+  (johnson--load-bookmarks)
+  (let ((headword johnson--current-word))
+    (unless headword
+      (user-error "No entry to unbookmark"))
+    (let ((found (cl-find-if
+                  (lambda (b)
+                    (equal (plist-get b :headword) headword))
+                  johnson--bookmarks)))
+      (if found
+          (progn
+            (setq johnson--bookmarks (delq found johnson--bookmarks))
+            (johnson--save-bookmarks)
+            (message "Removed bookmark: %s" headword))
+        (message "No bookmark for: %s" headword)))))
+
+(defvar johnson-bookmark-list-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "RET") #'johnson-bookmark-list-goto)
+    (define-key map "d" #'johnson-bookmark-list-delete)
+    (define-key map "q" #'quit-window)
+    map)
+  "Keymap for `johnson-bookmark-list-mode'.")
+
+(define-derived-mode johnson-bookmark-list-mode tabulated-list-mode
+  "Johnson Bookmarks"
+  "Major mode for browsing johnson bookmarks."
+  (setq tabulated-list-format [("Headword" 30 t)
+                                ("Dictionary" 35 t)
+                                ("Date" 20 t)])
+  (setq tabulated-list-sort-key '("Date" . t))
+  (tabulated-list-init-header))
+
+(defun johnson-bookmark-list-goto ()
+  "Look up the bookmarked entry at point."
+  (interactive)
+  (let ((entry (tabulated-list-get-entry)))
+    (when entry
+      (johnson-lookup (aref entry 0)))))
+
+(defun johnson-bookmark-list-delete ()
+  "Delete the bookmark at point."
+  (interactive)
+  (let ((id (tabulated-list-get-id)))
+    (when (and id (y-or-n-p "Delete bookmark? "))
+      (setq johnson--bookmarks
+            (cl-remove-if (lambda (b)
+                            (equal (plist-get b :headword) id))
+                          johnson--bookmarks))
+      (johnson--save-bookmarks)
+      (tabulated-list-delete-entry))))
+
+;;;###autoload
+(defun johnson-bookmark-list ()
+  "Display a list of bookmarked dictionary entries."
+  (interactive)
+  (johnson--load-bookmarks)
+  (let ((buf (get-buffer-create "*johnson-bookmarks*")))
+    (with-current-buffer buf
+      (johnson-bookmark-list-mode)
+      (setq tabulated-list-entries
+            (mapcar (lambda (b)
+                      (let ((hw (plist-get b :headword))
+                            (dict (or (plist-get b :dictionary) ""))
+                            (time (plist-get b :timestamp)))
+                        (list hw (vector hw dict
+                                         (format-time-string
+                                          "%Y-%m-%d %H:%M" time)))))
+                    johnson--bookmarks))
+      (tabulated-list-print))
+    (pop-to-buffer buf)))
+
+;;;; History log (with timestamps)
+
+(defun johnson--load-history-log ()
+  "Load the timestamped history log from `johnson-history-file'."
+  (unless johnson--history-log-loaded
+    (when (and johnson-history-persist
+               (file-exists-p johnson-history-file))
+      (condition-case nil
+          (setq johnson--history-log
+                (with-temp-buffer
+                  (insert-file-contents johnson-history-file)
+                  (read (current-buffer))))
+        (error (setq johnson--history-log nil))))
+    (setq johnson--history-log-loaded t)))
+
+(defun johnson--save-history-log ()
+  "Save the timestamped history log to `johnson-history-file'."
+  (when johnson-history-persist
+    (make-directory (file-name-directory johnson-history-file) t)
+    (with-temp-file johnson-history-file
+      (let ((print-length nil)
+            (print-level nil))
+        (prin1 johnson--history-log (current-buffer))))))
+
+(defun johnson--history-log-push (word dict-count)
+  "Push WORD with DICT-COUNT results to the timestamped history log."
+  (johnson--load-history-log)
+  (push (list :word word :timestamp (float-time) :dict-count dict-count)
+        johnson--history-log)
+  (johnson--save-history-log))
+
+(defvar johnson-history-list-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "RET") #'johnson-history-list-goto)
+    (define-key map "q" #'quit-window)
+    map)
+  "Keymap for `johnson-history-list-mode'.")
+
+(define-derived-mode johnson-history-list-mode tabulated-list-mode
+  "Johnson History"
+  "Major mode for browsing johnson lookup history."
+  (setq tabulated-list-format [("Headword" 30 t)
+                                ("Time" 20 t)
+                                ("Results" 10 t)])
+  (setq tabulated-list-sort-key '("Time" . t))
+  (tabulated-list-init-header))
+
+(defun johnson-history-list-goto ()
+  "Look up the history entry at point."
+  (interactive)
+  (let ((entry (tabulated-list-get-entry)))
+    (when entry
+      (johnson-lookup (aref entry 0)))))
+
+;;;###autoload
+(defun johnson-history-list ()
+  "Display the timestamped lookup history."
+  (interactive)
+  (johnson--load-history-log)
+  (let ((buf (get-buffer-create "*johnson-history*")))
+    (with-current-buffer buf
+      (johnson-history-list-mode)
+      (setq tabulated-list-entries
+            (let ((i 0))
+              (mapcar (lambda (h)
+                        (cl-incf i)
+                        (let ((word (plist-get h :word))
+                              (time (plist-get h :timestamp))
+                              (count (plist-get h :dict-count)))
+                          (list i (vector word
+                                          (format-time-string
+                                           "%Y-%m-%d %H:%M" time)
+                                          (number-to-string
+                                           (or count 0))))))
+                      johnson--history-log)))
+      (tabulated-list-print))
+    (pop-to-buffer buf)))
+
+;;;###autoload
+(defun johnson-history-clear ()
+  "Clear the lookup history with confirmation."
+  (interactive)
+  (when (y-or-n-p "Clear all lookup history? ")
+    (setq johnson--history-log nil)
+    (johnson--save-history-log)
+    (setq johnson-history nil)
+    (message "History cleared")))
+
 ;;;; Load built-in format backends
 
 (require 'johnson-dsl nil t)
 (require 'johnson-stardict nil t)
 (require 'johnson-mdict nil t)
+(require 'johnson-bgl nil t)
+(require 'johnson-dict nil t)
 
 (provide 'johnson)
 ;;; johnson.el ends here

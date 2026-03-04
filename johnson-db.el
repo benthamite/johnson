@@ -62,6 +62,9 @@ Returns the database connection object."
     (sqlite-execute db
                     "CREATE INDEX IF NOT EXISTS idx_normalized
                        ON entries(headword_normalized)")
+    (sqlite-execute db
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS fts_entries
+                       USING fts5(headword, definition)")
     db))
 
 (defun johnson-db-close (db)
@@ -158,6 +161,25 @@ Returns a list of distinct headword strings.  LIMIT defaults to 100."
                             WHERE headword_normalized LIKE ? ESCAPE '\\'
                             LIMIT ?"
                            (list (concat escaped "%") limit)))))
+
+(defun johnson-db-query-wildcard (db pattern &optional limit)
+  "Query DB for headwords matching wildcard PATTERN.
+PATTERN uses `?' for single character and `*' for any characters.
+Returns a list of distinct headword strings.  LIMIT defaults to 200."
+  (let* ((normalized (johnson-db-normalize pattern))
+         ;; Escape SQL wildcards first.
+         (escaped (replace-regexp-in-string "[%_]" "\\\\\\&" normalized))
+         ;; Convert user wildcards to SQL wildcards.
+         (sql-pattern (replace-regexp-in-string
+                       "\\*" "%"
+                       (replace-regexp-in-string "\\?" "_" escaped)))
+         (limit (or limit 200)))
+    (mapcar #'car
+            (sqlite-select db
+                           "SELECT DISTINCT headword FROM entries
+                            WHERE headword_normalized LIKE ? ESCAPE '\\'
+                            LIMIT ?"
+                           (list sql-pattern limit)))))
 
 (defun johnson-db-entry-count (db)
   "Return the total number of entries in DB."
@@ -288,6 +310,34 @@ Returns a list of (HEADWORD DICT-COUNT) pairs.  LIMIT defaults to 200."
                     WHERE headword_normalized LIKE ? ESCAPE '\\'
                     LIMIT ?"
                    (list (concat escaped "%") limit))))
+
+;;;; Full-text search
+
+(defun johnson-db-insert-fts (db headword plain-text)
+  "Insert HEADWORD and PLAIN-TEXT into the FTS table of DB."
+  (sqlite-execute db
+                  "INSERT INTO fts_entries (headword, definition) VALUES (?, ?)"
+                  (list headword plain-text)))
+
+(defun johnson-db-query-fts (db query &optional limit)
+  "Query the FTS table of DB for QUERY.
+Returns a list of (HEADWORD SNIPPET) pairs.  LIMIT defaults to 50."
+  (let ((limit (or limit 50)))
+    (sqlite-select db
+                   "SELECT headword, snippet(fts_entries, 1, '>>>', '<<<', '...', 30)
+                      FROM fts_entries
+                     WHERE fts_entries MATCH ?
+                     ORDER BY rank
+                     LIMIT ?"
+                   (list query limit))))
+
+(defun johnson-db-fts-indexed-p (db)
+  "Return non-nil if DB has been indexed for full-text search."
+  (equal (johnson-db-get-metadata db "fts-indexed") "yes"))
+
+(defun johnson-db-set-fts-indexed (db)
+  "Mark DB as having been indexed for full-text search."
+  (johnson-db-set-metadata db "fts-indexed" "yes"))
 
 (provide 'johnson-db)
 ;;; johnson-db.el ends here
