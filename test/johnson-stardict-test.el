@@ -628,5 +628,56 @@
                (johnson-stardict-test--fixture "test-stardict-html.ifo"))))
     (should (null path))))
 
+;;;; Auto-detection of 64-bit .idx format
+
+(ert-deftest johnson-stardict-test-parse-idx-64bit ()
+  "Parses .idx file with 8-byte offsets and 8-byte sizes (no idxoffsetbits=64)."
+  (johnson-stardict-test--cleanup)
+  (let ((entries (johnson-stardict--parse-idx
+                  (johnson-stardict-test--fixture "test-stardict-64bit.ifo"))))
+    ;; Should detect the 64-bit format and return 3 entries.
+    (should (= (length entries) 3))
+    (should (equal (nth 0 (aref entries 0)) "apple"))
+    (should (= (nth 1 (aref entries 0)) 0))
+    (should (= (nth 2 (aref entries 0)) 60))
+    (should (equal (nth 0 (aref entries 1)) "cat"))
+    (should (= (nth 1 (aref entries 1)) 60))
+    (should (= (nth 2 (aref entries 1)) 35))
+    (should (equal (nth 0 (aref entries 2)) "hello"))
+    (should (= (nth 1 (aref entries 2)) 95))
+    (should (= (nth 2 (aref entries 2)) 37))))
+
+(ert-deftest johnson-stardict-test-full-integration-64bit ()
+  "Full round-trip with 64-bit .idx format."
+  (johnson-stardict-test--cleanup)
+  (let* ((ifo-path (johnson-stardict-test--fixture "test-stardict-64bit.ifo"))
+         (entries nil))
+    (johnson-stardict-build-index ifo-path
+                                  (lambda (hw offset size)
+                                    (push (list hw offset size) entries)))
+    (should (= (length entries) 3))
+    ;; Retrieve and render "apple".
+    (let* ((apple-entry (cl-find "apple" entries :key #'car :test #'equal)))
+      (should apple-entry)
+      (let ((raw (johnson-stardict-retrieve-entry
+                  ifo-path (nth 1 apple-entry) (nth 2 apple-entry))))
+        (with-temp-buffer
+          (johnson-stardict-render-entry raw)
+          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+            (should (string-match-p "round fruit" text))))))))
+
+(ert-deftest johnson-stardict-test-missing-idx-error ()
+  "Signals a clear error when .idx file is missing."
+  (johnson-stardict-test--cleanup)
+  (let ((temp-dir (make-temp-file "johnson-test-" t)))
+    (unwind-protect
+        (let ((ifo-path (expand-file-name "missing.ifo" temp-dir)))
+          (with-temp-file ifo-path
+            (insert "StarDict's dict ifo file\nversion=2.4.2\n"
+                    "wordcount=1\nidxfilesize=10\nbookname=Missing\n"))
+          (should-error (johnson-stardict--load-idx-data ifo-path)
+                        :type 'error))
+      (delete-directory temp-dir t))))
+
 (provide 'johnson-stardict-test)
 ;;; johnson-stardict-test.el ends here

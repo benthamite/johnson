@@ -128,6 +128,8 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
   "Load the raw .idx data for the dictionary at IFO-PATH.
 Returns a unibyte string.  Handles both plain .idx and .idx.gz files."
   (let ((idx-path (johnson-stardict--idx-path ifo-path)))
+    (unless (file-exists-p idx-path)
+      (error "Missing .idx file: %s (dictionary is incomplete)" idx-path))
     (with-temp-buffer
       (set-buffer-multibyte nil)
       (if (string-suffix-p ".idx.gz" idx-path)
@@ -167,17 +169,11 @@ Returns a cons cell (STRING . NEW-POS) where NEW-POS is past the null byte."
           (ash (aref data (+ pos 6)) 8)
           (aref data (+ pos 7))))
 
-(defun johnson-stardict--parse-idx (ifo-path)
-  "Parse the .idx file for the dictionary at IFO-PATH.
-Returns a vector of (HEADWORD OFFSET SIZE) triples, in file order.
-OFFSET and SIZE are byte offsets/lengths into the .dict file."
-  (let* ((ifo (johnson-stardict--parse-ifo ifo-path))
-         (offset-bits (let ((v (johnson-stardict--ifo-get ifo "idxoffsetbits")))
-                        (if (and v (equal v "64")) 64 32)))
-         (offset-bytes (if (= offset-bits 64) 8 4))
-         (data (johnson-stardict--load-idx-data ifo-path))
-         (pos 0)
-         (entries nil))
+(defun johnson-stardict--do-parse-idx (data offset-bytes size-bytes)
+  "Parse idx DATA using OFFSET-BYTES and SIZE-BYTES per entry.
+Returns a vector of (HEADWORD OFFSET SIZE) triples, in file order."
+  (let ((pos 0)
+        (entries nil))
     (while (< pos (length data))
       (let* ((str-result (johnson-stardict--read-null-terminated-string data pos))
              (headword (car str-result))
@@ -185,10 +181,48 @@ OFFSET and SIZE are byte offsets/lengths into the .dict file."
              (offset (if (= offset-bytes 8)
                          (johnson-stardict--u64be-from-string data cur-pos)
                        (johnson-stardict--u32be-from-string data cur-pos)))
-             (size (johnson-stardict--u32be-from-string data (+ cur-pos offset-bytes))))
+             (size (if (= size-bytes 8)
+                       (johnson-stardict--u64be-from-string data (+ cur-pos offset-bytes))
+                     (johnson-stardict--u32be-from-string data (+ cur-pos offset-bytes)))))
         (push (list headword offset size) entries)
-        (setq pos (+ cur-pos offset-bytes 4))))
+        (setq pos (+ cur-pos offset-bytes size-bytes))))
     (vconcat (nreverse entries))))
+
+(defun johnson-stardict--try-parse-idx (data offset-bytes size-bytes expected-count)
+  "Try parsing idx DATA with OFFSET-BYTES and SIZE-BYTES per entry.
+Return the entry vector when successful and its length matches
+EXPECTED-COUNT (if non-nil), or nil on mismatch/error."
+  (condition-case nil
+      (let ((result (johnson-stardict--do-parse-idx data offset-bytes size-bytes)))
+        (when (or (null expected-count)
+                  (= (length result) expected-count))
+          result))
+    (args-out-of-range nil)))
+
+(defun johnson-stardict--parse-idx (ifo-path)
+  "Parse the .idx file for the dictionary at IFO-PATH.
+Returns a vector of (HEADWORD OFFSET SIZE) triples, in file order.
+OFFSET and SIZE are byte offsets/lengths into the .dict file.
+
+When the .ifo declares idxoffsetbits=64, uses 8-byte offsets and
+4-byte sizes (standard StarDict 3.0).  Otherwise, tries 4+4 (the
+default), then 8+4, then 8+8 (for non-standard dictionaries whose
+.ifo omits the idxoffsetbits key), validating against the declared
+wordcount."
+  (let* ((ifo (johnson-stardict--parse-ifo ifo-path))
+         (wordcount (let ((v (johnson-stardict--ifo-get ifo "wordcount")))
+                      (and v (string-to-number v))))
+         (declared-64 (let ((v (johnson-stardict--ifo-get ifo "idxoffsetbits")))
+                        (and v (equal v "64"))))
+         (data (johnson-stardict--load-idx-data ifo-path)))
+    (if declared-64
+        ;; Standard 64-bit: 8-byte offset + 4-byte size.
+        (johnson-stardict--do-parse-idx data 8 4)
+      ;; Auto-detect: try 32-bit first, fall back to 64-bit variants.
+      (or (johnson-stardict--try-parse-idx data 4 4 wordcount)
+          (johnson-stardict--try-parse-idx data 8 4 wordcount)
+          (johnson-stardict--try-parse-idx data 8 8 wordcount)
+          (error "Failed to parse StarDict .idx for %s" ifo-path)))))
 
 ;;;; .syn parsing
 
