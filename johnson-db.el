@@ -203,7 +203,10 @@ the actual file modification time."
                                   "%s"
                                   (file-attribute-modification-time
                                    (file-attributes dict-path)))))
-              (not (equal stored-mtime actual-mtime)))
+              (or (not (equal stored-mtime actual-mtime))
+                  ;; Treat databases with zero entries as stale -- they
+                  ;; were likely created by a broken parser version.
+                  (zerop (johnson-db-entry-count db))))
           (sqlite-close db))))))
 
 (defun johnson-db-stale-quick-p (dict-path)
