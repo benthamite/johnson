@@ -892,6 +892,7 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     (define-key map "a" #'johnson-play-audio-at-point)
     (define-key map "o" #'johnson-ace-link)
     (define-key map "w" #'johnson-copy-entry)
+    (define-key map "W" #'johnson-copy-dictionary-name)
     (define-key map "q" #'quit-window)
     map)
   "Keymap for `johnson-mode'.")
@@ -1091,6 +1092,19 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
           (kill-new text)
           (message "Entry copied to kill ring"))
       (message "No section at point"))))
+
+(defun johnson-copy-dictionary-name ()
+  "Copy the dictionary name of the section at point to the kill ring."
+  (interactive)
+  (let ((name (get-text-property (point) 'johnson-section-header)))
+    (unless name
+      (let ((ov (cl-find-if (lambda (o) (overlay-get o 'johnson-section))
+                            (overlays-at (point)))))
+        (when ov (setq name (overlay-get ov 'johnson-section)))))
+    (if name
+        (progn (kill-new name)
+               (message "Copied dictionary name: %s" name))
+      (message "No dictionary section at point"))))
 
 ;;;; Dictionary list
 

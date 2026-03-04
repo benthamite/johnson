@@ -497,6 +497,18 @@ displays ``No section at point''. @*
 
 It is bound to @samp{w} in @code{johnson-mode}. @*
 
+@findex johnson-copy-dictionary-name
+The command @code{johnson-copy-dictionary-name} copies the dictionary name of @*
+the section at point to the kill ring.  This is useful for obtaining the exact @*
+string needed by @code{johnson-dictionary-priorities}. @*
+
+The command first checks for a @code{johnson-section-header} text property @*
+(present on header lines), then falls back to the @code{johnson-section} @*
+overlay property (present throughout the section body).  If neither is @*
+found, it displays ``No dictionary section at point''. @*
+
+It is bound to @samp{W} in @code{johnson-mode}. @*
+
 @node Dictionary list
 @section Dictionary list
 
