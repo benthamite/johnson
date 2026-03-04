@@ -579,7 +579,8 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
           (let* ((paths (mapcar (lambda (d) (plist-get d :path))
                                 johnson--dictionaries))
                  (count (johnson-db-rebuild-completion-index paths)))
-            (message \"JOHNSON-INDEX-COMPLETION done %%d\" count))))"
+            (message \"JOHNSON-INDEX-COMPLETION done %%d\" count))
+          (kill-emacs 0)))"
      dirs
      (expand-file-name johnson-cache-directory)
      johnson-fts-enabled)))
@@ -1823,7 +1824,7 @@ is missing.  Respects `johnson-display-images'."
 ;;;; Wildcard search
 
 (defun johnson--wildcard-pattern-p (string)
-  "Return non-nil if STRING contains unescaped `?' or `*'."
+  "Return non-nil if STRING includes unescaped `?' or `*'."
   (string-match-p "[?*]" string))
 
 ;;;; Full-text search
