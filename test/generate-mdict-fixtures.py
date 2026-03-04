@@ -238,12 +238,19 @@ def build_mdx(entries, encrypt=False, title="Test Dict"):
     kw_header += u64be(len(kw_block_compressed))       # total keyword block size
     kw_checksum = adler32_le(kw_header)
 
-    # Apply encryption if needed
+    # Apply encryption if needed.
+    # Encrypted="2" uses bytes 4-8 (the Adler-32 checksum in the
+    # compression header) of each block as the key source, and only
+    # encrypts the payload after the 8-byte compression header.
     if encrypt:
-        key = ripemd128(kw_checksum + b"\x95\x36\x00\x00")
-        block_info_encrypted = mdict_encrypt(block_info_compressed, key)
-        # Encrypt even-indexed keyword blocks (block 0)
-        kw_block_encrypted = mdict_encrypt(kw_block_compressed, key)
+        # Encrypt block info payload.
+        bi_key = ripemd128(block_info_compressed[4:8] + b"\x95\x36\x00\x00")
+        block_info_encrypted = (block_info_compressed[:8]
+                                + mdict_encrypt(block_info_compressed[8:], bi_key))
+        # Encrypt even-indexed keyword blocks (block 0) payload.
+        kb_key = ripemd128(kw_block_compressed[4:8] + b"\x95\x36\x00\x00")
+        kw_block_encrypted = (kw_block_compressed[:8]
+                              + mdict_encrypt(kw_block_compressed[8:], kb_key))
     else:
         block_info_encrypted = block_info_compressed
         kw_block_encrypted = kw_block_compressed
