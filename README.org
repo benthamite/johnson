@@ -44,11 +44,11 @@ and index all discovered dictionaries ([[#h:indexing-dictionaries][Indexing dict
 Third, use =M-x johnson-lookup= to look up words with dynamic
 completion ([[#h:looking-up-words][Looking up words]]).
 
-Here is a sample configuration using =elpaca= and =use-package=:
+Here is a sample configuration using =use-package= with =:vc=:
 
 #+begin_src emacs-lisp
 (use-package johnson
-  :ensure (:host github :repo "benthamite/johnson")
+  :vc (:url "https://github.com/benthamite/johnson")
   :custom
   (johnson-dictionary-directories '("~/dictionaries/"))
   (johnson-default-search-scope 'all)
