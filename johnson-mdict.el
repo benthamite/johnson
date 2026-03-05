@@ -619,9 +619,7 @@ parse them from scratch)."
     (let* ((pairs (or entries
                       (johnson-mdict--parse-keyword-section path)))
            (offsets (sort (mapcar #'cdr pairs) #'<)))
-      ;; `delete-dups' is O(n) on a sorted list, unlike
-      ;; `cl-remove-duplicates' which is O(n²).
-      (puthash path (vconcat (delete-dups offsets))
+      (puthash path (vconcat offsets)
                johnson-mdict--offset-cache))))
 
 (defun johnson-mdict--next-offset (path entry-offset)
@@ -639,9 +637,13 @@ Returns the next offset, or -1 if this is the last entry."
             (setq lo (1+ mid))
           (setq hi mid))))
     ;; lo should now point to entry-offset's position.
-    (if (< (1+ lo) len)
-        (aref offsets (1+ lo))
-      -1)))
+    ;; Skip past any duplicate offsets equal to entry-offset.
+    (let ((pos (1+ lo)))
+      (while (and (< pos len) (= (aref offsets pos) entry-offset))
+        (cl-incf pos))
+      (if (< pos len)
+          (aref offsets pos)
+        -1))))
 
 ;;;; Format detection
 
