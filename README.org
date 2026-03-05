@@ -21,10 +21,11 @@ dependencies, relying on Emacs 30.1's built-in sqlite support for
 efficient headword indexing.  Dictionary files are parsed natively,
 without calling external tools.
 
-In version 0.3, the package supports the DSL (ABBYY Lingvo),
-StarDict, and MDict formats, including dictzip-compressed files
-(=.dsl.dz= and =.dict.dz=) and encrypted MDict files.  Future
-versions will add support for BGL (Babylon) format.
+In version 0.4, the package supports the DSL (ABBYY Lingvo),
+StarDict, MDict, and BGL (Babylon) formats, including
+dictzip-compressed files (=.dsl.dz= and =.dict.dz=) and
+encrypted MDict files.  It also provides a DICT protocol client
+(RFC 2229) for querying remote dictionary servers.
 
 The architecture is modular.  The core module (=johnson.el=) provides
 the lookup engine, results buffer, navigation, history, and a
@@ -34,8 +35,10 @@ maintains one database per dictionary file in a configurable cache
 directory ([[#h:cache-directory][Cache directory]]).  Shared infrastructure
 for dictzip decompression lives in =johnson-dictzip.el=.  Each
 dictionary format is handled by a separate backend
-module—=johnson-dsl.el= and =johnson-stardict.el=—that registers itself
-with the core via the format registry.
+module---=johnson-dsl.el=, =johnson-stardict.el=,
+=johnson-mdict.el=, =johnson-bgl.el=, and
+=johnson-dict.el=---that registers itself with the core via the
+format registry.
 
 A typical workflow consists of three steps.  First, configure
 ~johnson-dictionary-directories~ to point at your dictionary files
@@ -55,6 +58,8 @@ Here is a sample configuration using =use-package= with =:vc=:
   (johnson-dictionary-priorities '(("Oxford English-Spanish" . -10)
                                    ("Collins English-Spanish" . -5)))
   (johnson-history-max 200)
+  (johnson-history-persist t)
+  (johnson-display-images t)
   :bind
   ("C-c d" . johnson-lookup))
 #+end_src
@@ -65,8 +70,10 @@ contains a match for the queried word gets its own collapsible section,
 displayed in priority order ([[#h:display-ordering][Display ordering]]).  The buffer
 supports Info-like navigation: press =n= and =p= to move between
 sections, =TAB= to collapse or expand a section, =RET= to follow
-cross-references, and =l= and =r= to navigate back and forward through
-lookup history.
+cross-references, =l= and =r= to navigate back and forward through
+lookup history, =I= to toggle inline images, =S= to search within
+definitions, =m= to bookmark an entry, =M= to remove a bookmark, and
+=H= to browse the full lookup history.
 
 Dictionaries are organized into groups by language pair
 (e.g., "English → Spanish").  Groups are auto-detected from dictionary
@@ -226,6 +233,268 @@ The directory is created automatically if it does not exist when a
 database is first opened via ~johnson-db-open~
 ([[#h:database-lifecycle][Database lifecycle]]).
 
+** Audio playback
+:PROPERTIES:
+:CUSTOM_ID: h:audio-playback
+:END:
+
+#+vindex: johnson-audio-player
+#+vindex: johnson-audio-external-players
+#+findex: johnson-play-sound
+#+findex: johnson-play-audio-at-point
+#+findex: johnson-insert-audio-button
+Some dictionary entries contain embedded audio files, such as
+pronunciation recordings.  When they do, the results buffer shows a
+play button (=▶=) that plays the audio on click.  The command
+~johnson-play-audio-at-point~ does the same for the button at
+point and can be called interactively.
+
+The user option ~johnson-audio-player~ controls which program is
+used for playback.  The default is ~auto~, which tries Emacs's
+built-in ~play-sound-file~ first; if that fails (e.g., because
+the Emacs binary lacks sound support), it falls back to the first
+available external player listed in
+~johnson-audio-external-players~.  On macOS, =afplay= is
+always available, so audio playback should work out of the box with no
+configuration.
+
+If you want to use a specific external player, set
+~johnson-audio-player~ to a string naming the command:
+
+#+begin_src emacs-lisp
+(setopt johnson-audio-player "mpv")
+#+end_src
+
+The user option ~johnson-audio-external-players~ is the list of
+external commands that ~auto~ mode tries, in order.  The default
+list is =("afplay" "mpv" "paplay" "aplay")=.  You can customize
+this list if your preferred player is not included or if you want to
+change the priority order.
+
+*** Companion zip archives
+
+#+findex: johnson-clear-resource-cache
+Many DSL dictionaries bundle audio in a companion
+=.dsl.files.zip= archive rather than storing individual files on
+disk (e.g., =MyDict.dsl= -> =MyDict.dsl.files.zip=).
+When a play button is clicked and the referenced audio file does not
+exist on disk, =johnson= automatically checks for a companion zip
+archive and extracts the file on demand.  Extracted files are cached
+under the =resources/= subdirectory of ~johnson-cache-directory~
+so subsequent plays are instant.
+
+This feature requires the =unzip= command-line utility, which
+is available by default on macOS and most Linux distributions.
+
+The command ~johnson-clear-resource-cache~ deletes all extracted
+resource files.  This is useful if you want to reclaim disk space or
+force re-extraction.
+
+** DICT protocol
+:PROPERTIES:
+:CUSTOM_ID: h:dict-protocol
+:END:
+
+#+vindex: johnson-dict-enabled
+#+vindex: johnson-dict-servers
+The user option ~johnson-dict-enabled~ is a master switch that
+controls whether the DICT protocol client is active.  When ~nil~
+(the default), no DICT servers are contacted and no remote
+dictionaries appear in the dictionary list.  Set it to ~t~ to
+enable the DICT protocol backend:
+
+#+begin_src emacs-lisp
+(setopt johnson-dict-enabled t)
+#+end_src
+
+The user option ~johnson-dict-servers~ specifies the list of DICT
+servers to query.  Each element is a =(HOST . PORT)= pair.  The
+default value is =(("dict.org" . 2628))=, which points to the
+public dict.org server on the standard DICT port.
+
+You can add additional servers:
+
+#+begin_src emacs-lisp
+(setopt johnson-dict-servers
+        '(("dict.org" . 2628)
+          ("my-dict-server.local" . 2628)))
+#+end_src
+
+Dictionaries discovered from DICT servers appear under the "DICT
+Servers" group in the group selector.  The DICT backend communicates
+using the RFC 2229 protocol over a TCP connection.
+
+** Images
+:PROPERTIES:
+:CUSTOM_ID: h:images
+:END:
+
+#+vindex: johnson-display-images
+The user option ~johnson-display-images~ controls whether inline
+images are rendered in dictionary entries.  When ~t~ (the default),
+images embedded in entries are displayed inline.  When ~nil~, images
+are suppressed.
+
+Image support works across all format backends that include images:
+DSL =[s]= tags, and HTML =<img>= tags in MDict, StarDict, and
+BGL entries.
+
+#+begin_src emacs-lisp
+(setopt johnson-display-images nil)   ; suppress images
+#+end_src
+
+You can toggle image display interactively via
+~johnson-toggle-images~ ([[#h:toggling-images][Toggling images]]).
+
+** Wildcard search
+:PROPERTIES:
+:CUSTOM_ID: h:wildcard-search
+:END:
+
+#+vindex: johnson-wildcard-max-results
+The user option ~johnson-wildcard-max-results~ limits the number
+of headwords returned by a wildcard search.  The default value is
+~200~.  Wildcard searches can potentially match a large number of
+headwords; this limit prevents excessive memory use and keeps the
+completion interface responsive.
+
+#+begin_src emacs-lisp
+(setopt johnson-wildcard-max-results 500)
+#+end_src
+
+Wildcard patterns use =?= to match a single character and =*=
+to match zero or more characters.  Wildcards are auto-detected in
+~johnson-lookup~: if the query contains =?= or =*=
+characters, matching headwords are collected and presented for
+selection rather than performing a direct lookup.
+
+** Full-text search
+:PROPERTIES:
+:CUSTOM_ID: h:full-text-search
+:END:
+
+#+vindex: johnson-fts-enabled
+The user option ~johnson-fts-enabled~ controls whether full-text
+search data is built during indexing.  The default value is ~nil~.
+When set to ~t~ before indexing, the indexer stores definition text
+in a way that enables searching within dictionary entries, not just
+headwords.
+
+#+begin_src emacs-lisp
+(setopt johnson-fts-enabled t)
+#+end_src
+
+You must re-index your dictionaries after enabling this option for
+the full-text data to be built.  Once enabled, the
+~johnson-search~ command ([[#h:searching-definitions][Searching definitions]])
+becomes available for searching within definitions.
+
+** Eldoc integration
+:PROPERTIES:
+:CUSTOM_ID: h:eldoc-integration
+:END:
+
+#+vindex: johnson-eldoc-max-length
+The user option ~johnson-eldoc-max-length~ sets the maximum
+number of characters shown in the eldoc display for a dictionary
+definition.  The default value is ~80~.  Longer definitions are
+truncated with an ellipsis.
+
+#+begin_src emacs-lisp
+(setopt johnson-eldoc-max-length 120)
+#+end_src
+
+To enable eldoc integration, activate ~johnson-eldoc-mode~ in
+the desired buffer ([[#h:eldoc-integration-commands][Eldoc integration commands]]).
+
+** Scan-popup mode
+:PROPERTIES:
+:CUSTOM_ID: h:scan-popup-mode
+:END:
+
+#+vindex: johnson-scan-trigger
+#+vindex: johnson-scan-idle-delay
+#+vindex: johnson-scan-popup-duration
+The user option ~johnson-scan-trigger~ controls what action
+triggers popup dictionary definitions.  The possible values are:
+
+- ~selection~ (the default) --- show a popup when text is selected.
+- ~idle~ --- show a popup for the word at point after an idle
+  delay.
+- ~both~ --- show a popup on both selection and idle.
+
+#+begin_src emacs-lisp
+(setopt johnson-scan-trigger 'both)
+#+end_src
+
+The user option ~johnson-scan-idle-delay~ sets the number of
+seconds of idle time before a popup is shown when the trigger is
+~idle~ or ~both~.  The default value is ~1.0~.
+
+#+begin_src emacs-lisp
+(setopt johnson-scan-idle-delay 0.5)
+#+end_src
+
+The user option ~johnson-scan-popup-duration~ sets the number
+of seconds a popup definition remains visible.  The default value
+is ~5.0~.
+
+#+begin_src emacs-lisp
+(setopt johnson-scan-popup-duration 10.0)
+#+end_src
+
+The popup display uses posframe if available, otherwise falls back
+to tooltip, and finally to the echo area.
+
+To enable scan-popup mode, activate ~johnson-scan-mode~
+([[#h:scan-popup-mode-commands][Scan-popup mode commands]]).
+
+** Bookmarks
+:PROPERTIES:
+:CUSTOM_ID: h:bookmarks
+:END:
+
+#+vindex: johnson-bookmarks-file
+The user option ~johnson-bookmarks-file~ specifies the file where
+bookmarked dictionary entries are persisted.  The default value is
+=~/.cache/johnson/bookmarks.el=.
+
+#+begin_src emacs-lisp
+(setopt johnson-bookmarks-file "~/.local/share/johnson/bookmarks.el")
+#+end_src
+
+Bookmarks allow you to save dictionary entries for later reference.
+Each bookmark records the headword, dictionary name, and date.
+See [[#h:managing-bookmarks][Managing bookmarks]] for the commands that add, remove, and
+list bookmarks.
+
+** History buffer
+:PROPERTIES:
+:CUSTOM_ID: h:history-buffer
+:END:
+
+#+vindex: johnson-history-file
+#+vindex: johnson-history-persist
+The user option ~johnson-history-file~ specifies the file where
+lookup history is persisted across Emacs sessions.  The default
+value is =~/.cache/johnson/history.el=.
+
+#+begin_src emacs-lisp
+(setopt johnson-history-file "~/.local/share/johnson/history.el")
+#+end_src
+
+The user option ~johnson-history-persist~ controls whether lookup
+history is saved to disk.  When ~t~ (the default), history entries
+are written to ~johnson-history-file~ and restored on startup.
+When ~nil~, history exists only for the current Emacs session.
+
+#+begin_src emacs-lisp
+(setopt johnson-history-persist nil)   ; session-only history
+#+end_src
+
+See [[#h:browsing-history][Browsing history]] for commands that display and manage the
+history buffer.
+
 * Commands
 :PROPERTIES:
 :CUSTOM_ID: h:commands
@@ -252,6 +521,14 @@ are multiple matches (e.g., =(3 dicts)=).
 If the dictionaries have not been indexed yet, ~johnson-lookup~ prompts
 you to index them first.  When indexing is already in progress, the
 lookup is deferred and will resume automatically once indexing completes.
+
+If the query contains wildcard characters (=?= or =*=),
+~johnson-lookup~ performs a wildcard search instead of a direct
+lookup.  Matching headwords are collected across all in-scope
+dictionaries (up to ~johnson-wildcard-max-results~; see
+[[#h:wildcard-search][Wildcard search]]) and presented for selection via
+~completing-read~.  The selected headword is then looked up
+normally.
 
 After a word is selected, the command queries all dictionaries for exact
 matches (case-insensitive, accent-insensitive via
@@ -432,6 +709,18 @@ displays "No section at point".
 
 It is bound to =w= in ~johnson-mode~.
 
+#+findex: johnson-copy-dictionary-name
+The command ~johnson-copy-dictionary-name~ copies the dictionary name of
+the section at point to the kill ring.  This is useful for obtaining the exact
+string needed by ~johnson-dictionary-priorities~.
+
+The command first checks for a ~johnson-section-header~ text property
+(present on header lines), then falls back to the ~johnson-section~
+overlay property (present throughout the section body).  If neither is
+found, it displays "No dictionary section at point".
+
+It is bound to =W= in ~johnson-mode~.
+
 ** Dictionary list
 :PROPERTIES:
 :CUSTOM_ID: h:dictionary-list
@@ -482,6 +771,144 @@ cached dictionary buffers.
 
 The command reports how many cache buffers were closed and confirms that
 all database connections were closed.
+
+#+findex: johnson-clear-resource-cache
+The command ~johnson-clear-resource-cache~ deletes the
+=resources/= subdirectory of ~johnson-cache-directory~,
+removing all audio files extracted from companion zip archives
+([[#h:audio-playback][Audio playback]]).
+
+** Toggling images
+:PROPERTIES:
+:CUSTOM_ID: h:toggling-images
+:END:
+
+#+findex: johnson-toggle-images
+The command ~johnson-toggle-images~ toggles the display of
+inline images in the results buffer.  When images are currently
+shown, the command hides them; when hidden, it re-renders the
+buffer with images visible.  The toggle affects the value of
+~johnson-display-images~ ([[#h:images][Images]]).
+
+It is bound to =I= in ~johnson-mode~.
+
+** Searching definitions
+:PROPERTIES:
+:CUSTOM_ID: h:searching-definitions
+:END:
+
+#+findex: johnson-search
+The command ~johnson-search~ performs a full-text search across
+all indexed dictionary definitions.  It prompts for a search query
+and displays results in a tabulated list showing the headword,
+dictionary name, and a snippet of the matching definition with
+highlighted matches.
+
+Full-text search must be enabled via ~johnson-fts-enabled~
+([[#h:full-text-search][Full-text search]]) before indexing for this command to
+produce results.  If full-text data has not been indexed, the
+command signals an error.
+
+It is bound to =S= in ~johnson-mode~.
+
+** Eldoc integration commands
+:PROPERTIES:
+:CUSTOM_ID: h:eldoc-integration-commands
+:END:
+
+#+findex: johnson-eldoc-mode
+The command ~johnson-eldoc-mode~ is a buffer-local minor mode
+that adds dictionary definitions to eldoc.  When enabled, moving
+point over a word displays a brief dictionary definition in the
+eldoc area (typically the echo area or an eldoc buffer).  The
+lighter is =" JDict"=.
+
+The maximum length of the displayed definition is controlled by
+~johnson-eldoc-max-length~ ([[#h:eldoc-integration][Eldoc integration]]).
+
+#+begin_src emacs-lisp
+;; Enable in text-mode buffers
+(add-hook 'text-mode-hook #'johnson-eldoc-mode)
+#+end_src
+
+** Scan-popup mode commands
+:PROPERTIES:
+:CUSTOM_ID: h:scan-popup-mode-commands
+:END:
+
+#+findex: johnson-scan-mode
+The command ~johnson-scan-mode~ is a global minor mode that
+shows popup dictionary definitions when you select text or after an
+idle delay.  The lighter is =" JScan"=.
+
+The trigger behavior, idle delay, and popup duration are controlled
+by the user options ~johnson-scan-trigger~,
+~johnson-scan-idle-delay~, and
+~johnson-scan-popup-duration~ ([[#h:scan-popup-mode][Scan-popup mode]]).
+
+The popup display uses posframe if the =posframe= package is
+available, otherwise falls back to tooltip, and finally to the
+echo area.
+
+#+begin_src emacs-lisp
+(johnson-scan-mode 1)   ; enable globally
+#+end_src
+
+** Managing bookmarks
+:PROPERTIES:
+:CUSTOM_ID: h:managing-bookmarks
+:END:
+
+#+findex: johnson-bookmark-add
+#+findex: johnson-bookmark-remove
+#+findex: johnson-bookmark-list
+The command ~johnson-bookmark-add~ bookmarks the dictionary
+entry at point for later reference.  The bookmark records the
+headword, dictionary name, and current date.  Bookmarks are
+persisted to ~johnson-bookmarks-file~ ([[#h:bookmarks][Bookmarks]]).
+
+It is bound to =m= in ~johnson-mode~.
+
+The command ~johnson-bookmark-remove~ removes the bookmark for
+the dictionary entry at point.  If the entry is not bookmarked, the
+command displays a message indicating so.
+
+It is bound to =M= in ~johnson-mode~.
+
+The command ~johnson-bookmark-list~ opens a
+=*johnson-bookmarks*= buffer displaying all bookmarked entries
+in a tabulated list.  The table has three columns: Headword,
+Dictionary, and Date.
+
+In the bookmarks buffer:
+
+- =RET= re-looks up the bookmarked headword.
+- =d= deletes the bookmark at point.
+
+** Browsing history
+:PROPERTIES:
+:CUSTOM_ID: h:browsing-history
+:END:
+
+#+findex: johnson-history-list
+#+findex: johnson-history-clear
+The command ~johnson-history-list~ opens a
+=*johnson-history*= buffer displaying the full lookup history
+in a tabulated list with three columns: Headword, Time (the
+timestamp of the lookup), and Results (the number of dictionary
+matches).
+
+It is bound to =H= in ~johnson-mode~.
+
+In the history buffer, pressing =RET= re-looks up the headword
+at point.
+
+The command ~johnson-history-clear~ clears all lookup history
+after prompting for confirmation.  This removes both the in-memory
+history and, if persistence is enabled, the history file on disk.
+
+History persistence is controlled by ~johnson-history-persist~
+and ~johnson-history-file~ ([[#h:history-buffer][History buffer]]).
 
 * Functions
 :PROPERTIES:
@@ -1030,7 +1457,7 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
     - When saving, prompt the user whether they want to set the new value via defcustom, for the current session, or to set it manually in their init file; in the latter case, copy the new value to the kill ring and display instructions on how to use it.
 - [X] Provide basic media support (audio pronunciation).
   
-** Version 0.3 (current) --- MDict and DSL abbreviations
+** Version 0.3 --- MDict and DSL abbreviations
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-v03
 :ID:       C3D4E5F6-A7B8-9012-CDEF-123456789012
@@ -1041,13 +1468,32 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
 - [X] =_abrv.dsl= abbreviation table support for DSL dictionaries
   (=[p]= tag expansion).
 
-** Version 0.4 --- BGL (Babylon)
+** Version 0.4 (current) --- BGL, DICT, and more
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-v04
 :ID:       D4E5F6A7-B8C9-0123-DEFA-234567890123
 :END:
 
-- [ ] =johnson-bgl.el= backend for =.bgl= files.
+- [X] =johnson-bgl.el= backend for =.bgl= files, with automatic
+  detection via file extension and magic bytes (~0x12 0x34~).
+- [X] =johnson-dict.el= DICT protocol client (RFC 2229) for remote
+  dictionary servers.
+- [X] Inline image support across all format backends (DSL =[s]= tags,
+  HTML =<img>= tags in MDict, StarDict, and BGL).
+- [X] Wildcard search using =?= (single character) and =*= (multiple
+  characters) in lookups.
+- [X] Full-text search within dictionary definitions
+  (~johnson-search~).
+- [X] Eldoc integration via ~johnson-eldoc-mode~.
+- [X] Scan-popup mode via ~johnson-scan-mode~ (popup definitions on
+  selection or idle).
+- [X] Bookmarking entries for later reference.
+- [X] Browsable history buffer with timestamps and result counts.
+- [X] Auto-detection of non-standard 64-bit =.idx= entry formats in
+  StarDict dictionaries whose =.ifo= files omit the
+  ~idxoffsetbits=64~ declaration.
+- [X] Clearer error message when a StarDict =.idx= file is missing
+  (incomplete dictionary distribution).
 
 ** Future features
 :PROPERTIES:
@@ -1058,16 +1504,7 @@ Any unrecognized color name falls back to ~johnson-color-default-face~.
 The following features are planned but not yet scheduled for a specific
 version:
 
-- [ ] Extended media support (images).
 - [ ] EPWING format.
-- [ ] DICT protocol (RFC 2229) for remote dictionary servers.
-- [ ] Wildcard search (=?=/=*= patterns).
-- [ ] Fuzzy/approximate matching.
-- [ ] Full-text search within definitions.
-- [ ] Eldoc integration.
-- [ ] Scan-popup mode (auto-lookup on selection).
-- [ ] Bookmarking entries.
-- [ ] Full browsable history buffer with timestamps.
 
 * Indices
 :PROPERTIES:
