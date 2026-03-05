@@ -56,6 +56,14 @@
                  (const :tag "Active group" group))
   :group 'johnson)
 
+(defcustom johnson-ref-scope 'all
+  "Scope for following cross-reference links.
+`all' searches all dictionaries (default).  `same' restricts the
+lookup to the dictionary containing the link."
+  :type '(choice (const :tag "All dictionaries" all)
+                 (const :tag "Same dictionary" same))
+  :group 'johnson)
+
 (defcustom johnson-dictionary-groups nil
   "User-defined dictionary group overrides.
 Alist of (GROUP-NAME . (LIST-OF-DICTIONARY-NAMES)).
@@ -916,6 +924,27 @@ Returns a list of (DICT-PLIST . MATCHES) sorted by priority."
             (< (or (plist-get (car a) :priority) 0)
                (or (plist-get (car b) :priority) 0))))))
 
+(defun johnson--query-dict-exact (dict-name word)
+  "Query the dictionary named DICT-NAME for exact matches on WORD.
+Returns a list of (DICT-PLIST . MATCHES), like `johnson--query-all-exact'
+but restricted to a single dictionary."
+  (let ((dict (cl-find dict-name johnson--dictionaries
+                       :key (lambda (d) (plist-get d :name))
+                       :test #'equal)))
+    (when dict
+      (condition-case nil
+          (let* ((path (plist-get dict :path))
+                 (format-name (plist-get dict :format-name))
+                 (fmt (johnson--get-format format-name))
+                 (query-fn (and fmt (plist-get fmt :query-exact))))
+            (if query-fn
+                (let ((matches (funcall query-fn path word)))
+                  (when matches (list (cons dict matches))))
+              (let* ((db (johnson--get-db path))
+                     (matches (johnson-db-query-exact db word)))
+                (when matches (list (cons dict matches))))))
+        (error nil)))))
+
 ;;;; Lookup
 
 ;;;###autoload
@@ -1288,12 +1317,27 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
 ;;;; Follow reference
 
 (defun johnson-follow-ref ()
-  "Follow the cross-reference button at point."
+  "Follow the cross-reference button at point.
+When `johnson-ref-scope' is `same', restrict the lookup to the
+dictionary whose section contains the link."
   (interactive)
   (let ((button (button-at (point))))
-    (if button
-        (button-activate button)
-      (message "No cross-reference at point"))))
+    (if (not button)
+        (message "No cross-reference at point")
+      (let ((word (button-get button 'johnson-ref-word)))
+        (if (or (null word) (eq johnson-ref-scope 'all))
+            (button-activate button)
+          ;; Scoped lookup: find the enclosing dictionary section.
+          (let ((dict-name (johnson--section-name-at (point))))
+            (if (null dict-name)
+                (johnson-lookup word)
+              (let ((results (johnson--query-dict-exact dict-name word)))
+                (if results
+                    (progn
+                      (push word johnson-history)
+                      (johnson--display-results word results))
+                  ;; Fallback to full lookup if no match in same dict.
+                  (johnson-lookup word))))))))))
 
 ;;;; Refresh
 

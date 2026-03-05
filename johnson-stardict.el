@@ -373,6 +373,7 @@ Handles XDXF tags like <kref>, <gr>, <ex>, <abbr>, <dtrn>."
      (let ((ref-text (buffer-substring-no-properties region-start region-end)))
        (make-text-button region-start region-end
                          'face 'johnson-ref-face
+                         'johnson-ref-word ref-text
                          'action (lambda (_btn) (johnson-lookup ref-text))
                          'help-echo (format "Look up \"%s\"" ref-text))))
     ("gr"

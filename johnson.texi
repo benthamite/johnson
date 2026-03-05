@@ -39,6 +39,7 @@ User options
 
 * Dictionary discovery::
 * Search scope and groups::
+* Cross-reference scope::
 * Display ordering::
 * Lookup history::
 * Cache directory::
@@ -193,6 +194,7 @@ their indexing status and entry counts @*
 @menu
 * Dictionary discovery::
 * Search scope and groups::
+* Cross-reference scope::
 * Display ordering::
 * Lookup history::
 * Cache directory::
@@ -270,6 +272,23 @@ medical dictionaries across different language pairs into a single @*
 
 When @code{johnson-dictionary-groups} is non-nil, @emph{only} the groups listed @*
 here are available; the auto-detected language-pair groups are not used. @*
+
+@node Cross-reference scope
+@section Cross-reference scope
+
+@vindex johnson-ref-scope
+The user option @code{johnson-ref-scope} controls the scope when following @*
+cross-reference links (via @code{johnson-follow-ref}).  When set to @code{all} @*
+(the default), following a cross-reference performs a lookup across all @*
+dictionaries, just like @code{johnson-lookup}.  When set to @code{same}, the @*
+lookup is restricted to the dictionary containing the link. @*
+
+@lisp
+(setopt johnson-ref-scope 'same)
+@end lisp
+
+If the target word is not found in the originating dictionary, the @*
+command falls back to a full lookup across all dictionaries. @*
 
 @node Display ordering
 @section Display ordering
@@ -738,10 +757,13 @@ within the section body.  It is bound to @samp{TAB} in @code{johnson-mode}. @*
 @findex johnson-follow-ref
 The command @code{johnson-follow-ref} activates the cross-reference button at @*
 point.  In DSL dictionaries, cross-references are created by @samp{[ref]} tags @*
-or @samp{<<...>>} markers and rendered as clickable text buttons.  Activating @*
-a cross-reference button triggers a new @code{johnson-lookup} for the @*
-referenced word, searching across all loaded dictionaries regardless of @*
-the current scope setting. @*
+or @samp{<<...>>} markers and rendered as clickable text buttons.  By @*
+default, activating a cross-reference triggers a new @code{johnson-lookup} @*
+for the referenced word across all loaded dictionaries.  When @*
+@code{johnson-ref-scope} is set to @code{same}, the lookup is restricted to @*
+the dictionary containing the link; if no match is found there, the @*
+command falls back to a full lookup @*
+(@ref{Cross-reference scope}). @*
 
 If there is no button at point, the command displays ``No cross-reference @*
 at point''.  It is bound to @samp{RET} in @code{johnson-mode}. @*
