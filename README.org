@@ -161,6 +161,25 @@ medical dictionaries across different language pairs into a single
 When ~johnson-dictionary-groups~ is non-nil, /only/ the groups listed
 here are available; the auto-detected language-pair groups are not used.
 
+** Cross-reference scope
+:PROPERTIES:
+:CUSTOM_ID: h:cross-reference-scope
+:END:
+
+#+vindex: johnson-ref-scope
+The user option ~johnson-ref-scope~ controls the scope when following
+cross-reference links (via ~johnson-follow-ref~).  When set to ~all~
+(the default), following a cross-reference performs a lookup across all
+dictionaries, just like ~johnson-lookup~.  When set to ~same~, the
+lookup is restricted to the dictionary containing the link.
+
+#+begin_src emacs-lisp
+(setopt johnson-ref-scope 'same)
+#+end_src
+
+If the target word is not found in the originating dictionary, the
+command falls back to a full lookup across all dictionaries.
+
 ** Display ordering
 :PROPERTIES:
 :CUSTOM_ID: h:display-ordering
@@ -650,10 +669,13 @@ within the section body.  It is bound to =TAB= in ~johnson-mode~.
 #+findex: johnson-follow-ref
 The command ~johnson-follow-ref~ activates the cross-reference button at
 point.  In DSL dictionaries, cross-references are created by =[ref]= tags
-or =<<...>>= markers and rendered as clickable text buttons.  Activating
-a cross-reference button triggers a new ~johnson-lookup~ for the
-referenced word, searching across all loaded dictionaries regardless of
-the current scope setting.
+or =<<...>>= markers and rendered as clickable text buttons.  By
+default, activating a cross-reference triggers a new ~johnson-lookup~
+for the referenced word across all loaded dictionaries.  When
+~johnson-ref-scope~ is set to ~same~, the lookup is restricted to the
+dictionary containing the link; if no match is found there, the command
+falls back to a full lookup
+([[#h:cross-reference-scope][Cross-reference scope]]).
 
 If there is no button at point, the command displays "No cross-reference
 at point".  It is bound to =RET= in ~johnson-mode~.

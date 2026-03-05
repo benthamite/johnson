@@ -116,6 +116,7 @@ ATTRS is the raw attribute string from the opening tag."
        (let ((target (match-string 1 attrs)))
          (make-text-button region-start region-end
                            'face 'johnson-ref-face
+                           'johnson-ref-word target
                            'action (lambda (_btn) (johnson-lookup target))
                            'help-echo (format "Look up \"%s\"" target))))
       ;; No href, just make it look like a link.
