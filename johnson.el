@@ -963,6 +963,7 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
             johnson--indexing-callbacks))
     (user-error "Dictionaries are being indexed; lookup will resume when done"))
   (unless word
+    (johnson--load-history-log)
     (let ((default (thing-at-point 'word t)))
       (setq word (completing-read
                   (format-prompt "Look up" default)
@@ -2280,7 +2281,12 @@ When enabled, looking up words via selection or idle timer."
                   (insert-file-contents johnson-history-file)
                   (read (current-buffer))))
         (error (setq johnson--history-log nil))))
-    (setq johnson--history-log-loaded t)))
+    (setq johnson--history-log-loaded t)
+    (unless johnson-history
+      (let ((words (mapcar (lambda (entry) (plist-get entry :word))
+                           johnson--history-log)))
+        (setq johnson-history
+              (seq-take (delete-dups words) johnson-history-max))))))
 
 (defun johnson--save-history-log ()
   "Save the timestamped history log to `johnson-history-file'."
