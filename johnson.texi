@@ -715,7 +715,8 @@ plus an @samp{"All"} pseudo-group. @*
 Selecting @samp{"All"} sets the search scope to @code{all}, meaning lookups will @*
 search across every discovered dictionary.  Selecting a specific group @*
 sets the scope to @code{group} and activates that group, restricting lookups @*
-to dictionaries within it. @*
+to dictionaries within it.  If called from the results buffer, the @*
+current lookup is automatically refreshed to reflect the new scope. @*
 
 The available groups depend on your configuration.  If @*
 @code{johnson-dictionary-groups} is @code{nil} (the default), groups are @*

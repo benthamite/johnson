@@ -415,7 +415,9 @@ PROPS is a plist with keys :name, :extensions, :detect,
           (setq johnson-default-search-scope 'all))
       (setq johnson--current-group selection)
       (setq johnson-default-search-scope 'group))
-    (message "johnson: scope set to %s" (or johnson--current-group "All"))))
+    (message "johnson: scope set to %s" (or johnson--current-group "All"))
+    (when johnson--current-word
+      (johnson-refresh))))
 
 ;;;; Indexing
 
@@ -900,7 +902,7 @@ database queries across all dictionaries."
   "Query all in-scope dictionaries for exact matches on WORD.
 Returns a list of (DICT-PLIST . MATCHES) sorted by priority."
   (let ((results nil))
-    (dolist (dict johnson--dictionaries)
+    (dolist (dict (johnson--dictionaries-in-scope))
       (condition-case err
           (let* ((path (plist-get dict :path))
                  (format-name (plist-get dict :format-name))
@@ -971,7 +973,7 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
   ;; Wildcard handling: if word contains ? or *, expand first.
   (when (johnson--wildcard-pattern-p word)
     (let ((matches nil))
-      (dolist (dict johnson--dictionaries)
+      (dolist (dict (johnson--dictionaries-in-scope))
         (condition-case nil
             (let* ((path (plist-get dict :path))
                    (db (johnson--get-db path))
@@ -1933,10 +1935,10 @@ Returns plain text suitable for FTS indexing or eldoc display."
     (string-trim (buffer-string))))
 
 (defun johnson--query-all-fts (query)
-  "Run full-text search for QUERY across all dictionaries.
+  "Run full-text search for QUERY across in-scope dictionaries.
 Returns a list of (DICT-PLIST HEADWORD SNIPPET) triples."
   (let ((results nil))
-    (dolist (dict johnson--dictionaries)
+    (dolist (dict (johnson--dictionaries-in-scope))
       (condition-case err
           (let* ((path (plist-get dict :path))
                  (db (johnson--get-db path))
