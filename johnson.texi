@@ -710,7 +710,8 @@ problem before continuing. @*
 @findex johnson-select-group
 The command @code{johnson-select-group} lets you choose the active dictionary @*
 group.  It presents a @code{completing-read} prompt with all available groups @*
-plus an @samp{"All"} pseudo-group. @*
+plus an @samp{"All"} pseudo-group.  It is bound to @samp{G} in @*
+@code{johnson-mode}. @*
 
 Selecting @samp{"All"} sets the search scope to @code{all}, meaning lookups will @*
 search across every discovered dictionary.  Selecting a specific group @*

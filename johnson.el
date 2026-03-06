@@ -1177,6 +1177,7 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     (define-key map "r" #'johnson-history-forward)
     (define-key map "s" #'johnson-new-search)
     (define-key map "g" #'johnson-refresh)
+    (define-key map "G" #'johnson-select-group)
     (define-key map "a" #'johnson-play-audio-at-point)
     (define-key map "o" #'johnson-ace-link)
     (define-key map "w" #'johnson-copy-entry)
