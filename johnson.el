@@ -697,9 +697,9 @@ Called when the process finishes."
   (when (memq (process-status proc) '(exit signal))
     (setq johnson--indexing-in-progress nil)
     (setq johnson--indexing-process nil)
-    ;; Invalidate stale cached completion connection so the next
+    ;; Invalidate all cached database connections so the next
     ;; query picks up the freshly-built index.
-    (johnson-db-close-completion-db)
+    (johnson--close-all-dbs)
     (let ((exit-code (process-exit-status proc))
           (buf (process-get proc 'johnson-buf)))
       (if (zerop exit-code)
@@ -1338,7 +1338,11 @@ dictionary whose section contains the link."
               (let ((results (johnson--query-dict-exact dict-name word)))
                 (if results
                     (progn
-                      (push word johnson-history)
+                      (unless (equal word (car johnson-history))
+                        (push word johnson-history)
+                        (when (> (length johnson-history) johnson-history-max)
+                          (setcdr (nthcdr (1- johnson-history-max) johnson-history) nil)))
+                      (johnson--history-log-push word (length results))
                       (johnson--display-results word results))
                   ;; Fallback to full lookup if no match in same dict.
                   (johnson-lookup word))))))))))
@@ -1722,7 +1726,7 @@ Uses `unzip -p' to extract to stdout, then writes to disk.
 Return the cached file path on success, nil on failure.
 Skip extraction if already cached."
   (let* ((cache-dir (johnson--resource-cache-dir zip-path))
-         (cached (expand-file-name filename cache-dir)))
+         (cached (expand-file-name (file-name-nondirectory filename) cache-dir)))
     (if (file-exists-p cached)
         cached
       (make-directory (file-name-directory cached) t)
@@ -1898,8 +1902,10 @@ is missing.  Respects `johnson-display-images'."
 (defun johnson--entry-to-plain-text (raw-text format-name)
   "Strip markup from RAW-TEXT according to FORMAT-NAME.
 Returns plain text suitable for FTS indexing or eldoc display."
-  (with-temp-buffer
-    (insert raw-text)
+  (if (null raw-text)
+      ""
+    (with-temp-buffer
+      (insert raw-text)
     (goto-char (point-min))
     (pcase format-name
       ("dsl"
@@ -1934,7 +1940,7 @@ Returns plain text suitable for FTS indexing or eldoc display."
     (goto-char (point-min))
     (while (re-search-forward "[ \t\n\r]+" nil t)
       (replace-match " "))
-    (string-trim (buffer-string))))
+    (string-trim (buffer-string)))))
 
 (defun johnson--query-all-fts (query)
   "Run full-text search for QUERY across in-scope dictionaries.
@@ -2146,10 +2152,18 @@ When enabled, looking up words via selection or idle timer."
   (unless johnson--bookmarks-loaded
     (when (file-exists-p johnson-bookmarks-file)
       (condition-case nil
-          (setq johnson--bookmarks
-                (with-temp-buffer
-                  (insert-file-contents johnson-bookmarks-file)
-                  (read (current-buffer))))
+          (let ((data (with-temp-buffer
+                        (insert-file-contents johnson-bookmarks-file)
+                        (read (current-buffer)))))
+            (setq johnson--bookmarks
+                  (if (and (listp data)
+                           (cl-every (lambda (b)
+                                       (and (listp b)
+                                            (stringp (plist-get b :headword))
+                                            (stringp (plist-get b :dictionary))))
+                                     data))
+                      data
+                    nil)))
         (error (setq johnson--bookmarks nil))))
     (setq johnson--bookmarks-loaded t)))
 
@@ -2167,14 +2181,7 @@ When enabled, looking up words via selection or idle timer."
   (unless (derived-mode-p 'johnson-mode)
     (user-error "Not in a johnson buffer"))
   (johnson--load-bookmarks)
-  (let* ((section (get-text-property (point) 'johnson-section))
-         (dict-name (or section
-                        (save-excursion
-                          (let ((header (previous-single-property-change
-                                        (point) 'johnson-section-header)))
-                            (when header
-                              (get-text-property header
-                                                 'johnson-section-header))))))
+  (let* ((dict-name (johnson--section-name-at (point)))
          (headword johnson--current-word))
     (unless headword
       (user-error "No entry to bookmark"))
@@ -2244,7 +2251,8 @@ When enabled, looking up words via selection or idle timer."
     (when (and id (y-or-n-p "Delete bookmark? "))
       (setq johnson--bookmarks
             (cl-remove-if (lambda (b)
-                            (equal (plist-get b :headword) id))
+                            (and (equal (plist-get b :headword) (car id))
+                                 (equal (plist-get b :dictionary) (cdr id))))
                           johnson--bookmarks))
       (johnson--save-bookmarks)
       (tabulated-list-delete-entry))))
@@ -2262,9 +2270,10 @@ When enabled, looking up words via selection or idle timer."
                       (let ((hw (plist-get b :headword))
                             (dict (or (plist-get b :dictionary) ""))
                             (time (plist-get b :timestamp)))
-                        (list hw (vector hw dict
-                                         (format-time-string
-                                          "%Y-%m-%d %H:%M" time)))))
+                        (list (cons hw dict)
+                              (vector hw dict
+                                      (format-time-string
+                                       "%Y-%m-%d %H:%M" time)))))
                     johnson--bookmarks))
       (tabulated-list-print))
     (pop-to-buffer buf)))
@@ -2277,10 +2286,14 @@ When enabled, looking up words via selection or idle timer."
     (when (and johnson-history-persist
                (file-exists-p johnson-history-file))
       (condition-case nil
-          (setq johnson--history-log
-                (with-temp-buffer
-                  (insert-file-contents johnson-history-file)
-                  (read (current-buffer))))
+          (let ((data (with-temp-buffer
+                        (insert-file-contents johnson-history-file)
+                        (read (current-buffer)))))
+            (setq johnson--history-log
+                  (if (and (listp data)
+                           (cl-every #'listp data))
+                      data
+                    nil)))
         (error (setq johnson--history-log nil))))
     (setq johnson--history-log-loaded t)
     (unless johnson-history
@@ -2303,6 +2316,9 @@ When enabled, looking up words via selection or idle timer."
   (johnson--load-history-log)
   (push (list :word word :timestamp (float-time) :dict-count dict-count)
         johnson--history-log)
+  (let ((max-len (* 10 johnson-history-max)))
+    (when (> (length johnson--history-log) max-len)
+      (setcdr (nthcdr (1- max-len) johnson--history-log) nil)))
   (johnson--save-history-log))
 
 (defvar johnson-history-list-mode-map

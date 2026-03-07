@@ -163,23 +163,29 @@ Returns a plist with :magic and :gzip-offset."
 
 ;;;; Block parsing
 
-(defun johnson-bgl--parse-block-header (data pos)
+(cl-defun johnson-bgl--parse-block-header (data pos)
   "Parse a BGL block header from DATA at POS.
 Returns a list (TYPE LENGTH NEXT-POS) where TYPE is the block type,
-LENGTH is the payload length, and NEXT-POS is the offset past the header."
-  (let* ((byte0 (aref data pos))
-         (btype (logand byte0 #x0F))
-         (length-nibble (ash byte0 -4))
-         (cur (1+ pos)))
-    (if (< length-nibble 4)
-        ;; Extra bytes encode the length.
-        (let* ((extra (1+ length-nibble))
-               (length 0))
-          (dotimes (i extra)
-            (setq length (logior (ash length 8) (aref data (+ cur i)))))
-          (list btype length (+ cur extra)))
-      ;; Length encoded in the nibble itself.
-      (list btype (- length-nibble 4) cur))))
+LENGTH is the payload length, and NEXT-POS is the offset past the header.
+Returns nil if there are not enough bytes to read the header."
+  (let ((data-len (length data)))
+    (when (>= pos data-len)
+      (cl-return-from johnson-bgl--parse-block-header nil))
+    (let* ((byte0 (aref data pos))
+           (btype (logand byte0 #x0F))
+           (length-nibble (ash byte0 -4))
+           (cur (1+ pos)))
+      (if (< length-nibble 4)
+          ;; Extra bytes encode the length.
+          (let* ((extra (1+ length-nibble)))
+            (when (> (+ cur extra) data-len)
+              (cl-return-from johnson-bgl--parse-block-header nil))
+            (let ((length 0))
+              (dotimes (i extra)
+                (setq length (logior (ash length 8) (aref data (+ cur i)))))
+              (list btype length (+ cur extra))))
+        ;; Length encoded in the nibble itself.
+        (list btype (- length-nibble 4) cur)))))
 
 (defun johnson-bgl--parse-blocks (data)
   "Parse all blocks from decompressed BGL DATA string.
@@ -189,12 +195,15 @@ DATA is a unibyte string."
         (data-len (length data))
         (blocks nil))
     (while (< pos data-len)
-      (let* ((header (johnson-bgl--parse-block-header data pos))
-             (btype (nth 0 header))
-             (length (nth 1 header))
-             (payload-start (nth 2 header)))
-        (push (list btype payload-start length) blocks)
-        (setq pos (+ payload-start length))))
+      (let ((header (johnson-bgl--parse-block-header data pos)))
+        (unless header
+          (setq pos data-len))
+        (when header
+          (let ((btype (nth 0 header))
+                (length (nth 1 header))
+                (payload-start (nth 2 header)))
+            (push (list btype payload-start length) blocks)
+            (setq pos (+ payload-start length))))))
     (nreverse blocks)))
 
 ;;;; Metadata extraction from blocks
@@ -271,23 +280,25 @@ Multiple triples are returned when alternate headwords are present."
       (let* ((def-len (johnson-bgl--u16be data def-len-pos))
              (def-start (+ def-len-pos 2))
              (def-end (+ def-start def-len))
-             (results (list (list headword def-start def-len))))
-        ;; Parse alternate headwords after the definition.
-        (let ((alt-pos def-end)
-              (block-end (+ payload-start payload-length)))
-          (while (< alt-pos block-end)
-            (let* ((alt-len (aref data alt-pos))
-                   (alt-start (1+ alt-pos))
-                   (alt-end (+ alt-start alt-len)))
-              (when (> alt-end block-end)
-                (setq alt-pos block-end))
-              (unless (> alt-end block-end)
-                (let ((alt-hw (decode-coding-string
-                               (substring data alt-start alt-end)
-                               'utf-8)))
-                  (push (list alt-hw def-start def-len) results))
-                (setq alt-pos alt-end)))))
-        (nreverse results)))))
+             (block-end (+ payload-start payload-length)))
+        (when (> def-end block-end)
+          (cl-return-from johnson-bgl--parse-entry-block nil))
+        (let ((results (list (list headword def-start def-len))))
+          ;; Parse alternate headwords after the definition.
+          (let ((alt-pos def-end))
+            (while (< alt-pos block-end)
+              (let* ((alt-len (aref data alt-pos))
+                     (alt-start (1+ alt-pos))
+                     (alt-end (+ alt-start alt-len)))
+                (when (> alt-end block-end)
+                  (setq alt-pos block-end))
+                (unless (> alt-end block-end)
+                  (let ((alt-hw (decode-coding-string
+                                 (substring data alt-start alt-end)
+                                 'utf-8)))
+                    (push (list alt-hw def-start def-len) results))
+                  (setq alt-pos alt-end)))))
+          (nreverse results))))))
 
 (cl-defun johnson-bgl--parse-entry-block-type-11 (data payload-start payload-length)
   "Parse a type 11 entry block from DATA at PAYLOAD-START with PAYLOAD-LENGTH.
@@ -330,8 +341,11 @@ Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
         (when (> (+ pos 4) block-end)
           (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
         (let* ((def-len (johnson-bgl--u32be data pos))
-               (def-start (+ pos 4)))
-          (setq pos (+ def-start def-len))
+               (def-start (+ pos 4))
+               (def-end (+ def-start def-len)))
+          (when (> def-end block-end)
+            (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
+          (setq pos def-end)
           ;; Build result list: primary + alternates.
           (let ((all (list (list headword def-start def-len))))
             (dolist (alt-hw results)
@@ -369,11 +383,12 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
       (let* ((buf (johnson-bgl--get-buffer path))
              (data (with-current-buffer buf (buffer-string)))
              (blocks (johnson-bgl--parse-blocks data))
-             (meta (johnson-bgl--parse-metadata-from-blocks data blocks)))
-        (puthash path meta johnson-bgl--metadata-cache)
-        (list :name (plist-get meta :name)
-              :source-lang (plist-get meta :source-lang)
-              :target-lang (plist-get meta :target-lang)))))
+             (meta (johnson-bgl--parse-metadata-from-blocks data blocks))
+             (result (list :name (plist-get meta :name)
+                           :source-lang (plist-get meta :source-lang)
+                           :target-lang (plist-get meta :target-lang))))
+        (puthash path result johnson-bgl--metadata-cache)
+        result)))
 
 ;;;; Index building
 

@@ -135,7 +135,7 @@ ENTRIES is a list of (HEADWORD BYTE-OFFSET BYTE-LENGTH) triples."
                             (list headword normalized offset len))))
         (sqlite-execute db "COMMIT"))
     (error
-     (sqlite-execute db "ROLLBACK")
+     (ignore-errors (sqlite-execute db "ROLLBACK"))
      (signal (car err) (cdr err)))))
 
 ;;;; Queries
@@ -194,9 +194,11 @@ the actual file modification time."
   (let ((index-path (johnson-db--index-path dict-path)))
     (if (not (file-exists-p index-path))
         t
-      (let ((db (sqlite-open index-path)))
-        (unwind-protect
-            (let* ((stored-mtime (caar (sqlite-select db
+      (if (not (file-attributes dict-path))
+          t
+        (let ((db (sqlite-open index-path)))
+          (unwind-protect
+              (let* ((stored-mtime (caar (sqlite-select db
                                                       "SELECT value FROM metadata WHERE key = ?"
                                                       '("mtime"))))
                    (actual-mtime (format-time-string
@@ -206,8 +208,10 @@ the actual file modification time."
               (or (not (equal stored-mtime actual-mtime))
                   ;; Treat databases with zero entries as stale -- they
                   ;; were likely created by a broken parser version.
-                  (zerop (johnson-db-entry-count db))))
-          (sqlite-close db))))))
+                  (condition-case nil
+                      (zerop (johnson-db-entry-count db))
+                    (sqlite-error t))))
+          (sqlite-close db)))))))
 
 (defun johnson-db-stale-quick-p (dict-path)
   "Fast filesystem-only staleness check for DICT-PATH.
@@ -225,7 +229,9 @@ file has been modified after the index was last written.  Unlike
 
 (defun johnson-db-reset (db)
   "Delete all entries from DB for re-indexing."
-  (sqlite-execute db "DELETE FROM entries"))
+  (sqlite-execute db "DELETE FROM entries")
+  (ignore-errors (sqlite-execute db "DELETE FROM fts_entries"))
+  (sqlite-execute db "DELETE FROM metadata WHERE key = 'fts-indexed'"))
 
 ;;;; Unified completion index
 
@@ -249,9 +255,9 @@ Returns nil if the completion index file does not exist."
 (defun johnson-db-close-completion-db ()
   "Close the cached completion index connection."
   (when johnson-db--completion-db
-    (condition-case nil
+    (condition-case err
         (sqlite-close johnson-db--completion-db)
-      (error nil))
+      (error (message "johnson-db: error closing completion db: %S" err)))
     (setq johnson-db--completion-db nil)))
 
 (defun johnson-db-rebuild-completion-index (dict-paths)
@@ -275,30 +281,28 @@ should be aggregated.  Returns the total number of unique headwords."
                         (let ((hw (car row)))
                           (puthash hw (1+ (gethash hw agg 0)) agg)))
                     (sqlite-close per-db))))))
-          ;; Recreate the table (faster than DELETE for bulk rebuild).
-          (sqlite-execute db "DROP TABLE IF EXISTS completions")
-          (sqlite-execute db
-            "CREATE TABLE completions (
-               headword TEXT NOT NULL,
-               headword_normalized TEXT NOT NULL,
-               dict_count INTEGER NOT NULL DEFAULT 1)")
-          ;; Bulk insert in a single transaction.
+          ;; Recreate the table and bulk-insert inside a single transaction.
           (condition-case err
               (progn
                 (sqlite-execute db "BEGIN TRANSACTION")
+                (sqlite-execute db "DROP TABLE IF EXISTS completions")
+                (sqlite-execute db
+                  "CREATE TABLE completions (
+                     headword TEXT NOT NULL,
+                     headword_normalized TEXT NOT NULL,
+                     dict_count INTEGER NOT NULL DEFAULT 1)")
                 (maphash (lambda (hw count)
                            (sqlite-execute db
                              "INSERT INTO completions (headword, headword_normalized, dict_count)
                               VALUES (?, ?, ?)"
                              (list hw (johnson-db-normalize hw) count)))
                          agg)
+                (sqlite-execute db
+                  "CREATE INDEX idx_comp_normalized ON completions(headword_normalized)")
                 (sqlite-execute db "COMMIT"))
             (error
-             (sqlite-execute db "ROLLBACK")
+             (ignore-errors (sqlite-execute db "ROLLBACK"))
              (signal (car err) (cdr err))))
-          ;; Create index after all inserts.
-          (sqlite-execute db
-            "CREATE INDEX idx_comp_normalized ON completions(headword_normalized)")
           (hash-table-count agg))
       (sqlite-close db))))
 

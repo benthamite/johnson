@@ -285,9 +285,14 @@ Returns a plist with keys:
              (encoding-str (or (johnson-mdict--extract-header-attr
                                 header-text "Encoding")
                                "utf-8"))
-             (encrypted-str (or (johnson-mdict--extract-header-attr
-                                 header-text "Encrypted")
-                                "0"))
+             (encrypted (let ((s (or (johnson-mdict--extract-header-attr
+                                     header-text "Encrypted")
+                                    "0")))
+                         (if (string-match-p "\\`[0-9]+\\'" s)
+                             (string-to-number s)
+                           (if (member (downcase s) '("yes" "true"))
+                               2
+                             0))))
              (title (or (johnson-mdict--extract-header-attr
                          header-text "Title")
                         ""))
@@ -301,7 +306,7 @@ Returns a plist with keys:
         (list :version ver-float
               :num-width num-width
               :encoding encoding
-              :encrypted (string-to-number encrypted-str)
+              :encrypted encrypted
               :title title
               :description description
               :header-end total-read)))))
@@ -693,18 +698,23 @@ where record-offset is the byte offset into the decompressed record stream."
   "Retrieve the entry data from the MDict dictionary at PATH.
 RECORD-OFFSET is the offset into the decompressed record stream.
 Returns the entry data as a decoded string."
-  (setq johnson-mdict--current-dict-dir (file-name-directory path))
-  (setq johnson-mdict--current-dict-path path)
-  (let* ((header (johnson-mdict--parse-header path))
+  (let* ((johnson-mdict--current-dict-dir (file-name-directory path))
+         (johnson-mdict--current-dict-path path)
+         (header (johnson-mdict--parse-header path))
          (encoding (plist-get header :encoding))
          (loc (johnson-mdict--locate-record path record-offset))
          (block-idx (car loc))
          (local-offset (cdr loc))
          (block-data (johnson-mdict--read-record-block path block-idx))
+         (rec-info (johnson-mdict--parse-record-section path))
+         (blocks (plist-get rec-info :blocks))
          (next-offset (johnson-mdict--next-offset path record-offset))
          (entry-span
           (if (= next-offset -1)
-              (- (length block-data) local-offset)
+              (let ((total-decomp 0))
+                (dotimes (i (length blocks))
+                  (cl-incf total-decomp (nth 1 (aref blocks i))))
+                (- total-decomp record-offset))
             (- next-offset record-offset)))
          (avail (- (length block-data) local-offset))
          (entry-data
@@ -741,10 +751,6 @@ DATA is a decoded string containing HTML content."
 (defvar johnson-mdict--mdd-index-cache (make-hash-table :test #'equal)
   "Cache of MDD keyword indices.
 Maps mdd-path to a sorted vector of (KEY . OFFSET) pairs.")
-
-(defvar johnson-mdict--mdd-record-cache (make-hash-table :test #'equal)
-  "Cache of MDD record section metadata.
-Maps mdd-path to record section plist.")
 
 (defun johnson-mdict--mdd-path (mdx-path)
   "Return the .mdd file path corresponding to MDX-PATH, or nil."
@@ -801,9 +807,15 @@ Returns raw bytes as a unibyte string, or nil."
              (block-idx (car loc))
              (local-offset (cdr loc))
              (block-data (johnson-mdict--read-record-block mdd-path block-idx))
+             (rec-info (johnson-mdict--parse-record-section mdd-path))
+             (mdd-blocks (plist-get rec-info :blocks))
              (next-off (johnson-mdict--next-offset mdd-path offset))
              (entry-span (if (= next-off -1)
-                             (- (length block-data) local-offset)
+                             (let ((total-decomp 0))
+                               (dotimes (i (length mdd-blocks))
+                                 (cl-incf total-decomp
+                                          (nth 1 (aref mdd-blocks i))))
+                               (- total-decomp offset))
                            (- next-off offset)))
              (avail (- (length block-data) local-offset)))
         (if (<= entry-span avail)
@@ -839,7 +851,8 @@ MDD hit.  Returns the local file path or nil."
                                  (md5 mdx-path)
                                  (expand-file-name
                                   "resources" johnson-cache-directory)))
-                     (cached (expand-file-name resource-name cache-dir)))
+                     (safe-name (file-name-nondirectory resource-name))
+                     (cached (expand-file-name safe-name cache-dir)))
                 (make-directory (file-name-directory cached) t)
                 (let ((coding-system-for-write 'no-conversion))
                   (with-temp-file cached
@@ -855,7 +868,6 @@ MDD hit.  Returns the local file path or nil."
   (clrhash johnson-mdict--record-meta-cache)
   (clrhash johnson-mdict--offset-cache)
   (clrhash johnson-mdict--mdd-index-cache)
-  (clrhash johnson-mdict--mdd-record-cache)
   (setq johnson-mdict--block-cache nil))
 
 ;;;; Format registration

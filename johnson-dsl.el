@@ -179,8 +179,8 @@ Set by `johnson-dsl-retrieve-entry' for use by the abbreviation loader.")
 
 (defvar johnson-dsl--abbreviation-cache (make-hash-table :test #'equal)
   "Cache of abbreviation tables.
-Maps dict-dir to a hash table of abbreviation to expansion, or nil
-if no abbreviation file exists.")
+Maps abbreviation file path to a hash table of abbreviation to expansion,
+or nil if no abbreviation file exists.")
 
 ;;;; Dictzip helpers
 
@@ -536,7 +536,7 @@ Handles split markers ({/}), alternation ({alt1/alt2}), optional
 parts ((opt)), and escaped characters.  Returns a list of strings."
   ;; Strip DSL media/link markers ({{...}}) which should never appear
   ;; in headwords but may if body text lacks proper indentation.
-  (let* ((cleaned (replace-regexp-in-string "{{[^}]*}}" "" headword))
+  (let* ((cleaned (replace-regexp-in-string "{{\\(?:[^}]\\|}[^}]\\)*}}" "" headword))
          ;; First split on {/} markers.
          (split (johnson-dsl--split-on-slash cleaned))
          ;; Then expand alternations and optionals on each part.
@@ -648,7 +648,7 @@ Inserts the rendered text at point."
     ;; Process {{...}} media references: render images, strip others.
     (setq text
           (replace-regexp-in-string
-           "{{\\([^}]*\\)}}"
+           "{{\\(\\(?:[^}]\\|}[^}]\\)*\\)}}"
            (lambda (match)
              (let ((filename (match-string 1 match)))
                (if (and (fboundp 'johnson--image-file-p)
@@ -704,7 +704,7 @@ Inserts the rendered text at point."
               (goto-char tag-beg)
               (cond
                ;; Self-closing margin tags: [m], [m0]-[m9]
-               ((string-match "^m\\([0-9]?\\)$" tag-name)
+               ((and (not closing-p) (string-match "^m\\([0-9]?\\)$" tag-name))
                 (let* ((level-str (match-string 1 tag-name))
                        (level (if (string-empty-p level-str) 0
                                 (string-to-number level-str)))
@@ -801,11 +801,14 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
                          'action (lambda (_btn) (johnson-lookup ref-text))
                          'help-echo (format "Look up \"%s\"" ref-text))))
     ("url"
-     (let ((url-text (buffer-substring-no-properties region-start region-end)))
+     (let* ((display (buffer-substring-no-properties region-start region-end))
+            (url (if (and tag-args (not (string-empty-p tag-args)))
+                     tag-args
+                   display)))
        (make-text-button region-start region-end
                          'face 'johnson-url-face
-                         'action (lambda (_btn) (browse-url url-text))
-                         'help-echo (format "Open %s" url-text))))
+                         'action (lambda (_btn) (browse-url url))
+                         'help-echo (format "Open %s" url))))
     ("lang"
      (when (and tag-args (string-match "id=\\([0-9]+\\)" tag-args))
        (put-text-property region-start region-end
