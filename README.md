@@ -1,4 +1,4 @@
-# johnson
+# `johnson`
 
 A multi-format dictionary UI for Emacs.
 
@@ -6,7 +6,7 @@ A multi-format dictionary UI for Emacs.
 
 ## Overview
 
-johnson brings the functionality of desktop dictionary programs like GoldenDict and StarDict into Emacs. You point it at your dictionary files, index them once, and then look up words across all your dictionaries simultaneously with dynamic completion. Results appear in a dedicated buffer with collapsible sections, one per dictionary, rendered with full formatting.
+`johnson` brings the functionality of desktop dictionary programs like GoldenDict and StarDict into Emacs. You point it at your dictionary files, index them once, and then look up words across all your dictionaries simultaneously with dynamic completion. Results appear in a dedicated buffer with collapsible sections, one per dictionary, rendered with full formatting.
 
 The package is implemented entirely in Emacs Lisp with no external dependencies. It relies on Emacs 30.1's built-in sqlite support for efficient headword indexing and parses all dictionary formats natively.
 
@@ -20,7 +20,7 @@ Supported formats:
 
 The architecture is modular: each format is handled by a separate backend that registers itself with the core via a plist-based format registry. You can use only the formats you need.
 
-Beyond basic lookups, johnson provides wildcard search (`?` and `*`), full-text search within definitions, eldoc integration, a scan-popup mode that shows definitions on selection or idle, bookmarking, persistent history, inline images, and a completion-at-point backend.
+Beyond basic lookups, `johnson` provides wildcard search (`?` and `*`), full-text search within definitions, eldoc integration, a scan-popup mode that shows definitions on selection or idle, bookmarking, persistent history, inline images, and a completion-at-point backend.
 
 ## Installation
 
