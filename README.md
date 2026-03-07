@@ -1,6 +1,4 @@
-# `johnson`
-
-A multi-format dictionary UI for Emacs.
+# `johnson`: A multi-format dictionary UI for Emacs
 
 <img src="johnson.jpg" align="right" width="300">
 
