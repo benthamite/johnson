@@ -219,6 +219,7 @@ Also binds `dict-path' to a dummy path.  Cleans up afterwards."
            (db (johnson-db-open dict-file)))
       (unwind-protect
           (progn
+            (johnson-db-insert-entry db "test" 0 4)
             (let ((actual-mtime (format-time-string
                                  "%s"
                                  (file-attribute-modification-time

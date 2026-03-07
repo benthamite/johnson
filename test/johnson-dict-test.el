@@ -72,10 +72,10 @@
         (defs '("definition one" "definition two")))
     (puthash (format "%s:%s" path word) defs johnson-dict--result-cache)
     ;; Retrieve first definition.
-    (should (equal (johnson-dict-retrieve-entry path 0 0)
+    (should (equal (johnson-dict-retrieve-entry path "test:0" 0)
                    "definition one"))
     ;; Retrieve second definition.
-    (should (equal (johnson-dict-retrieve-entry path 1 0)
+    (should (equal (johnson-dict-retrieve-entry path "test:1" 0)
                    "definition two"))
     (johnson-dict-test--cleanup)))
 
@@ -114,7 +114,8 @@
     ;; Each result should be (HEADWORD OFFSET LENGTH).
     (let ((first (car results)))
       (should (equal (nth 0 first) "cat"))
-      (should (integerp (nth 1 first)))
+      (should (stringp (nth 1 first)))
+      (should (string-match-p "\\`cat:[0-9]+\\'" (nth 1 first)))
       (should (= (nth 2 first) 0)))
     ;; Cache should contain the definitions.
     (let ((cached (gethash "dict://dict.org:2628/wn:cat"

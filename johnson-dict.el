@@ -62,17 +62,26 @@ Send CLIENT identification and read the server banner.
 Return the network process."
   (let* ((name (format "johnson-dict-%s:%d" host port))
          (buf (generate-new-buffer (format " *%s*" name)))
-         (proc (open-network-stream name buf host port
-                                    :type 'plain)))
-    (set-process-coding-system proc 'utf-8 'utf-8)
-    (process-put proc 'johnson-dict-buffer buf)
-    ;; Read and discard the 220 banner.
-    (johnson-dict--read-response proc)
-    ;; Identify ourselves.
-    (johnson-dict--send proc "CLIENT johnson/0.4 (Emacs DICT client)")
-    ;; Read the 250 OK response to CLIENT.
-    (johnson-dict--read-response proc)
-    proc))
+         (proc nil))
+    (condition-case err
+        (progn
+          (setq proc (open-network-stream name buf host port
+                                          :type 'plain))
+          (set-process-coding-system proc 'utf-8 'utf-8)
+          (process-put proc 'johnson-dict-buffer buf)
+          ;; Read and discard the 220 banner.
+          (johnson-dict--read-response proc)
+          ;; Identify ourselves.
+          (johnson-dict--send proc "CLIENT johnson/0.4 (Emacs DICT client)")
+          ;; Read the 250 OK response to CLIENT.
+          (johnson-dict--read-response proc)
+          proc)
+      (error
+       (when (and proc (process-live-p proc))
+         (delete-process proc))
+       (when (buffer-live-p buf)
+         (kill-buffer buf))
+       (signal (car err) (cdr err))))))
 
 (defun johnson-dict--ensure-connection (host port)
   "Return an open connection to HOST:PORT, creating one if needed."
@@ -233,6 +242,15 @@ Return a list of definition strings, one per 151 block."
       (delete-region (point-min) line-start))
     (nreverse definitions)))
 
+;;;; Parameter sanitization
+
+(defun johnson-dict--sanitize-param (s)
+  "Sanitize S for use in a DICT protocol command.
+Strip CR/LF characters and escape backslashes and double quotes."
+  (replace-regexp-in-string
+   "[\r\n]" ""
+   (replace-regexp-in-string "[\\\\\"]" "\\\\\\&" s)))
+
 ;;;; DICT commands
 
 (defun johnson-dict--show-databases (host port)
@@ -256,14 +274,19 @@ Return a list of (DB-NAME . DESCRIPTION) cons cells."
   "Look up WORD in database DB on the DICT server at HOST:PORT.
 Return a list of definition strings."
   (let* ((proc (johnson-dict--ensure-connection host port)))
-    (johnson-dict--send proc (format "DEFINE %s \"%s\"" db word))
+    (johnson-dict--send proc (format "DEFINE %s \"%s\""
+                                     (johnson-dict--sanitize-param db)
+                                     (johnson-dict--sanitize-param word)))
     (johnson-dict--read-full-define-response proc)))
 
 (defun johnson-dict--match (host port db strategy word)
   "Match WORD in database DB using STRATEGY on HOST:PORT.
 Return a list of matching word strings."
   (let* ((proc (johnson-dict--ensure-connection host port)))
-    (johnson-dict--send proc (format "MATCH %s %s \"%s\"" db strategy word))
+    (johnson-dict--send proc (format "MATCH %s %s \"%s\""
+                                     (johnson-dict--sanitize-param db)
+                                     strategy
+                                     (johnson-dict--sanitize-param word)))
     (let ((response (johnson-dict--read-response proc)))
       (when (= (car response) 152)
         ;; Read the terminating 250 status.
@@ -318,44 +341,47 @@ list of dictionary plists suitable for `johnson--dictionaries'."
 (defun johnson-dict-query-exact (path word)
   "Query WORD in the DICT dictionary identified by PATH.
 PATH is a dict:// URL.  Return results as a list of
-\(HEADWORD OFFSET LENGTH) triples where OFFSET is the index into
-the cached definition list."
-  (let* ((parsed (johnson-dict--parse-path path))
-         (host (nth 0 parsed))
-         (port (nth 1 parsed))
-         (db (nth 2 parsed))
-         (definitions (condition-case err
-                          (johnson-dict--define host port db word)
-                        (error
-                         (message "johnson-dict: query failed for %s: %s"
-                                  word (error-message-string err))
-                         nil)))
-         (cache-key (format "%s:%s" path word)))
-    (when definitions
-      (puthash cache-key definitions johnson-dict--result-cache)
-      (let ((results nil)
-            (idx 0))
-        (dolist (_def definitions)
-          (push (list word idx 0) results)
-          (cl-incf idx))
-        (nreverse results)))))
+\(HEADWORD OFFSET LENGTH) triples where OFFSET encodes the word
+and index as \"WORD:INDEX\" for deterministic cache retrieval."
+  (let ((parsed (johnson-dict--parse-path path)))
+    (unless parsed
+      (error "johnson-dict: invalid DICT path: %s" path))
+    (let* ((host (nth 0 parsed))
+           (port (nth 1 parsed))
+           (db (nth 2 parsed))
+           (definitions (condition-case err
+                            (johnson-dict--define host port db word)
+                          (error
+                           (message "johnson-dict: query failed for %s: %s"
+                                    word (error-message-string err))
+                           nil)))
+           (cache-key (format "%s:%s" path word)))
+      (when definitions
+        (puthash cache-key definitions johnson-dict--result-cache)
+        (let ((results nil)
+              (idx 0))
+          (dolist (_def definitions)
+            (push (list word (format "%s:%d" word idx) 0) results)
+            (cl-incf idx))
+          (nreverse results))))))
 
 (defun johnson-dict-retrieve-entry (path offset _length)
-  "Retrieve a cached DICT definition for PATH at index OFFSET.
-The definition must have been previously cached by
-`johnson-dict-query-exact'."
-  ;; Find the cache entry matching this path.  The cache key includes
-  ;; the word, so we search all entries for this path prefix.
-  (let ((result nil))
-    (maphash (lambda (key defs)
-               (when (and (null result)
-                          (string-prefix-p (concat path ":") key)
-                          (< offset (length defs)))
-                 (setq result (nth offset defs))))
-             johnson-dict--result-cache)
-    (or result
-        (error "johnson-dict: no cached definition for %s at index %d"
-               path offset))))
+  "Retrieve a cached DICT definition for PATH at OFFSET.
+OFFSET is a string \"WORD:INDEX\" as produced by `johnson-dict-query-exact'.
+The definition must have been previously cached."
+  (unless (string-match "\\`\\(.*\\):\\([0-9]+\\)\\'" offset)
+    (error "johnson-dict: malformed offset %S" offset))
+  (let* ((word (match-string 1 offset))
+         (idx (string-to-number (match-string 2 offset)))
+         (cache-key (format "%s:%s" path word))
+         (defs (gethash cache-key johnson-dict--result-cache)))
+    (unless defs
+      (error "johnson-dict: no cached definitions for %s word %s"
+             path word))
+    (unless (< idx (length defs))
+      (error "johnson-dict: index %d out of range for %s word %s"
+             idx path word))
+    (nth idx defs)))
 
 (defun johnson-dict-render-entry (text)
   "Render DICT definition TEXT into the current buffer.
