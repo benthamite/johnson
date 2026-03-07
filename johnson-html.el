@@ -130,49 +130,39 @@ ATTRS is the raw attribute string from the opening tag."
 
 (defun johnson-html--decode-entities (start end)
   "Decode HTML entities in the region from START to END.
+Uses a single-pass approach to avoid double-decoding (e.g.,
+`&amp;lt;' should become `&lt;', not `<').
 Returns the new end position."
   (save-excursion
-    ;; Named entities.
-    (goto-char start)
-    (while (re-search-forward "&amp;" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match "&" t t)
-        (setq end (- end len -1))))
-    (goto-char start)
-    (while (re-search-forward "&lt;" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match "<" t t)
-        (setq end (- end len -1))))
-    (goto-char start)
-    (while (re-search-forward "&gt;" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match ">" t t)
-        (setq end (- end len -1))))
-    (goto-char start)
-    (while (re-search-forward "&nbsp;" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match " " t t)
-        (setq end (- end len -1))))
-    (goto-char start)
-    (while (re-search-forward "&quot;" end t)
-      (let ((len (- (match-end 0) (match-beginning 0))))
-        (replace-match "\"" t t)
-        (setq end (- end len -1))))
-    ;; Decimal numeric entities: &#NNNN;
-    (goto-char start)
-    (while (re-search-forward "&#\\([0-9]+\\);" end t)
-      (let ((len (- (match-end 0) (match-beginning 0)))
-            (char (string-to-number (match-string 1))))
-        (replace-match (string char) t t)
-        (setq end (- end len -1))))
-    ;; Hexadecimal numeric entities: &#xHHHH;
-    (goto-char start)
-    (while (re-search-forward "&#x\\([0-9a-fA-F]+\\);" end t)
-      (let ((len (- (match-end 0) (match-beginning 0)))
-            (char (string-to-number (match-string 1) 16)))
-        (replace-match (string char) t t)
-        (setq end (- end len -1))))
-    end))
+    (let ((end-marker (copy-marker end)))
+      (goto-char start)
+      (while (re-search-forward "&\\(?:#x\\([0-9a-fA-F]+\\)\\|#\\([0-9]+\\)\\|\\([a-zA-Z]+\\)\\);" end-marker t)
+        (let ((replacement
+               (cond
+                ;; Hexadecimal numeric entity: &#xHHHH;
+                ((match-string 1)
+                 (let ((char (string-to-number (match-string 1) 16)))
+                   (when (and (> char 0) (<= char (max-char)))
+                     (string char))))
+                ;; Decimal numeric entity: &#NNNN;
+                ((match-string 2)
+                 (let ((char (string-to-number (match-string 2))))
+                   (when (and (> char 0) (<= char (max-char)))
+                     (string char))))
+                ;; Named entity.
+                ((match-string 3)
+                 (pcase (match-string 3)
+                   ("amp"  "&")
+                   ("lt"   "<")
+                   ("gt"   ">")
+                   ("nbsp" " ")
+                   ("quot" "\"")
+                   ("apos" "'")
+                   (_ nil))))))
+          (when replacement
+            (replace-match replacement t t))))
+      (prog1 (marker-position end-marker)
+        (set-marker end-marker nil)))))
 
 ;;;; Region rendering
 
@@ -259,9 +249,10 @@ Replaces tags with text properties."
                     (setq end (+ end (- (point) before)))))))))))
     ;; Process paired tags using a stack-based approach.
     (let ((tag-re "<\\(/\\)?\\([a-zA-Z]+\\)\\([^>]*\\)>")
-          (stack nil))
+          (stack nil)
+          (end-marker (copy-marker end t)))
       (goto-char start)
-      (while (re-search-forward tag-re end t)
+      (while (re-search-forward tag-re end-marker t)
         (let* ((closing-p (match-string 1))
                (tag-name (downcase (match-string 2)))
                (tag-attrs (or (match-string 3) ""))
@@ -269,7 +260,6 @@ Replaces tags with text properties."
                (tag-end (match-end 0)))
           ;; Delete the tag.
           (delete-region tag-beg tag-end)
-          (setq end (- end (- tag-end tag-beg)))
           (goto-char tag-beg)
           (cond
            ;; Closing tag.
@@ -280,12 +270,20 @@ Replaces tags with text properties."
                 (let ((region-start (nth 1 entry))
                       (region-attrs (nth 2 entry)))
                   (johnson-html--apply-tag
-                   tag-name region-start (point) region-attrs)))))
-           ;; Opening tag.
+                   tag-name region-start (point) region-attrs)
+                  (when (markerp region-start)
+                    (set-marker region-start nil))))))
+           ;; Opening tag: use markers so positions track buffer changes.
            (t
-            (push (list tag-name (point) tag-attrs) stack))))))
-    ;; Decode HTML entities after all tag processing.
-    (johnson-html--decode-entities start end)))
+            (push (list tag-name (copy-marker (point)) tag-attrs) stack)))))
+      ;; Clean up any remaining markers on the stack.
+      (dolist (entry stack)
+        (when (markerp (nth 1 entry))
+          (set-marker (nth 1 entry) nil)))
+      ;; Decode HTML entities after all tag processing.
+      (let ((result (johnson-html--decode-entities start (marker-position end-marker))))
+        (set-marker end-marker nil)
+        result))))
 
 (provide 'johnson-html)
 

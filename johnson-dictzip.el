@@ -186,9 +186,15 @@ HEADER is the parsed header plist.  Returns a unibyte string."
                   (insert-file-contents-literally path nil
                                                   file-offset
                                                   (+ file-offset comp-size))
-                  (unless (zlib-decompress-region 1 (point-max) t)
-                    (error "Dictzip: decompression failed for chunk %d of %s"
-                           chunk-index path))
+                  ;; zlib-decompress-region with ALLOW-PARTIAL returns:
+                  ;;   t       - full success
+                  ;;   integer - bytes consumed (partial; expected for dictzip
+                  ;;             chunks which lack a zlib checksum trailer)
+                  ;;   nil     - total failure
+                  (let ((result (zlib-decompress-region 1 (point-max) t)))
+                    (unless result
+                      (error "Dictzip: decompression failed for chunk %d of %s"
+                             chunk-index path)))
                   (buffer-string))))
           (johnson-dictzip--chunk-cache-put cache-key result)
           result))))

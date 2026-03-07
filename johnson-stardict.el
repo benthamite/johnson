@@ -276,6 +276,8 @@ for use by the renderer."
   (let* ((ifo (johnson-stardict--parse-ifo path))
          (sametypesequence (johnson-stardict--ifo-get ifo "sametypesequence"))
          (dict-path (johnson-stardict--dict-path path))
+         (_ (unless (file-exists-p dict-path)
+              (error "Missing .dict file: %s (dictionary is incomplete)" dict-path)))
          (raw (if (string-suffix-p ".dict.dz" dict-path)
                   (johnson-dictzip-read dict-path byte-offset byte-size)
                 (with-temp-buffer
