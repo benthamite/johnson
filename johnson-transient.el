@@ -143,6 +143,19 @@
         (if (eq johnson-ref-scope 'all) 'same 'all))
   (message "Cross-reference scope: %s" johnson-ref-scope))
 
+;;;; Options sub-prefix
+
+(transient-define-prefix johnson-menu-options ()
+  "Options sub-menu for johnson."
+  ["Options"
+   ("i" johnson-transient--toggle-images)
+   ("f" johnson-transient--toggle-fts)
+   ("e" johnson-transient--toggle-eldoc)
+   ("s" johnson-transient--toggle-scan)
+   ("p" johnson-transient--toggle-history-persist)
+   ("c" johnson-transient--cycle-search-scope)
+   ("r" johnson-transient--cycle-ref-scope)])
+
 ;;;; Main menu
 
 ;;;###autoload
@@ -174,8 +187,8 @@
    ["Sections"
     ("TAB" "Toggle section" johnson-toggle-section)
     ("<backtab>" "Toggle all sections" johnson-toggle-all-sections)
-    ("+" "Expand all" johnson-expand-all)
-    ("-" "Collapse all" johnson-collapse-all)]]
+    ("e" "Expand all" johnson-expand-all)
+    ("c" "Collapse all" johnson-collapse-all)]]
   [["Manage"
     ("d" "List dictionaries" johnson-list-dictionaries)
     ("r" "Reorder dictionaries" johnson-reorder-dictionaries)
@@ -184,14 +197,8 @@
     ("X" "Clear index" johnson-clear-index)
     ("R" "Clear resource cache" johnson-clear-resource-cache)
     ("Q" "Close caches" johnson-close-caches)]
-   ["Options"
-    ("-i" johnson-transient--toggle-images)
-    ("-f" johnson-transient--toggle-fts)
-    ("-e" johnson-transient--toggle-eldoc)
-    ("-s" johnson-transient--toggle-scan)
-    ("-p" johnson-transient--toggle-history-persist)
-    ("-c" johnson-transient--cycle-search-scope)
-    ("-r" johnson-transient--cycle-ref-scope)]])
+   [""
+    ("-" "Options..." johnson-menu-options)]])
 
 (provide 'johnson-transient)
 ;;; johnson-transient.el ends here
