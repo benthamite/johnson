@@ -634,25 +634,122 @@ is bound to @samp{?} in @code{johnson-mode}. @*
 
 The menu is organized into the following groups: @*
 
-@table @strong
-@item Lookup
-Look up a word, full-text search, and group selection. @*
-@item Navigate
-Section navigation, ace-link, and cross-reference following. @*
-@item History
-Back/forward navigation, history list, and history clearing. @*
-@item Bookmarks
-Add, remove, and list bookmarks. @*
-@item Actions
-Refresh, copy entry or dictionary name, and play audio. @*
-@item Sections
-Toggle, expand, and collapse dictionary sections. @*
-@item Manage
-Dictionary listing, reordering, indexing, and cache management. @*
-@item Options
-Toggle images, full-text search, eldoc mode, scan mode, history @*
-persistence, and cycle search/reference scopes.  Option keys use @*
-the @samp{-} prefix (e.g., @samp{-i} to toggle images). @*
+@subheading Lookup
+
+@table @samp
+@item l
+Look up a word (@code{johnson-lookup}). @*
+@item s
+Full-text search (@code{johnson-search}). @*
+@item G
+Select group (@code{johnson-select-group}). @*
+@end table
+
+@subheading Navigate
+
+@table @samp
+@item n
+Next section (@code{johnson-next-section}). @*
+@item p
+Previous section (@code{johnson-prev-section}). @*
+@item o
+Ace link (@code{johnson-ace-link}). @*
+@item RET
+Follow reference (@code{johnson-follow-ref}). @*
+@end table
+
+@subheading History
+
+@table @samp
+@item <
+Back (@code{johnson-history-back}). @*
+@item >
+Forward (@code{johnson-history-forward}). @*
+@item H
+History list (@code{johnson-history-list}). @*
+@item C
+Clear history (@code{johnson-history-clear}). @*
+@end table
+
+@subheading Bookmarks
+
+@table @samp
+@item m
+Add bookmark (@code{johnson-bookmark-add}). @*
+@item M
+Remove bookmark (@code{johnson-bookmark-remove}). @*
+@item B
+Bookmark list (@code{johnson-bookmark-list}). @*
+@end table
+
+@subheading Actions
+
+@table @samp
+@item g
+Refresh (@code{johnson-refresh}). @*
+@item w
+Copy entry (@code{johnson-copy-entry}). @*
+@item W
+Copy dictionary name (@code{johnson-copy-dictionary-name}). @*
+@item a
+Play audio (@code{johnson-play-audio-at-point}). @*
+@end table
+
+@subheading Sections
+
+@table @samp
+@item TAB
+Toggle section (@code{johnson-toggle-section}). @*
+@item <backtab>
+Toggle all sections (@code{johnson-toggle-all-sections}). @*
+@item e
+Expand all (@code{johnson-expand-all}). @*
+@item c
+Collapse all (@code{johnson-collapse-all}). @*
+@end table
+
+@subheading Manage
+
+@table @samp
+@item d
+List dictionaries (@code{johnson-list-dictionaries}). @*
+@item r
+Reorder dictionaries (@code{johnson-reorder-dictionaries}). @*
+@item i
+Index/re-index (@code{johnson-index}). @*
+@item k
+Stop indexing (@code{johnson-stop-indexing}). @*
+@item X
+Clear index (@code{johnson-clear-index}). @*
+@item R
+Clear resource cache (@code{johnson-clear-resource-cache}). @*
+@item Q
+Close caches (@code{johnson-close-caches}). @*
+@end table
+
+@subheading Options
+
+Option keys use the @samp{-} prefix.  Boolean options toggle between @*
+on and off; cycle options rotate through a list of choices. @*
+
+@table @samp
+@item -i
+Toggle images (@code{johnson-display-images}).  When toggled, the @*
+results buffer is refreshed immediately to reflect the change. @*
+@item -f
+Toggle full-text search (@code{johnson-fts-enabled}). @*
+@item -e
+Toggle eldoc mode (@code{johnson-eldoc-mode}). @*
+@item -s
+Toggle scan mode (@code{johnson-scan-mode}). @*
+@item -p
+Toggle persist history (@code{johnson-history-persist}). @*
+@item -c
+Cycle search scope (@code{johnson-default-search-scope}).  Rotates @*
+between @code{all} and @code{group}. @*
+@item -r
+Cycle ref scope (@code{johnson-ref-scope}).  Rotates between @*
+@code{all} and @code{same}. @*
 @end table
 
 The transient menu requires the @code{transient} package, which is @*
