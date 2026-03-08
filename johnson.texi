@@ -650,9 +650,9 @@ Toggle, expand, and collapse dictionary sections. @*
 @item Manage
 Dictionary listing, reordering, indexing, and cache management. @*
 @item Options
-Pressing @samp{-} opens an options sub-menu for toggling images, @*
-full-text search, eldoc mode, scan mode, history persistence, and @*
-cycling search/reference scopes (e.g., @samp{- i} to toggle images). @*
+Toggle images, full-text search, eldoc mode, scan mode, history @*
+persistence, and cycle search/reference scopes.  Option keys use @*
+the @samp{-} prefix (e.g., @samp{-i} to toggle images). @*
 @end table
 
 The transient menu requires the @code{transient} package, which is @*
