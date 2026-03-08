@@ -606,6 +606,7 @@ history buffer. @*
 @chapter Commands
 
 @menu
+* Transient menu::
 * Looking up words::
 * Indexing dictionaries::
 * Managing groups and scope::
@@ -622,6 +623,41 @@ history buffer. @*
 * Managing bookmarks::
 * Browsing history::
 @end menu
+
+@node Transient menu
+@section Transient menu
+
+@findex johnson-menu
+The command @code{johnson-menu} opens a transient dispatch menu that @*
+provides quick access to all major johnson commands and toggles.  It @*
+is bound to @samp{?} in @code{johnson-mode}. @*
+
+The menu is organized into the following groups: @*
+
+@table @strong
+@item Lookup
+Look up a word, full-text search, and group selection. @*
+@item Navigate
+Section navigation, ace-link, and cross-reference following. @*
+@item History
+Back/forward navigation, history list, and history clearing. @*
+@item Bookmarks
+Add, remove, and list bookmarks. @*
+@item Actions
+Refresh, copy entry or dictionary name, and play audio. @*
+@item Sections
+Toggle, expand, and collapse dictionary sections. @*
+@item Manage
+Dictionary listing, reordering, indexing, and cache management. @*
+@item Toggles
+Toggle images, full-text search, eldoc mode, scan mode, history @*
+persistence, and cycle search/reference scopes.  Toggle suffixes @*
+use the @samp{t} prefix (e.g., @samp{t i} to toggle images). @*
+@end table
+
+The transient menu requires the @code{transient} package, which is @*
+bundled with Emacs 29 and later.  The menu is defined in @*
+@file{johnson-transient.el}, which is loaded automatically.
 
 @node Looking up words
 @section Looking up words
