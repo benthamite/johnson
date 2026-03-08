@@ -27,6 +27,7 @@
 ;;; Code:
 
 (require 'transient)
+(require 'cl-lib)
 
 ;; Variables (defined in johnson.el)
 (defvar johnson-display-images)
@@ -34,9 +35,9 @@
 (defvar johnson-history-persist)
 (defvar johnson-default-search-scope)
 (defvar johnson-ref-scope)
+(defvar johnson--current-word)
 
 ;; Commands used as suffixes (defined in johnson.el)
-(declare-function johnson-toggle-images "johnson")
 (declare-function johnson-lookup "johnson")
 (declare-function johnson-search "johnson")
 (declare-function johnson-select-group "johnson")
@@ -66,95 +67,103 @@
 (declare-function johnson-clear-index "johnson")
 (declare-function johnson-clear-resource-cache "johnson")
 (declare-function johnson-close-caches "johnson")
-(declare-function johnson-new-search "johnson")
 (declare-function johnson-eldoc-mode "johnson")
 (declare-function johnson-scan-mode "johnson")
 
-;;;; Suffixes for toggleable options
+;;;; Boolean toggle infix class
 
-(transient-define-suffix johnson-transient--toggle-images ()
-  "Toggle inline image display."
-  :description (lambda ()
-                 (format "Images: %s" (if johnson-display-images "on" "off")))
-  :transient t
-  (interactive)
-  (johnson-toggle-images))
+(defclass johnson-transient-bool (transient-lisp-variable)
+  ((always-read :initform t))
+  "A boolean toggle infix for a Lisp variable.")
 
-(transient-define-suffix johnson-transient--toggle-fts ()
-  "Toggle full-text search indexing."
-  :description (lambda ()
-                 (format "Full-text search: %s"
-                         (if johnson-fts-enabled "on" "off")))
-  :transient t
-  (interactive)
-  (setq johnson-fts-enabled (not johnson-fts-enabled))
-  (message "Full-text search indexing %s (re-index to take effect)"
-           (if johnson-fts-enabled "enabled" "disabled")))
+(cl-defmethod transient-infix-read ((obj johnson-transient-bool))
+  "Toggle the boolean value of OBJ."
+  (not (oref obj value)))
 
-(transient-define-suffix johnson-transient--toggle-eldoc ()
-  "Toggle eldoc integration."
-  :description (lambda ()
-                 (format "Eldoc mode: %s"
-                         (if (bound-and-true-p johnson-eldoc-mode) "on" "off")))
-  :transient t
-  (interactive)
-  (johnson-eldoc-mode (if (bound-and-true-p johnson-eldoc-mode) -1 1)))
+(cl-defmethod transient-format-value ((obj johnson-transient-bool))
+  "Format OBJ value as on/off."
+  (propertize (if (oref obj value) "on" "off")
+              'face (if (oref obj value)
+                        'transient-value
+                      'transient-inactive-value)))
 
-(transient-define-suffix johnson-transient--toggle-scan ()
-  "Toggle scan-popup mode."
-  :description (lambda ()
-                 (format "Scan mode: %s"
-                         (if (bound-and-true-p johnson-scan-mode) "on" "off")))
-  :transient t
-  (interactive)
-  (johnson-scan-mode (if (bound-and-true-p johnson-scan-mode) -1 1)))
+;;;; Cycle infix class
 
-(transient-define-suffix johnson-transient--toggle-history-persist ()
-  "Toggle history persistence."
-  :description (lambda ()
-                 (format "Persist history: %s"
-                         (if johnson-history-persist "on" "off")))
-  :transient t
-  (interactive)
-  (setq johnson-history-persist (not johnson-history-persist))
-  (message "History persistence %s"
-           (if johnson-history-persist "enabled" "disabled")))
+(defclass johnson-transient-cycle (transient-lisp-variable)
+  ((choices :initarg :choices :initform nil)
+   (always-read :initform t))
+  "A cycling infix that rotates through a list of choices.")
 
-(transient-define-suffix johnson-transient--cycle-search-scope ()
-  "Cycle default search scope between `all' and `group'."
-  :description (lambda ()
-                 (format "Search scope: %s"
-                         (if (eq johnson-default-search-scope 'all)
-                             "all" "group")))
-  :transient t
-  (interactive)
-  (setq johnson-default-search-scope
-        (if (eq johnson-default-search-scope 'all) 'group 'all))
-  (message "Default search scope: %s" johnson-default-search-scope))
+(cl-defmethod transient-infix-read ((obj johnson-transient-cycle))
+  "Cycle to the next choice for OBJ."
+  (let* ((choices (oref obj choices))
+         (current (oref obj value))
+         (idx (or (cl-position current choices) -1)))
+    (nth (mod (1+ idx) (length choices)) choices)))
 
-(transient-define-suffix johnson-transient--cycle-ref-scope ()
-  "Cycle cross-reference scope between `all' and `same'."
-  :description (lambda ()
-                 (format "Ref scope: %s"
-                         (if (eq johnson-ref-scope 'all) "all" "same")))
-  :transient t
-  (interactive)
-  (setq johnson-ref-scope
-        (if (eq johnson-ref-scope 'all) 'same 'all))
-  (message "Cross-reference scope: %s" johnson-ref-scope))
+(cl-defmethod transient-format-value ((obj johnson-transient-cycle))
+  "Format OBJ value as the symbol name."
+  (propertize (symbol-name (oref obj value))
+              'face 'transient-value))
 
-;;;; Options sub-prefix
+;;;; Custom set-value functions
 
-(transient-define-prefix johnson-menu-options ()
-  "Options sub-menu for johnson."
-  ["Options"
-   ("i" johnson-transient--toggle-images)
-   ("f" johnson-transient--toggle-fts)
-   ("e" johnson-transient--toggle-eldoc)
-   ("s" johnson-transient--toggle-scan)
-   ("p" johnson-transient--toggle-history-persist)
-   ("c" johnson-transient--cycle-search-scope)
-   ("r" johnson-transient--cycle-ref-scope)])
+(defun johnson-transient--set-images (_var val)
+  "Set `johnson-display-images' to VAL and refresh."
+  (setq johnson-display-images val)
+  (when (and (bound-and-true-p johnson--current-word)
+             (derived-mode-p 'johnson-mode))
+    (johnson-refresh)))
+
+(defun johnson-transient--set-eldoc (_var val)
+  "Enable or disable `johnson-eldoc-mode' based on VAL."
+  (johnson-eldoc-mode (if val 1 -1)))
+
+(defun johnson-transient--set-scan (_var val)
+  "Enable or disable `johnson-scan-mode' based on VAL."
+  (johnson-scan-mode (if val 1 -1)))
+
+;;;; Option infixes
+
+(transient-define-infix johnson-transient:images ()
+  :class 'johnson-transient-bool
+  :variable 'johnson-display-images
+  :set-value #'johnson-transient--set-images
+  :description "Images")
+
+(transient-define-infix johnson-transient:fts ()
+  :class 'johnson-transient-bool
+  :variable 'johnson-fts-enabled
+  :description "Full-text search")
+
+(transient-define-infix johnson-transient:eldoc ()
+  :class 'johnson-transient-bool
+  :variable 'johnson-eldoc-mode
+  :set-value #'johnson-transient--set-eldoc
+  :description "Eldoc mode")
+
+(transient-define-infix johnson-transient:scan ()
+  :class 'johnson-transient-bool
+  :variable 'johnson-scan-mode
+  :set-value #'johnson-transient--set-scan
+  :description "Scan mode")
+
+(transient-define-infix johnson-transient:persist-history ()
+  :class 'johnson-transient-bool
+  :variable 'johnson-history-persist
+  :description "Persist history")
+
+(transient-define-infix johnson-transient:search-scope ()
+  :class 'johnson-transient-cycle
+  :variable 'johnson-default-search-scope
+  :choices '(all group)
+  :description "Search scope")
+
+(transient-define-infix johnson-transient:ref-scope ()
+  :class 'johnson-transient-cycle
+  :variable 'johnson-ref-scope
+  :choices '(all same)
+  :description "Ref scope")
 
 ;;;; Main menu
 
@@ -197,8 +206,14 @@
     ("X" "Clear index" johnson-clear-index)
     ("R" "Clear resource cache" johnson-clear-resource-cache)
     ("Q" "Close caches" johnson-close-caches)]
-   [""
-    ("-" "Options..." johnson-menu-options)]])
+   ["Options"
+    ("-i" johnson-transient:images)
+    ("-f" johnson-transient:fts)
+    ("-e" johnson-transient:eldoc)
+    ("-s" johnson-transient:scan)
+    ("-p" johnson-transient:persist-history)
+    ("-c" johnson-transient:search-scope)
+    ("-r" johnson-transient:ref-scope)]])
 
 (provide 'johnson-transient)
 ;;; johnson-transient.el ends here
