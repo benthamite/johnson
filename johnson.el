@@ -42,6 +42,8 @@
 (require 'johnson-db)
 (require 'cl-lib)
 
+(autoload 'johnson-menu "johnson-transient" "Main transient menu for johnson." t)
+
 ;;;; User options
 
 (defcustom johnson-dictionary-directories '("~/.local/share/dictionaries/")
@@ -1187,6 +1189,7 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     (define-key map "m" #'johnson-bookmark-add)
     (define-key map "M" #'johnson-bookmark-remove)
     (define-key map "H" #'johnson-history-list)
+    (define-key map "?" #'johnson-menu)
     (define-key map "q" #'quit-window)
     map)
   "Keymap for `johnson-mode'.")
@@ -2386,6 +2389,7 @@ When enabled, looking up words via selection or idle timer."
 (require 'johnson-mdict nil t)
 (require 'johnson-bgl nil t)
 (require 'johnson-dict nil t)
+(require 'johnson-transient nil t)
 
 (provide 'johnson)
 ;;; johnson.el ends here
