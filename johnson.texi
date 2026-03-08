@@ -649,10 +649,10 @@ Refresh, copy entry or dictionary name, and play audio. @*
 Toggle, expand, and collapse dictionary sections. @*
 @item Manage
 Dictionary listing, reordering, indexing, and cache management. @*
-@item Toggles
+@item Options
 Toggle images, full-text search, eldoc mode, scan mode, history @*
-persistence, and cycle search/reference scopes.  Toggle suffixes @*
-use the @samp{t} prefix (e.g., @samp{t i} to toggle images). @*
+persistence, and cycle search/reference scopes.  Option suffixes @*
+use the @samp{-} prefix (e.g., @samp{-i} to toggle images). @*
 @end table
 
 The transient menu requires the @code{transient} package, which is @*

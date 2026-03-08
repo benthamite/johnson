@@ -148,50 +148,50 @@
 ;;;###autoload
 (transient-define-prefix johnson-menu ()
   "Main transient menu for johnson."
-  ["Lookup"
-   ("l" "Look up word" johnson-lookup)
-   ("s" "Full-text search" johnson-search)
-   ("G" "Select group" johnson-select-group)]
-  ["Navigate"
-   ("n" "Next section" johnson-next-section)
-   ("p" "Previous section" johnson-prev-section)
-   ("o" "Ace link" johnson-ace-link)
-   ("RET" "Follow reference" johnson-follow-ref)]
-  ["History"
-   ("<" "Back" johnson-history-back)
-   (">" "Forward" johnson-history-forward)
-   ("H" "History list" johnson-history-list)
-   ("C" "Clear history" johnson-history-clear)]
-  ["Bookmarks"
-   ("m" "Add bookmark" johnson-bookmark-add)
-   ("M" "Remove bookmark" johnson-bookmark-remove)
-   ("B" "Bookmark list" johnson-bookmark-list)]
-  ["Actions"
-   ("g" "Refresh" johnson-refresh)
-   ("w" "Copy entry" johnson-copy-entry)
-   ("W" "Copy dictionary name" johnson-copy-dictionary-name)
-   ("a" "Play audio" johnson-play-audio-at-point)]
-  ["Sections"
-   ("TAB" "Toggle section" johnson-toggle-section)
-   ("<backtab>" "Toggle all sections" johnson-toggle-all-sections)
-   ("+" "Expand all" johnson-expand-all)
-   ("-" "Collapse all" johnson-collapse-all)]
-  ["Manage"
-   ("d" "List dictionaries" johnson-list-dictionaries)
-   ("r" "Reorder dictionaries" johnson-reorder-dictionaries)
-   ("i" "Index/re-index" johnson-index)
-   ("k" "Stop indexing" johnson-stop-indexing)
-   ("X" "Clear index" johnson-clear-index)
-   ("R" "Clear resource cache" johnson-clear-resource-cache)
-   ("Q" "Close caches" johnson-close-caches)]
-  ["Toggles"
-   ("ti" johnson-transient--toggle-images)
-   ("tf" johnson-transient--toggle-fts)
-   ("te" johnson-transient--toggle-eldoc)
-   ("ts" johnson-transient--toggle-scan)
-   ("tp" johnson-transient--toggle-history-persist)
-   ("tc" johnson-transient--cycle-search-scope)
-   ("tr" johnson-transient--cycle-ref-scope)])
+  [["Lookup"
+    ("l" "Look up word" johnson-lookup)
+    ("s" "Full-text search" johnson-search)
+    ("G" "Select group" johnson-select-group)]
+   ["Navigate"
+    ("n" "Next section" johnson-next-section)
+    ("p" "Previous section" johnson-prev-section)
+    ("o" "Ace link" johnson-ace-link)
+    ("RET" "Follow reference" johnson-follow-ref)]
+   ["History"
+    ("<" "Back" johnson-history-back)
+    (">" "Forward" johnson-history-forward)
+    ("H" "History list" johnson-history-list)
+    ("C" "Clear history" johnson-history-clear)]]
+  [["Bookmarks"
+    ("m" "Add bookmark" johnson-bookmark-add)
+    ("M" "Remove bookmark" johnson-bookmark-remove)
+    ("B" "Bookmark list" johnson-bookmark-list)]
+   ["Actions"
+    ("g" "Refresh" johnson-refresh)
+    ("w" "Copy entry" johnson-copy-entry)
+    ("W" "Copy dictionary name" johnson-copy-dictionary-name)
+    ("a" "Play audio" johnson-play-audio-at-point)]
+   ["Sections"
+    ("TAB" "Toggle section" johnson-toggle-section)
+    ("<backtab>" "Toggle all sections" johnson-toggle-all-sections)
+    ("+" "Expand all" johnson-expand-all)
+    ("-" "Collapse all" johnson-collapse-all)]]
+  [["Manage"
+    ("d" "List dictionaries" johnson-list-dictionaries)
+    ("r" "Reorder dictionaries" johnson-reorder-dictionaries)
+    ("i" "Index/re-index" johnson-index)
+    ("k" "Stop indexing" johnson-stop-indexing)
+    ("X" "Clear index" johnson-clear-index)
+    ("R" "Clear resource cache" johnson-clear-resource-cache)
+    ("Q" "Close caches" johnson-close-caches)]
+   ["Options"
+    ("-i" johnson-transient--toggle-images)
+    ("-f" johnson-transient--toggle-fts)
+    ("-e" johnson-transient--toggle-eldoc)
+    ("-s" johnson-transient--toggle-scan)
+    ("-p" johnson-transient--toggle-history-persist)
+    ("-c" johnson-transient--cycle-search-scope)
+    ("-r" johnson-transient--cycle-ref-scope)]])
 
 (provide 'johnson-transient)
 ;;; johnson-transient.el ends here
