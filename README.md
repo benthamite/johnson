@@ -20,6 +20,8 @@ The architecture is modular: each format is handled by a separate backend that r
 
 Beyond basic lookups, `johnson` provides wildcard search (`?` and `*`), full-text search within definitions, eldoc integration, a scan-popup mode that shows definitions on selection or idle, bookmarking, persistent history, inline images, and a completion-at-point backend.
 
+![johnson.el screenshot](screenshot.png)
+
 ## Installation
 
 Requires **Emacs 30.1** or later.
