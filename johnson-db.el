@@ -106,6 +106,13 @@ Performs NFKD decomposition, strips combining diacritical marks
                       chars)))
       (downcase (apply #'string filtered)))))
 
+(defun johnson-db--prefix-upper-bound (prefix)
+  "Return the exclusive upper bound for PREFIX in a range query.
+Increments the last character of PREFIX to produce the first string
+that does not begin with PREFIX in binary sort order."
+  (concat (substring prefix 0 -1)
+          (string (1+ (aref prefix (1- (length prefix)))))))
+
 ;;;; Entry insertion
 
 (defun johnson-db-insert-entry (db headword byte-offset entry-length)
@@ -153,14 +160,17 @@ Returns a list of (HEADWORD BYTE-OFFSET BYTE-LENGTH) triples."
   "Query DB for headwords matching the normalized PREFIX.
 Returns a list of distinct headword strings.  LIMIT defaults to 100."
   (let* ((normalized (johnson-db-normalize prefix))
-         (escaped (replace-regexp-in-string "[%_]" "\\\\\\&" normalized))
          (limit (or limit 100)))
-    (mapcar #'car
-            (sqlite-select db
-                           "SELECT DISTINCT headword FROM entries
-                            WHERE headword_normalized LIKE ? ESCAPE '\\'
-                            LIMIT ?"
-                           (list (concat escaped "%") limit)))))
+    (when (> (length normalized) 0)
+      (mapcar #'car
+              (sqlite-select db
+                             "SELECT DISTINCT headword FROM entries
+                              WHERE headword_normalized >= ?
+                                AND headword_normalized < ?
+                              LIMIT ?"
+                             (list normalized
+                                   (johnson-db--prefix-upper-bound normalized)
+                                   limit))))))
 
 (defun johnson-db-query-wildcard (db pattern &optional limit)
   "Query DB for headwords matching wildcard PATTERN.
@@ -322,13 +332,16 @@ should be aggregated.  Returns the total number of unique headwords."
   "Query the unified completion DB for headwords matching PREFIX.
 Returns a list of (HEADWORD DICT-COUNT) pairs.  LIMIT defaults to 200."
   (let* ((normalized (johnson-db-normalize prefix))
-         (escaped (replace-regexp-in-string "[%_]" "\\\\\\&" normalized))
          (limit (or limit 200)))
-    (sqlite-select db
-                   "SELECT headword, dict_count FROM completions
-                    WHERE headword_normalized LIKE ? ESCAPE '\\'
-                    LIMIT ?"
-                   (list (concat escaped "%") limit))))
+    (when (> (length normalized) 0)
+      (sqlite-select db
+                     "SELECT headword, dict_count FROM completions
+                      WHERE headword_normalized >= ?
+                        AND headword_normalized < ?
+                      LIMIT ?"
+                     (list normalized
+                           (johnson-db--prefix-upper-bound normalized)
+                           limit)))))
 
 ;;;; Full-text search
 
