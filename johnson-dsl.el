@@ -645,6 +645,8 @@ Inserts the rendered text at point."
                               line))
                           lines))
          (text (string-join stripped "\n")))
+    ;; Unescape backslash-space sequences (DSL uses `\ ' for literal spaces).
+    (setq text (replace-regexp-in-string "\\\\ " " " text))
     ;; Process {{...}} media references: render images, strip others.
     (setq text
           (replace-regexp-in-string
@@ -752,8 +754,12 @@ Inserts the rendered text at point."
                           (region-args (nth 2 entry)))
                       (johnson-dsl--apply-tag tag-name region-start (point)
                                               region-args)))))))))
-        ;; Handle [trn]/[!trn] block separation: ensure blank line separation.
-        ;; This is handled by the blank-line logic already in the output.
+        ;; Unescape DSL backslash sequences that couldn't be handled before
+        ;; tag processing (brackets would cause false tag matches).
+        (save-excursion
+          (goto-char start)
+          (while (re-search-forward "\\\\\\([][()<>{}~@\\\\]\\)" end t)
+            (replace-match "\\1" t)))
         ;; Process deferred {{image}} markers.
         (save-excursion
           (goto-char start)

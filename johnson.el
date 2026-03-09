@@ -1920,7 +1920,11 @@ Returns plain text suitable for FTS indexing or eldoc display."
          (replace-match "\\1"))
        (goto-char (point-min))
        (while (re-search-forward "{{[^}]*}}" nil t)
-         (replace-match "")))
+         (replace-match ""))
+       ;; Unescape DSL backslash sequences.
+       (goto-char (point-min))
+       (while (re-search-forward "\\\\\\([][()<>{}~@\\\\ ]\\)" nil t)
+         (replace-match "\\1" t)))
       (_
        ;; Strip HTML tags for stardict, mdict, bgl, dict-protocol.
        (while (re-search-forward "<[^>]+>" nil t)
