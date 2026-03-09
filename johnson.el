@@ -846,7 +846,8 @@ memory when the user extends that prefix, avoiding redundant
 database queries across all dictionaries."
   (let ((query-prefix nil)
         (last-candidates nil)
-        (last-counts (make-hash-table :test #'equal)))
+        (last-counts (make-hash-table :test #'equal))
+        (last-truncated nil))
     (lambda (string pred action)
       (if (eq action 'metadata)
           `(metadata
@@ -860,21 +861,25 @@ database queries across all dictionaries."
           ;; Re-query only when the new prefix is NOT an extension of
           ;; the already-queried prefix.  When it IS an extension, the
           ;; existing candidates are a superset of what we need and
-          ;; `complete-with-action' will narrow them.
+          ;; `complete-with-action' will narrow them.  However, if the
+          ;; previous query was truncated by LIMIT, the cached set may
+          ;; be incomplete, so we must re-query.
           (when (and (not (equal normalized query-prefix))
                      (not (and query-prefix
                                last-candidates
+                               (not last-truncated)
                                (string-prefix-p query-prefix normalized))))
             (setq query-prefix normalized)
             (let ((candidates nil)
-                  (comp-db (johnson-db-get-completion-db)))
+                  (comp-db (johnson-db-get-completion-db))
+                  (query-limit 200))
               (clrhash last-counts)
               (when (>= (length string) johnson-completion-min-chars)
                 (if comp-db
                     ;; Unified completion index: single query.
                     (condition-case err
                         (dolist (row (johnson-db-query-completion
-                                     comp-db string 200))
+                                     comp-db string query-limit))
                           (let ((hw (car row))
                                 (cnt (cadr row)))
                             (push hw candidates)
@@ -887,7 +892,8 @@ database queries across all dictionaries."
                     (condition-case err
                         (let* ((path (plist-get dict :path))
                                (db (johnson--get-db path))
-                               (words (johnson-db-query-prefix db string 200)))
+                               (words (johnson-db-query-prefix
+                                       db string query-limit)))
                           (dolist (w words)
                             (push w candidates)
                             (puthash w (1+ (or (gethash w last-counts) 0))
@@ -895,7 +901,9 @@ database queries across all dictionaries."
                       (error
                        (message "johnson: completion query error: %s"
                                 (error-message-string err)))))))
-              (setq last-candidates (delete-dups candidates)))))
+              (setq last-candidates (delete-dups candidates))
+              (setq last-truncated
+                    (>= (length last-candidates) query-limit)))))
         (complete-with-action action last-candidates string pred)))))
 
 ;;;; Query
