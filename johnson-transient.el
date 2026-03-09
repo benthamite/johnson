@@ -170,6 +170,7 @@
 ;;;###autoload
 (transient-define-prefix johnson-menu ()
   "Main transient menu for johnson."
+  :info-manual "(johnson)"
   [["Lookup"
     ("l" "Look up word" johnson-lookup)
     ("s" "Full-text search" johnson-search)

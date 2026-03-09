@@ -1,0 +1,2000 @@
+This is johnson.info, produced by makeinfo version 7.2 from
+johnson.texi.
+
+INFO-DIR-SECTION Emacs misc features
+START-INFO-DIR-ENTRY
+* Johnson: (johnson).   Multi-format dictionary UI for Emacs.
+END-INFO-DIR-ENTRY
+
+
+File: johnson.info,  Node: Top,  Next: Overview,  Up: (dir)
+
+‘johnson’: A multi-format dictionary UI for Emacs
+*************************************************
+
+* Menu:
+
+* Overview::
+* User options::
+* Commands::
+* Functions::
+* Faces::
+* Roadmap::
+* Indices::
+
+-- The Detailed Node Listing --
+
+User options
+
+* Dictionary discovery::
+* Search scope and groups::
+* Cross-reference scope::
+* Display ordering::
+* Lookup history::
+* Cache directory::
+* Audio playback::
+* DICT protocol::
+* Images::
+* Wildcard search::
+* Full-text search::
+* Eldoc integration::
+* Scan-popup mode::
+* Bookmarks::
+* History buffer::
+
+Commands
+
+* Looking up words::
+* Indexing dictionaries::
+* Managing groups and scope::
+* Navigating the results buffer::
+* Following cross-references::
+* Navigation history::
+* Copying entries::
+* Dictionary list::
+* Cache management::
+* Toggling images::
+* Searching definitions::
+* Eldoc integration commands::
+* Scan-popup mode commands::
+* Managing bookmarks::
+* Browsing history::
+
+Functions
+
+* Format registration::
+* Completion at point::
+* Database lifecycle::
+* Metadata storage::
+* Headword normalization::
+* Entry insertion::
+* Querying entries::
+* Staleness detection and reset::
+* DSL format detection::
+* DSL metadata parsing::
+* DSL index building::
+* DSL entry retrieval::
+* DSL entry rendering::
+
+Faces
+
+* Text styling faces::
+* Content type faces::
+* Link faces::
+* Section header face::
+* Color faces::
+
+Roadmap
+
+* Version 0.1 -- DSL: Version 01 --- DSL.
+* Version 0.2 -- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL.
+* Version 0.3 -- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
+* Version 0.4 (current) -- BGL, DICT, and more: Version 04 (current).
+* Future features::
+
+Indices
+
+* Function index::
+* Variable index::
+
+
+File: johnson.info,  Node: Overview,  Next: User options,  Prev: Top,  Up: Top
+
+1 Overview
+**********
+
+‘johnson’ is a multi-format dictionary UI for Emacs.  It
+provides the functionality of programs such as GoldenDict and StarDict,
+allowing you to look up words across multiple dictionaries
+simultaneously
+and view formatted definitions in a dedicated Emacs buffer.
+
+   The package is implemented entirely in Emacs Lisp with no external
+dependencies, relying on Emacs 30.1's built-in sqlite support for
+efficient headword indexing.  Dictionary files are parsed natively,
+without calling external tools.
+
+   In version 0.4, the package supports the DSL (ABBYY Lingvo),
+StarDict, MDict, and BGL (Babylon) formats, including
+dictzip-compressed files (‘.dsl.dz’ and ‘.dict.dz’) and
+encrypted MDict files.  It also provides a DICT protocol client
+(RFC 2229) for querying remote dictionary servers.
+
+   The architecture is modular.  The core module (‘johnson.el’) provides
+
+the lookup engine, results buffer, navigation, history, and a
+plist-based format registry (*note Format registration::).
+The sqlite index management is delegated to ‘johnson-db.el’, which
+maintains one database per dictionary file in a configurable cache
+directory (*note Cache directory::).  Shared infrastructure
+for dictzip decompression lives in ‘johnson-dictzip.el’.  Each
+dictionary format is handled by a separate backend
+module--‘johnson-dsl.el’, ‘johnson-stardict.el’,
+‘johnson-mdict.el’, ‘johnson-bgl.el’, and
+‘johnson-dict.el’--that registers itself with the core via the
+format registry.
+
+   A typical workflow consists of three steps.  First, configure
+‘johnson-dictionary-directories’ to point at your dictionary files
+(*note Dictionary discovery::).  Second, run ‘M-x johnson-index’ to scan
+
+and index all discovered dictionaries (*note Indexing dictionaries::).
+Third, use ‘M-x johnson-lookup’ to look up words with dynamic
+completion (*note Looking up words::).
+
+   Here is a sample configuration using ‘elpaca’ and ‘use-package’:
+
+     (use-package johnson
+       :ensure (:host github :repo "benthamite/johnson")
+       :custom
+       (johnson-dictionary-directories '("~/dictionaries/"))
+       (johnson-default-search-scope 'all)
+       (johnson-dictionary-priorities '(("Oxford English-Spanish" . -10)
+                                        ("Collins English-Spanish" . -5)))
+       (johnson-history-max 200)
+       (johnson-history-persist t)
+       (johnson-display-images t)
+       :bind
+       ("C-c d" . johnson-lookup))
+
+   Results are displayed in a ‘*johnson*’ buffer using ‘johnson-mode’, a
+
+read-only major mode derived from ‘special-mode’.  Each dictionary that
+contains a match for the queried word gets its own collapsible section,
+displayed in priority order (*note Display ordering::).  The buffer
+supports Info-like navigation: press ‘n’ and ‘p’ to move between
+sections, ‘TAB’ to collapse or expand a section, ‘RET’ to follow
+cross-references, ‘l’ and ‘r’ to navigate back and forward through
+lookup history, ‘I’ to toggle inline images, ‘S’ to search within
+definitions, ‘m’ to bookmark an entry, ‘M’ to remove a bookmark, and
+‘H’ to browse the full lookup history.
+
+   Dictionaries are organized into groups by language pair
+(e.g., "English → Spanish").  Groups are auto-detected from dictionary
+metadata but can be customized via ‘johnson-dictionary-groups’
+(*note Search scope and groups::).
+
+   The package also provides a dictionary list buffer via ‘M-x
+johnson-list-dictionaries’, showing all discovered dictionaries with
+their indexing status and entry counts
+(*note Dictionary list::).
+
+
+File: johnson.info,  Node: User options,  Next: Commands,  Prev: Overview,  Up: Top
+
+2 User options
+**************
+
+* Menu:
+
+* Dictionary discovery::
+* Search scope and groups::
+* Cross-reference scope::
+* Display ordering::
+* Lookup history::
+* Cache directory::
+* Audio playback::
+* DICT protocol::
+* Images::
+* Wildcard search::
+* Full-text search::
+* Eldoc integration::
+* Scan-popup mode::
+* Bookmarks::
+* History buffer::
+
+
+File: johnson.info,  Node: Dictionary discovery,  Next: Search scope and groups,  Up: User options
+
+2.1 Dictionary discovery
+========================
+
+The user option ‘johnson-dictionary-directories’ specifies the
+directories to scan recursively for dictionary files.  When the package
+discovers dictionaries, it walks each directory in this list and
+identifies files using the registered format backends' detection
+functions.  Files matching the ‘_abrv’ naming convention (abbreviation
+tables) are automatically skipped.
+
+   The default value is ‘("~/.local/share/dictionaries/")’.  You should
+change this to point at wherever your dictionary files are stored.  The
+value is a list of directory paths (type: ‘(repeat directory)’), so you
+can specify multiple directories if your dictionaries are spread across
+different locations:
+
+     (setopt johnson-dictionary-directories
+             '("~/dictionaries/"
+               "/mnt/data/dictionaries/"))
+
+
+File: johnson.info,  Node: Search scope and groups,  Next: Cross-reference scope,  Prev: Dictionary discovery,  Up: User options
+
+2.2 Search scope and groups
+===========================
+
+The user option ‘johnson-default-search-scope’ controls the default
+search scope for lookups.  When set to ‘all’ (the default), lookups
+search across all discovered dictionaries.  When set to ‘group’, lookups
+
+search only within the currently active dictionary group.
+
+     (setopt johnson-default-search-scope 'group)
+
+   You can switch between these modes interactively via
+‘johnson-select-group’ (*note Managing groups and scope::), which
+also lets you choose the active group.
+
+   The user option ‘johnson-dictionary-groups’ lets you define custom
+dictionary groups.  When this option is ‘nil’ (the default), groups are
+auto-detected from dictionary metadata: each dictionary is assigned to a
+
+group based on its source and target language pair, such as "English →
+Spanish".
+
+   Set this option when you want to create custom groupings that differ
+from
+the language-pair default.  For instance, you could group specialized
+medical dictionaries across different language pairs into a single
+"Medical" group:
+
+     (setopt johnson-dictionary-groups
+             '(("Medical" . ("Dorland's Medical"
+                             "Stedman's Medical"
+                             "Medical Abbreviations"))
+               ("Legal" . ("Black's Law Dictionary"
+                           "Legal Terms EN-ES"))))
+
+   When ‘johnson-dictionary-groups’ is non-nil, _only_ the groups listed
+
+here are available; the auto-detected language-pair groups are not used.
+
+
+File: johnson.info,  Node: Cross-reference scope,  Next: Display ordering,  Prev: Search scope and groups,  Up: User options
+
+2.3 Cross-reference scope
+=========================
+
+The user option ‘johnson-ref-scope’ controls the scope when following
+cross-reference links (via ‘johnson-follow-ref’).  When set to ‘all’
+(the default), following a cross-reference performs a lookup across all
+dictionaries, just like ‘johnson-lookup’.  When set to ‘same’, the
+lookup is restricted to the dictionary containing the link.
+
+     (setopt johnson-ref-scope 'same)
+
+   If the target word is not found in the originating dictionary, the
+command falls back to a full lookup across all dictionaries.
+
+
+File: johnson.info,  Node: Display ordering,  Next: Lookup history,  Prev: Cross-reference scope,  Up: User options
+
+2.4 Display ordering
+====================
+
+The user option ‘johnson-dictionary-priorities’ controls the display
+order of dictionary sections in the results buffer.  It is an alist
+mapping dictionary names to integer priorities.  Lower numbers display
+first.  The default priority is 0, so dictionaries without an explicit
+priority entry are all treated equally and appear in discovery order.
+
+   For example, to make the "Oxford English-Spanish" dictionary always
+appear before "Collins English-Spanish", assign it a lower priority:
+
+     (setopt johnson-dictionary-priorities
+             '(("Oxford English-Spanish" . -10)
+               ("Collins English-Spanish" . -5)))
+
+
+File: johnson.info,  Node: Lookup history,  Next: Cache directory,  Prev: Display ordering,  Up: User options
+
+2.5 Lookup history
+==================
+
+The user option ‘johnson-history-max’ sets the maximum number of entries
+
+retained in the lookup history.  The default value is ‘100’.
+
+     (setopt johnson-history-max 200)
+
+   The variable ‘johnson-history’ stores the list of previously
+looked-up
+words and serves as the history list for ‘completing-read’ in
+‘johnson-lookup’ (*note Looking up words::).  You can access
+previous lookups via ‘M-p’ and ‘M-n’ in the completion prompt.  If
+‘savehist-mode’ is active, this history persists across Emacs sessions.
+
+   When the history exceeds ‘johnson-history-max’ entries, the oldest
+entries are discarded.
+
+
+File: johnson.info,  Node: Cache directory,  Next: Audio playback,  Prev: Lookup history,  Up: User options
+
+2.6 Cache directory
+===================
+
+The user option ‘johnson-cache-directory’ specifies the directory where
+sqlite index files are stored.  Each dictionary gets its own sqlite
+database file in this directory, named by the MD5 hash of the dictionary
+
+file's absolute path.  This hashing scheme prevents collisions when
+multiple dictionaries share similar names or reside in different
+directories.
+
+   The default value is ‘~/.cache/johnson/’.  You may want to change
+this
+if you prefer to store caches on a faster drive, in a location that is
+excluded from backups, or alongside other application caches:
+
+     (setopt johnson-cache-directory "~/.local/cache/johnson/")
+
+   The directory is created automatically if it does not exist when a
+database is first opened via ‘johnson-db-open’
+(*note Database lifecycle::).
+
+
+File: johnson.info,  Node: Audio playback,  Next: DICT protocol,  Prev: Cache directory,  Up: User options
+
+2.7 Audio playback
+==================
+
+Some dictionary entries contain embedded audio files, such as
+pronunciation recordings.  When they do, the results buffer shows a
+play button (‘▶’) that plays the audio on click.  The command
+‘johnson-play-audio-at-point’ does the same for the button at
+point and can be called interactively.
+
+   The user option ‘johnson-audio-player’ controls which program is
+used for playback.  The default is ‘auto’, which tries Emacs's
+built-in ‘play-sound-file’ first; if that fails (e.g., because
+the Emacs binary lacks sound support), it falls back to the first
+available external player listed in
+‘johnson-audio-external-players’.  On macOS, ‘afplay’ is
+always available, so audio playback should work out of the box with no
+configuration.
+
+   If you want to use a specific external player, set
+‘johnson-audio-player’ to a string naming the command:
+
+     (setopt johnson-audio-player "mpv")
+
+   The user option ‘johnson-audio-external-players’ is the list of
+external commands that ‘auto’ mode tries, in order.  The default
+list is ‘("afplay" "mpv" "paplay" "aplay")’.  You can customize
+this list if your preferred player is not included or if you want to
+change the priority order.
+
+Companion zip archives
+----------------------
+
+Many DSL dictionaries bundle audio in a companion
+‘.dsl.files.zip’ archive rather than storing individual files on
+disk (e.g., ‘MyDict.dsl’ ↦ ‘MyDict.dsl.files.zip’).
+When a play button is clicked and the referenced audio file does not
+exist on disk, ‘johnson’ automatically checks for a companion zip
+archive and extracts the file on demand.  Extracted files are cached
+under the ‘resources/’ subdirectory of ‘johnson-cache-directory’
+so subsequent plays are instant.
+
+   This feature requires the ‘unzip’ command-line utility, which
+is available by default on macOS and most Linux distributions.
+
+   The command ‘johnson-clear-resource-cache’ deletes all extracted
+resource files.  This is useful if you want to reclaim disk space or
+force re-extraction.
+
+
+File: johnson.info,  Node: DICT protocol,  Next: Images,  Prev: Audio playback,  Up: User options
+
+2.8 DICT protocol
+=================
+
+The user option ‘johnson-dict-enabled’ is a master switch that
+controls whether the DICT protocol client is active.  When ‘nil’
+(the default), no DICT servers are contacted and no remote
+dictionaries appear in the dictionary list.  Set it to ‘t’ to
+enable the DICT protocol backend:
+
+     (setopt johnson-dict-enabled t)
+
+   The user option ‘johnson-dict-servers’ specifies the list of DICT
+servers to query.  Each element is a ‘(HOST . PORT)’ pair.  The
+default value is ‘(("dict.org" . 2628))’, which points to the
+public dict.org server on the standard DICT port.
+
+   You can add additional servers:
+
+     (setopt johnson-dict-servers
+             '(("dict.org" . 2628)
+               ("my-dict-server.local" . 2628)))
+
+   Dictionaries discovered from DICT servers appear under the "DICT
+Servers" group in the group selector.  The DICT backend communicates
+using the RFC 2229 protocol over a TCP connection.
+
+
+File: johnson.info,  Node: Images,  Next: Wildcard search,  Prev: DICT protocol,  Up: User options
+
+2.9 Images
+==========
+
+The user option ‘johnson-display-images’ controls whether inline
+images are rendered in dictionary entries.  When ‘t’ (the default),
+images embedded in entries are displayed inline.  When ‘nil’, images
+are suppressed.
+
+   Image support works across all format backends that include images:
+DSL ‘[s]’ tags, and HTML ‘<img>’ tags in MDict, StarDict, and
+BGL entries.
+
+     (setopt johnson-display-images nil)   ; suppress images
+
+   You can toggle image display interactively via
+‘johnson-toggle-images’ (*note Toggling images::).
+
+
+File: johnson.info,  Node: Wildcard search,  Next: Full-text search,  Prev: Images,  Up: User options
+
+2.10 Wildcard search
+====================
+
+The user option ‘johnson-wildcard-max-results’ limits the number
+of headwords returned by a wildcard search.  The default value is
+‘200’.  Wildcard searches can potentially match a large number of
+headwords; this limit prevents excessive memory use and keeps the
+completion interface responsive.
+
+     (setopt johnson-wildcard-max-results 500)
+
+   Wildcard patterns use ‘?’ to match a single character and ‘*’
+to match zero or more characters.  Wildcards are auto-detected in
+‘johnson-lookup’: if the query contains ‘?’ or ‘*’
+characters, matching headwords are collected and presented for
+selection rather than performing a direct lookup.
+
+
+File: johnson.info,  Node: Full-text search,  Next: Eldoc integration,  Prev: Wildcard search,  Up: User options
+
+2.11 Full-text search
+=====================
+
+The user option ‘johnson-fts-enabled’ controls whether full-text
+search data is built during indexing.  The default value is ‘nil’.
+When set to ‘t’ before indexing, the indexer stores definition text
+in a way that enables searching within dictionary entries, not just
+headwords.
+
+     (setopt johnson-fts-enabled t)
+
+   You must re-index your dictionaries after enabling this option for
+the full-text data to be built.  Once enabled, the
+‘johnson-search’ command (*note Searching definitions::)
+becomes available for searching within definitions.
+
+
+File: johnson.info,  Node: Eldoc integration,  Next: Scan-popup mode,  Prev: Full-text search,  Up: User options
+
+2.12 Eldoc integration
+======================
+
+The user option ‘johnson-eldoc-max-length’ sets the maximum
+number of characters shown in the eldoc display for a dictionary
+definition.  The default value is ‘80’.  Longer definitions are
+truncated with an ellipsis.
+
+     (setopt johnson-eldoc-max-length 120)
+
+   To enable eldoc integration, activate ‘johnson-eldoc-mode’ in
+the desired buffer (*note Eldoc integration commands::).
+
+
+File: johnson.info,  Node: Scan-popup mode,  Next: Bookmarks,  Prev: Eldoc integration,  Up: User options
+
+2.13 Scan-popup mode
+====================
+
+The user option ‘johnson-scan-trigger’ controls what action
+triggers popup dictionary definitions.  The possible values are:
+
+   • ‘selection’ (the default) -- show a popup when text is selected.
+   • ‘idle’ -- show a popup for the word at point after an idle
+     delay.
+   • ‘both’ -- show a popup on both selection and idle.
+
+     (setopt johnson-scan-trigger 'both)
+
+   The user option ‘johnson-scan-idle-delay’ sets the number of
+seconds of idle time before a popup is shown when the trigger is
+‘idle’ or ‘both’.  The default value is ‘1.0’.
+
+     (setopt johnson-scan-idle-delay 0.5)
+
+   The user option ‘johnson-scan-popup-duration’ sets the number
+of seconds a popup definition remains visible.  The default value
+is ‘5.0’.
+
+     (setopt johnson-scan-popup-duration 10.0)
+
+   The popup display uses posframe if available, otherwise falls back
+to tooltip, and finally to the echo area.
+
+   To enable scan-popup mode, activate ‘johnson-scan-mode’
+(*note Scan-popup mode commands::).
+
+
+File: johnson.info,  Node: Bookmarks,  Next: History buffer,  Prev: Scan-popup mode,  Up: User options
+
+2.14 Bookmarks
+==============
+
+The user option ‘johnson-bookmarks-file’ specifies the file where
+bookmarked dictionary entries are persisted.  The default value is
+‘~/.cache/johnson/bookmarks.el’.
+
+     (setopt johnson-bookmarks-file "~/.local/share/johnson/bookmarks.el")
+
+   Bookmarks allow you to save dictionary entries for later reference.
+Each bookmark records the headword, dictionary name, and date.
+*Note Managing bookmarks::, for the commands that add, remove, and
+list bookmarks.
+
+
+File: johnson.info,  Node: History buffer,  Prev: Bookmarks,  Up: User options
+
+2.15 History buffer
+===================
+
+The user option ‘johnson-history-file’ specifies the file where
+lookup history is persisted across Emacs sessions.  The default
+value is ‘~/.cache/johnson/history.el’.
+
+     (setopt johnson-history-file "~/.local/share/johnson/history.el")
+
+   The user option ‘johnson-history-persist’ controls whether lookup
+history is saved to disk.  When ‘t’ (the default), history entries
+are written to ‘johnson-history-file’ and restored on startup.
+When ‘nil’, history exists only for the current Emacs session.
+
+     (setopt johnson-history-persist nil)   ; session-only history
+
+   *Note Browsing history::, for commands that display and manage the
+history buffer.
+
+
+File: johnson.info,  Node: Commands,  Next: Functions,  Prev: User options,  Up: Top
+
+3 Commands
+**********
+
+* Menu:
+
+* Transient menu::
+* Looking up words::
+* Indexing dictionaries::
+* Managing groups and scope::
+* Navigating the results buffer::
+* Following cross-references::
+* Navigation history::
+* Copying entries::
+* Dictionary list::
+* Cache management::
+* Toggling images::
+* Searching definitions::
+* Eldoc integration commands::
+* Scan-popup mode commands::
+* Managing bookmarks::
+* Browsing history::
+
+
+File: johnson.info,  Node: Transient menu,  Next: Looking up words,  Up: Commands
+
+3.1 Transient menu
+==================
+
+The command ‘johnson-menu’ opens a transient dispatch menu that
+provides quick access to all major johnson commands and toggles.  It
+is bound to ‘?’ in ‘johnson-mode’.
+
+   The menu is organized into the following groups:
+
+Lookup
+------
+
+‘l’
+     Look up a word (‘johnson-lookup’).
+‘s’
+     Full-text search (‘johnson-search’).
+‘G’
+     Select group (‘johnson-select-group’).
+
+Navigate
+--------
+
+‘n’
+     Next section (‘johnson-next-section’).
+‘p’
+     Previous section (‘johnson-prev-section’).
+‘o’
+     Ace link (‘johnson-ace-link’).
+‘RET’
+     Follow reference (‘johnson-follow-ref’).
+
+History
+-------
+
+‘<’
+     Back (‘johnson-history-back’).
+‘>’
+     Forward (‘johnson-history-forward’).
+‘H’
+     History list (‘johnson-history-list’).
+‘C’
+     Clear history (‘johnson-history-clear’).
+
+Bookmarks
+---------
+
+‘m’
+     Add bookmark (‘johnson-bookmark-add’).
+‘M’
+     Remove bookmark (‘johnson-bookmark-remove’).
+‘B’
+     Bookmark list (‘johnson-bookmark-list’).
+
+Actions
+-------
+
+‘g’
+     Refresh (‘johnson-refresh’).
+‘w’
+     Copy entry (‘johnson-copy-entry’).
+‘W’
+     Copy dictionary name (‘johnson-copy-dictionary-name’).
+‘a’
+     Play audio (‘johnson-play-audio-at-point’).
+
+Sections
+--------
+
+‘TAB’
+     Toggle section (‘johnson-toggle-section’).
+‘<backtab>’
+     Toggle all sections (‘johnson-toggle-all-sections’).
+‘e’
+     Expand all (‘johnson-expand-all’).
+‘c’
+     Collapse all (‘johnson-collapse-all’).
+
+Manage
+------
+
+‘d’
+     List dictionaries (‘johnson-list-dictionaries’).
+‘r’
+     Reorder dictionaries (‘johnson-reorder-dictionaries’).
+‘i’
+     Index/re-index (‘johnson-index’).
+‘k’
+     Stop indexing (‘johnson-stop-indexing’).
+‘X’
+     Clear index (‘johnson-clear-index’).
+‘R’
+     Clear resource cache (‘johnson-clear-resource-cache’).
+‘Q’
+     Close caches (‘johnson-close-caches’).
+
+Options
+-------
+
+Option keys use the ‘-’ prefix.  Boolean options toggle between
+on and off; cycle options rotate through a list of choices.
+
+‘-i’
+     Toggle images (‘johnson-display-images’).  When toggled, the
+     results buffer is refreshed immediately to reflect the change.
+‘-f’
+     Toggle full-text search (‘johnson-fts-enabled’).
+‘-e’
+     Toggle eldoc mode (‘johnson-eldoc-mode’).
+‘-s’
+     Toggle scan mode (‘johnson-scan-mode’).
+‘-p’
+     Toggle persist history (‘johnson-history-persist’).
+‘-c’
+     Cycle search scope (‘johnson-default-search-scope’).  Rotates
+     between ‘all’ and ‘group’.
+‘-r’
+     Cycle ref scope (‘johnson-ref-scope’).  Rotates between
+     ‘all’ and ‘same’.
+
+   The transient menu requires the ‘transient’ package, which is
+bundled with Emacs 29 and later.  The menu is defined in
+‘johnson-transient.el’, which is loaded automatically.
+
+
+File: johnson.info,  Node: Looking up words,  Next: Indexing dictionaries,  Prev: Transient menu,  Up: Commands
+
+3.2 Looking up words
+====================
+
+The command ‘johnson-lookup’ is the primary entry point for dictionary
+lookups.  When called interactively, it prompts for a word with
+‘completing-read’, defaulting to the word at point.  The completion
+table is backed by sqlite prefix queries across all in-scope
+dictionaries, providing dynamic suggestions as you type.  Each candidate
+
+is annotated with the number of dictionaries containing it when there
+are multiple matches (e.g., ‘(3 dicts)’).
+
+   If the dictionaries have not been indexed yet, ‘johnson-lookup’
+prompts
+you to index them first.  When indexing is already in progress, the
+lookup is deferred and will resume automatically once indexing
+completes.
+
+   If the query contains wildcard characters (‘?’ or ‘*’),
+‘johnson-lookup’ performs a wildcard search instead of a direct
+lookup.  Matching headwords are collected across all in-scope
+dictionaries (up to ‘johnson-wildcard-max-results’; see
+*note Wildcard search::) and presented for selection via
+‘completing-read’.  The selected headword is then looked up
+normally.
+
+   After a word is selected, the command queries all dictionaries for
+exact
+matches (case-insensitive, accent-insensitive via
+‘johnson-db-normalize’; see *note Headword normalization::)
+and displays the results in the ‘*johnson*’ buffer.  The word is pushed
+onto the lookup history (*note Lookup history::) and the
+navigation history (*note Navigation history::).
+
+   The optional WORD argument allows calling ‘johnson-lookup’ from Lisp
+code without prompting.
+
+   The command ‘johnson-new-search’ re-invokes ‘johnson-lookup’ without
+arguments, prompting for a new word.  It is bound to ‘s’ in
+‘johnson-mode’ for quick access when you want to search for a different
+word while viewing results.
+
+   The command ‘johnson-refresh’ re-displays the current word by
+re-querying all dictionaries and rebuilding the results buffer.  This is
+
+useful if you have re-indexed a dictionary and want to see updated
+results.  It is bound to ‘g’ in ‘johnson-mode’.  Unlike a new search,
+refreshing does not push a new entry onto the navigation history.
+
+
+File: johnson.info,  Node: Indexing dictionaries,  Next: Managing groups and scope,  Prev: Looking up words,  Up: Commands
+
+3.3 Indexing dictionaries
+=========================
+
+The command ‘johnson-index’ scans all configured dictionary directories,
+
+discovers dictionary files, and indexes (or re-indexes) those whose
+index is stale or missing.  Staleness is determined by comparing the
+file modification time stored in the database against the actual file's
+modification time (*note Staleness detection and reset::).
+
+   Progress is displayed in a dedicated ‘*johnson-indexing*’ buffer,
+showing one line per dictionary with its name, progress counter, and
+result (entry count or error message).
+
+   When called interactively, indexing runs asynchronously using
+timer-based cooperative multitasking, so Emacs remains responsive during
+
+the process.  In batch or noninteractive mode, indexing runs
+synchronously.  If indexing is already in progress, the command signals
+an error rather than starting a second concurrent run.
+
+   The optional CALLBACK argument accepts a function to be called with
+no
+arguments once indexing completes.  This is used internally to chain
+lookup after indexing, but you can also use it in your own scripts.
+
+   Dictionaries that are already up to date are skipped with an "up to
+date" message rather than being re-indexed.
+
+   The command ‘johnson-stop-indexing’ cancels the current asynchronous
+indexing run.  It cancels the timer, clears the indexing queue, and
+reports how many dictionaries were processed before stopping.  This is
+useful if indexing is taking too long or if you want to abort and fix a
+problem before continuing.
+
+
+File: johnson.info,  Node: Managing groups and scope,  Next: Navigating the results buffer,  Prev: Indexing dictionaries,  Up: Commands
+
+3.4 Managing groups and scope
+=============================
+
+The command ‘johnson-select-group’ lets you choose the active dictionary
+
+group.  It presents a ‘completing-read’ prompt with all available groups
+
+plus an ‘"All"’ pseudo-group.  It is bound to ‘G’ in
+‘johnson-mode’.
+
+   Selecting ‘"All"’ sets the search scope to ‘all’, meaning lookups
+will
+search across every discovered dictionary.  Selecting a specific group
+sets the scope to ‘group’ and activates that group, restricting lookups
+to dictionaries within it.  If called from the results buffer, the
+current lookup is automatically refreshed to reflect the new scope.
+
+   The available groups depend on your configuration.  If
+‘johnson-dictionary-groups’ is ‘nil’ (the default), groups are
+auto-detected from dictionary metadata as language pairs
+(*note Search scope and groups::).  If you have defined
+custom groups, those are used instead.
+
+
+File: johnson.info,  Node: Navigating the results buffer,  Next: Following cross-references,  Prev: Managing groups and scope,  Up: Commands
+
+3.5 Navigating the results buffer
+=================================
+
+The command ‘johnson-next-section’ moves point to the next dictionary
+section header in the results buffer.  If point is already on a header,
+it moves past it to find the next one.  When there are no more sections
+below, it displays "No more sections".  It is bound to ‘n’ in
+‘johnson-mode’.
+
+   The command ‘johnson-prev-section’ moves point to the previous
+dictionary section header.  When there is no previous section, it
+displays "No previous section".  It is bound to ‘p’ in ‘johnson-mode’.
+
+   The command ‘johnson-prev-section-header’ is an alias for
+‘johnson-prev-section’, bound to ‘S-TAB’ (‘<backtab>’) in
+‘johnson-mode’.
+
+   The command ‘johnson-toggle-section’ collapses or expands the
+dictionary
+section at point.  Collapsed sections hide their content using an
+overlay with the ‘invisible’ property and display a ‘[+]’ indicator.
+Expanding the section removes the overlay, revealing the full entry
+content.  The command works whether point is on the section header or
+within the section body.  It is bound to ‘TAB’ in ‘johnson-mode’.
+
+
+File: johnson.info,  Node: Following cross-references,  Next: Navigation history,  Prev: Navigating the results buffer,  Up: Commands
+
+3.6 Following cross-references
+==============================
+
+The command ‘johnson-follow-ref’ activates the cross-reference button at
+
+point.  In DSL dictionaries, cross-references are created by ‘[ref]’
+tags
+or ‘<<...>>’ markers and rendered as clickable text buttons.  By
+default, activating a cross-reference triggers a new ‘johnson-lookup’
+for the referenced word across all loaded dictionaries.  When
+‘johnson-ref-scope’ is set to ‘same’, the lookup is restricted to
+the dictionary containing the link; if no match is found there, the
+command falls back to a full lookup
+(*note Cross-reference scope::).
+
+   If there is no button at point, the command displays "No
+cross-reference
+at point".  It is bound to ‘RET’ in ‘johnson-mode’.
+
+
+File: johnson.info,  Node: Navigation history,  Next: Copying entries,  Prev: Following cross-references,  Up: Commands
+
+3.7 Navigation history
+======================
+
+The results buffer maintains a buffer-local navigation history, similar
+to the history in Info mode or eww.  Each lookup pushes the word onto
+the history list.  Following a cross-reference also creates a history
+entry.
+
+   The command ‘johnson-history-back’ navigates to the previous word in
+the
+history, re-executing the lookup for that word.  When at the beginning
+of the history, it displays "Beginning of history".  It is bound to ‘l’
+in ‘johnson-mode’.
+
+   The command ‘johnson-history-forward’ navigates to the next word in
+the
+history (after going back).  When at the end of the history, it displays
+
+"End of history".  It is bound to ‘r’ in ‘johnson-mode’.
+
+   Navigation history is separate from the lookup history stored in
+‘johnson-history’ (*note Lookup history::).  The lookup history
+is a global list used for ‘completing-read’ recall (‘M-p=/=M-n’), while
+the navigation history is buffer-local to the ‘*johnson*’ buffer and
+tracks the sequence of words viewed in that buffer.
+
+   When navigating back or forward, the lookup is performed with history
+
+push suppressed (via the internal ‘johnson--navigating-history’ flag),
+preventing duplicate entries from cluttering the history.
+
+
+File: johnson.info,  Node: Copying entries,  Next: Dictionary list,  Prev: Navigation history,  Up: Commands
+
+3.8 Copying entries
+===================
+
+The command ‘johnson-copy-entry’ copies the current dictionary section's
+
+entry as plain text to the kill ring.  All text properties, faces, and
+markup are stripped; only the raw text content is copied.
+
+   The "current section" is determined by point position: whichever
+dictionary section the cursor is inside.  Section boundaries are
+identified by the section content overlays.  If point is not within any
+section (e.g., between sections or on a header line), the command
+displays "No section at point".
+
+   It is bound to ‘w’ in ‘johnson-mode’.
+
+   The command ‘johnson-copy-dictionary-name’ copies the dictionary name
+of
+the section at point to the kill ring.  This is useful for obtaining the
+exact
+string needed by ‘johnson-dictionary-priorities’.
+
+   The command first checks for a ‘johnson-section-header’ text property
+
+(present on header lines), then falls back to the ‘johnson-section’
+overlay property (present throughout the section body).  If neither is
+found, it displays "No dictionary section at point".
+
+   It is bound to ‘W’ in ‘johnson-mode’.
+
+
+File: johnson.info,  Node: Dictionary list,  Next: Cache management,  Prev: Copying entries,  Up: Commands
+
+3.9 Dictionary list
+===================
+
+The command ‘johnson-list-dictionaries’ opens a ‘*johnson-dictionaries*’
+
+buffer displaying all discovered dictionaries in a tabulated list.  The
+buffer uses ‘johnson-dict-list-mode’, a major mode derived from
+‘tabulated-list-mode’.
+
+   The table shows six columns: Name (the dictionary's display name),
+Format (e.g., "DSL"), Languages (the source-to-target language pair),
+Entries (the number of indexed headwords), Status ("Indexed", "Needs
+reindex", or "Not indexed"), and Path (the abbreviated file path).  The
+list is sorted by name by default and can be re-sorted by clicking on
+column headers.
+
+   The command ‘johnson-dict-list-reindex’ re-indexes the dictionary at
+point in the tabulated list.  It deletes the existing index file, forces
+
+a fresh index build, and refreshes the list to show the updated entry
+count and status.  It is bound to ‘i’ in ‘johnson-dict-list-mode’.
+
+   The command ‘johnson-dict-list-show-details’ opens a
+‘*johnson-dict-details*’ buffer showing detailed information about the
+dictionary at point: its name, format, source and target languages,
+group, priority, file path, index path, entry count, and whether the
+index is stale.  It is bound to ‘RET’ in ‘johnson-dict-list-mode’.
+
+
+File: johnson.info,  Node: Cache management,  Next: Toggling images,  Prev: Dictionary list,  Up: Commands
+
+3.10 Cache management
+=====================
+
+The command ‘johnson-close-caches’ kills all dictionary file cache
+buffers and closes all open sqlite database connections.  It also resets
+
+the internal dictionary list and indexed state, so the next lookup will
+trigger a fresh discovery and staleness check.
+
+   This is useful if you have added or removed dictionary files and want
+to
+force a clean rediscovery, or if you want to reclaim the memory used by
+cached dictionary buffers.
+
+   The command reports how many cache buffers were closed and confirms
+that
+all database connections were closed.
+
+   The command ‘johnson-clear-resource-cache’ deletes the
+‘resources/’ subdirectory of ‘johnson-cache-directory’,
+removing all audio files extracted from companion zip archives
+(*note Audio playback::).
+
+
+File: johnson.info,  Node: Toggling images,  Next: Searching definitions,  Prev: Cache management,  Up: Commands
+
+3.11 Toggling images
+====================
+
+The command ‘johnson-toggle-images’ toggles the display of
+inline images in the results buffer.  When images are currently
+shown, the command hides them; when hidden, it re-renders the
+buffer with images visible.  The toggle affects the value of
+‘johnson-display-images’ (*note Images::).
+
+   It is bound to ‘I’ in ‘johnson-mode’.
+
+
+File: johnson.info,  Node: Searching definitions,  Next: Eldoc integration commands,  Prev: Toggling images,  Up: Commands
+
+3.12 Searching definitions
+==========================
+
+The command ‘johnson-search’ performs a full-text search across
+all indexed dictionary definitions.  It prompts for a search query
+and displays results in a tabulated list showing the headword,
+dictionary name, and a snippet of the matching definition with
+highlighted matches.
+
+   Full-text search must be enabled via ‘johnson-fts-enabled’
+(*note Full-text search::) before indexing for this command to
+produce results.  If full-text data has not been indexed, the
+command signals an error.
+
+   It is bound to ‘S’ in ‘johnson-mode’.
+
+
+File: johnson.info,  Node: Eldoc integration commands,  Next: Scan-popup mode commands,  Prev: Searching definitions,  Up: Commands
+
+3.13 Eldoc integration
+======================
+
+The command ‘johnson-eldoc-mode’ is a buffer-local minor mode
+that adds dictionary definitions to eldoc.  When enabled, moving
+point over a word displays a brief dictionary definition in the
+eldoc area (typically the echo area or an eldoc buffer).  The
+lighter is ‘" JDict"’.
+
+   The maximum length of the displayed definition is controlled by
+‘johnson-eldoc-max-length’ (*note Eldoc integration::).
+
+     ;; Enable in text-mode buffers
+     (add-hook 'text-mode-hook #'johnson-eldoc-mode)
+
+
+File: johnson.info,  Node: Scan-popup mode commands,  Next: Managing bookmarks,  Prev: Eldoc integration commands,  Up: Commands
+
+3.14 Scan-popup mode
+====================
+
+The command ‘johnson-scan-mode’ is a global minor mode that
+shows popup dictionary definitions when you select text or after an
+idle delay.  The lighter is ‘" JScan"’.
+
+   The trigger behavior, idle delay, and popup duration are controlled
+by the user options ‘johnson-scan-trigger’,
+‘johnson-scan-idle-delay’, and
+‘johnson-scan-popup-duration’ (*note Scan-popup mode::).
+
+   The popup display uses posframe if the ‘posframe’ package is
+available, otherwise falls back to tooltip, and finally to the
+echo area.
+
+     (johnson-scan-mode 1)   ; enable globally
+
+
+File: johnson.info,  Node: Managing bookmarks,  Next: Browsing history,  Prev: Scan-popup mode commands,  Up: Commands
+
+3.15 Managing bookmarks
+=======================
+
+The command ‘johnson-bookmark-add’ bookmarks the dictionary
+entry at point for later reference.  The bookmark records the
+headword, dictionary name, and current date.  Bookmarks are
+persisted to ‘johnson-bookmarks-file’ (*note Bookmarks::).
+
+   It is bound to ‘m’ in ‘johnson-mode’.
+
+   The command ‘johnson-bookmark-remove’ removes the bookmark for
+the dictionary entry at point.  If the entry is not bookmarked, the
+command displays a message indicating so.
+
+   It is bound to ‘M’ in ‘johnson-mode’.
+
+   The command ‘johnson-bookmark-list’ opens a
+‘*johnson-bookmarks*’ buffer displaying all bookmarked entries
+in a tabulated list.  The table has three columns: Headword,
+Dictionary, and Date.
+
+   In the bookmarks buffer:
+
+   • ‘RET’ re-looks up the bookmarked headword.
+   • ‘d’ deletes the bookmark at point.
+
+
+File: johnson.info,  Node: Browsing history,  Prev: Managing bookmarks,  Up: Commands
+
+3.16 Browsing history
+=====================
+
+The command ‘johnson-history-list’ opens a
+‘*johnson-history*’ buffer displaying the full lookup history
+in a tabulated list with three columns: Headword, Time (the
+timestamp of the lookup), and Results (the number of dictionary
+matches).
+
+   It is bound to ‘H’ in ‘johnson-mode’.
+
+   In the history buffer, pressing ‘RET’ re-looks up the headword
+at point.
+
+   The command ‘johnson-history-clear’ clears all lookup history
+after prompting for confirmation.  This removes both the in-memory
+history and, if persistence is enabled, the history file on disk.
+
+   History persistence is controlled by ‘johnson-history-persist’
+and ‘johnson-history-file’ (*note History buffer::).
+
+
+File: johnson.info,  Node: Functions,  Next: Faces,  Prev: Commands,  Up: Top
+
+4 Functions
+***********
+
+* Menu:
+
+* Format registration::
+* Completion at point::
+* Database lifecycle::
+* Metadata storage::
+* Headword normalization::
+* Entry insertion::
+* Querying entries::
+* Staleness detection and reset::
+* DSL format detection::
+* DSL metadata parsing::
+* DSL index building::
+* DSL entry retrieval::
+* DSL entry rendering::
+
+
+File: johnson.info,  Node: Format registration,  Next: Completion at point,  Up: Functions
+
+4.1 Format registration
+=======================
+
+The function ‘johnson-register-format’ registers a dictionary format
+backend with the core.  It accepts a plist with the following keys:
+
+   • ‘:name’ -- a unique string identifying the format (e.g., ‘"dsl"’).
+
+   • ‘:extensions’ -- a list of file extension strings used to filter
+     files
+     during directory scanning (e.g., ‘("dsl")’).
+   • ‘:detect’ -- a function ‘(PATH) → BOOLEAN’ that determines whether
+     a file at PATH is a dictionary in this format.
+   • ‘:parse-metadata’ -- a function ‘(PATH) → PLIST’ that extracts
+     metadata from the dictionary file, returning at minimum ‘:name’,
+     ‘:source-lang’, and ‘:target-lang’.
+   • ‘:build-index’ -- a function ‘(PATH CALLBACK) → NIL’ that parses
+     the dictionary and calls ‘(funcall CALLBACK HEADWORD OFFSET
+     LENGTH)’
+     for each entry.
+   • ‘:retrieve-entry’ -- a function ‘(PATH OFFSET LENGTH) → STRING’
+     that retrieves the raw entry text at the given location.
+   • ‘:render-entry’ -- a function ‘(RAW-TEXT) → NIL’ that inserts
+     rendered content into the current buffer at point.
+
+   If a format with the same ‘:name’ is already registered, it is
+replaced.
+This allows format backends to re-register themselves (e.g., after
+reloading the file during development).
+
+   Backend modules typically call this function inside a
+‘with-eval-after-load’ form for ‘johnson’, ensuring the core is loaded
+before registration occurs.  For an example, see how ‘johnson-dsl.el’
+registers the DSL format at the end of the file.
+
+
+File: johnson.info,  Node: Completion at point,  Next: Database lifecycle,  Prev: Format registration,  Up: Functions
+
+4.2 Completion at point
+=======================
+
+The function ‘johnson-completion-at-point-function’ provides a
+completion-at-point (CAPF) backend backed by the johnson dictionary
+index.  It completes the word at point using the same dynamic sqlite
+prefix queries as ‘johnson-lookup’ (*note Looking up words::).
+
+   To use this function, add it to ‘completion-at-point-functions’ in
+the
+major modes where you want dictionary completion:
+
+     (add-hook 'text-mode-hook
+               (lambda ()
+                 (add-to-list 'completion-at-point-functions
+                              #'johnson-completion-at-point-function)))
+
+   The completion respects the current search scope: if the scope is set
+to
+‘group’, only dictionaries in the active group are queried.
+
+
+File: johnson.info,  Node: Database lifecycle,  Next: Metadata storage,  Prev: Completion at point,  Up: Functions
+
+4.3 Database lifecycle
+======================
+
+The function ‘johnson-db-open’ opens or creates the sqlite database for
+a given dictionary file path.  It ensures the cache directory
+(*note Cache directory::) exists, creates the ‘metadata’ and
+‘entries’ tables if they do not already exist, creates the index on
+‘headword_normalized’ if absent, and returns the database connection
+object.  This is the primary entry point for obtaining a database
+handle.
+
+   The function ‘johnson-db-close’ closes a sqlite database connection.
+
+Pass the connection object previously returned by ‘johnson-db-open’.
+In practice, the core module caches database connections in a hash table
+
+and closes them all at once via ‘johnson-close-caches’
+(*note Cache management::).
+
+
+File: johnson.info,  Node: Metadata storage,  Next: Headword normalization,  Prev: Database lifecycle,  Up: Functions
+
+4.4 Metadata storage
+====================
+
+The metadata table stores key-value pairs describing each dictionary:
+its name, format identifier, source and target languages, source file
+path, file modification time, and entry count.  These metadata entries
+are written during indexing and read during dictionary discovery and
+staleness detection (*note Staleness detection and reset::).
+
+   The function ‘johnson-db-set-metadata’ writes a key-value pair to the
+
+metadata table using ‘INSERT OR REPLACE’ semantics, so existing keys are
+
+updated rather than duplicated.  Both KEY and VALUE are strings.
+
+   The function ‘johnson-db-get-metadata’ retrieves a single metadata
+value
+by key, returning ‘nil’ if the key is not present in the database.
+
+   The function ‘johnson-db-get-all-metadata’ returns all metadata as an
+
+alist of ‘(KEY . VALUE)’ pairs.  This is useful for displaying
+comprehensive dictionary details, such as in the dictionary detail
+buffer opened by ‘johnson-dict-list-show-details’
+(*note Dictionary list::).
+
+
+File: johnson.info,  Node: Headword normalization,  Next: Entry insertion,  Prev: Metadata storage,  Up: Functions
+
+4.5 Headword normalization
+==========================
+
+The function ‘johnson-db-normalize’ transforms a string for
+case-insensitive and accent-insensitive search.  It performs three steps
+
+in sequence: NFKD decomposition via ‘ucs-normalize-NFKD-string’,
+removal of combining diacritical marks (Unicode general category Mn),
+and downcasing via ‘downcase’.
+
+   This normalization means that searching for ‘cafe’ will match
+headwords
+such as ‘café’, ‘CAFÉ’, and ‘Café’.  Both user input and headwords are
+normalized with this function before storage and querying, ensuring
+consistent matching behavior.
+
+   If the input is ‘nil’ or an empty string, the function returns an
+empty
+string.
+
+
+File: johnson.info,  Node: Entry insertion,  Next: Querying entries,  Prev: Headword normalization,  Up: Functions
+
+4.6 Entry insertion
+===================
+
+The function ‘johnson-db-insert-entry’ inserts a single headword entry
+into the database.  It takes the original HEADWORD text, a BYTE-OFFSET
+(or character offset, depending on the format backend), and an
+ENTRY-LENGTH specifying the entry's extent in the dictionary file.  The
+headword is automatically normalized via ‘johnson-db-normalize’
+(*note Headword normalization::) before insertion.
+
+   For bulk insertion during indexing, the function
+‘johnson-db-insert-entries-batch’ inserts a list of entries in a single
+database transaction, which is dramatically faster than individual
+inserts for large dictionaries.  Each element in the ENTRIES list is a
+‘(HEADWORD BYTE-OFFSET BYTE-LENGTH)’ triple.  If an error occurs during
+the transaction, it is rolled back and the error is re-signaled, leaving
+
+the database in a consistent state.
+
+
+File: johnson.info,  Node: Querying entries,  Next: Staleness detection and reset,  Prev: Entry insertion,  Up: Functions
+
+4.7 Querying entries
+====================
+
+The function ‘johnson-db-query-exact’ queries the database for entries
+whose normalized headword exactly matches the normalized form of WORD.
+It returns a list of ‘(HEADWORD BYTE-OFFSET BYTE-LENGTH)’ triples,
+where HEADWORD is the original non-normalized text.  Multiple triples
+may be returned when a dictionary contains duplicate headwords (e.g.,
+from headword alternation) or when multiple entries share the same
+normalized form.  This function is used during the lookup flow in
+‘johnson-lookup’ (*note Looking up words::).
+
+   The function ‘johnson-db-query-prefix’ queries the database for
+distinct
+headwords whose normalized form begins with the normalized PREFIX.  It
+uses a SQL ‘LIKE’ query on the indexed ‘headword_normalized’ column for
+efficient prefix matching.  The optional LIMIT argument defaults to 100.
+
+This function powers the dynamic completion table used by
+‘johnson-lookup’.
+
+   The function ‘johnson-db-entry-count’ returns the total number of
+rows
+in the entries table.  It is used for display in the dictionary list
+buffer (*note Dictionary list::) and in indexing progress messages.
+
+
+File: johnson.info,  Node: Staleness detection and reset,  Next: DSL format detection,  Prev: Querying entries,  Up: Functions
+
+4.8 Staleness detection and reset
+=================================
+
+The function ‘johnson-db-stale-p’ checks whether the index for a
+dictionary file is stale or does not exist.  It compares the file
+modification time stored in the database metadata (under the key
+‘"mtime"’) against the actual file's modification time.  If the sqlite
+database file does not exist at all, the function returns non-nil.  This
+
+function is called during the indexing flow
+(*note Indexing dictionaries::) to determine which
+dictionaries need re-indexing.
+
+   The function ‘johnson-db-reset’ deletes all entries from a database
+in
+preparation for re-indexing.  It issues ‘DELETE FROM entries’ but does
+not drop the table or remove metadata.  After a reset, the entry count
+is zero and new entries can be inserted via
+‘johnson-db-insert-entries-batch’ (*note Entry insertion::).
+
+
+File: johnson.info,  Node: DSL format detection,  Next: DSL metadata parsing,  Prev: Staleness detection and reset,  Up: Functions
+
+4.9 DSL format detection
+========================
+
+The function ‘johnson-dsl-detect’ determines whether a given file path
+is a DSL dictionary file.  It checks for the ‘.dsl’ extension
+(case-insensitively) and then verifies that the first non-BOM content in
+
+the file starts with ‘#’, which indicates a DSL metadata header.
+
+   The detection handles all supported encodings: it reads the BOM to
+determine the encoding, skips the appropriate number of BOM bytes, and
+decodes the initial content to check for the ‘#’ character.  For UTF-16
+files, it reads enough bytes (64) to ensure it captures the first
+decoded characters.
+
+   This function is registered as the ‘:detect’ handler in the format
+registry and is called during dictionary discovery to identify DSL files
+
+among all files found in the configured directories.
+
+
+File: johnson.info,  Node: DSL metadata parsing,  Next: DSL index building,  Prev: DSL format detection,  Up: Functions
+
+4.10 DSL metadata parsing
+=========================
+
+The function ‘johnson-dsl-parse-metadata’ extracts metadata headers from
+
+a DSL dictionary file.  It reads only the first few kilobytes of the
+file (4 KB for UTF-8, 8 KB for UTF-16) since headers always appear at
+the top, making this operation efficient even for large files.
+
+   The function parses three header fields: ‘#NAME’ (the dictionary's
+display name), ‘#INDEX_LANGUAGE’ (the source language), and
+‘#CONTENTS_LANGUAGE’ (the target language).  Header values are enclosed
+in double quotes in the file.
+
+   It returns a plist with keys ‘:name’, ‘:source-lang’, and
+‘:target-lang’.  If a header is absent, the corresponding value defaults
+
+to an empty string.  The core module uses these values for dictionary
+display names and for auto-detecting language-pair groups
+(*note Search scope and groups::).
+
+
+File: johnson.info,  Node: DSL index building,  Next: DSL entry retrieval,  Prev: DSL metadata parsing,  Up: Functions
+
+4.11 DSL index building
+=======================
+
+The function ‘johnson-dsl-build-index’ parses an entire DSL dictionary
+file and calls a CALLBACK function for each headword entry found.  The
+callback receives three arguments: the headword string, the character
+offset of the entry body in the decoded buffer (1-based), and the
+character length of the body.
+
+   The parsing proceeds in a single pass through a decoded buffer cache.
+
+It first skips metadata header lines (beginning with ‘#’), then
+identifies entries by their structure: flush-left lines are headwords,
+and indented lines (beginning with a tab or spaces) are the entry body.
+
+Multiple consecutive flush-left lines before an indented body are
+treated
+as multiple headwords for the same entry.
+
+   Each raw headword is expanded via the internal headword expansion
+pipeline, which handles three kinds of variants:
+
+   • *Split markers*: ‘colour{/}color’ produces two separate headwords,
+     ‘colour’ and ‘color’.
+
+   • *Alternation*: ‘pre{a/b}suf’ expands to ‘preasuf’ and ‘prebsuf’.
+
+   • *Optional parts*: ‘go(es)’ expands to both ‘go’ and ‘goes’.
+
+   Escaped characters (‘\[’, ‘\]’, ‘\{’, ‘\}’, ‘\(’, ‘\)’) are stripped
+after expansion.  Each expanded variant becomes a separate row in the
+database, all pointing to the same entry body.
+
+   If a headword fails to parse, it is skipped and a count of skipped
+entries is logged as a warning message at the end of the indexing run.
+
+   A key design decision is the use of _decoded buffers_ rather than raw
+
+byte access.  Dictionary files are opened with their detected encoding
+(UTF-16LE, UTF-16BE, UTF-8 with BOM, or plain UTF-8) and cached as
+multibyte Emacs buffers.  The index stores character positions rather
+than byte offsets, which ensures that UTF-16 encoded files work
+correctly
+for both indexing and retrieval.
+
+
+File: johnson.info,  Node: DSL entry retrieval,  Next: DSL entry rendering,  Prev: DSL index building,  Up: Functions
+
+4.12 DSL entry retrieval
+========================
+
+The function ‘johnson-dsl-retrieve-entry’ retrieves the raw entry body
+from a DSL dictionary file.  It takes the file path, a character offset
+(CHAR-OFFSET, 1-based), and a character count (NCHARS), and returns the
+corresponding substring from the decoded buffer cache.
+
+   Because the index stores character positions rather than byte
+offsets,
+this function works correctly with all supported encodings, including
+UTF-16 files where byte positions would not align with character
+boundaries.
+
+   The decoded buffer cache keeps dictionary files open as hidden Emacs
+buffers (named ‘" *johnson-cache: PATH"’) for fast repeated lookups.
+All cache buffers can be killed via ‘johnson-close-caches’
+(*note Cache management::).
+
+
+File: johnson.info,  Node: DSL entry rendering,  Prev: DSL entry retrieval,  Up: Functions
+
+4.13 DSL entry rendering
+========================
+
+The function ‘johnson-dsl-render-entry’ transforms raw DSL entry text
+into richly formatted content in the current buffer.  It inserts the
+rendered text at point using Emacs text properties and faces rather than
+
+HTML or shr rendering.
+
+   The rendering proceeds in several steps.  First, leading indentation
+(tab or spaces) is stripped from each line.  Media references
+(‘{{...}}’) are removed.  Then the text is inserted into the buffer and
+processed in two passes.
+
+   The first pass handles ‘<<...>>’ cross-reference markers, converting
+them into clickable buttons with ‘johnson-ref-face’
+(*note Link faces::).  Each button invokes ‘johnson-lookup’ for the
+referenced word when activated.
+
+   The second pass processes DSL tags using a stack-based parser.  The
+parser scans for tag patterns matching ‘[tag]’ and ‘[/tag]’, maintaining
+
+a stack of active tags.  When a closing tag is encountered, the
+corresponding face or text property is applied to the enclosed region.
+The supported tags include:
+
+   • ‘[b]’, ‘[i]’, ‘[u]’: text styling (*note Text styling faces::)
+   • ‘[c]’ and ‘[c NAME]’: color (*note Color faces::)
+   • ‘[sup]’, ‘[sub]’: superscript and subscript via ‘display’
+     properties
+   • ‘[ex]’: examples (*note Content type faces::)
+   • ‘[*]’: optional/secondary text
+   • ‘[ref]’: cross-reference buttons (*note Link faces::)
+   • ‘[url]’: external URL buttons
+   • ‘[lang id=N]’: language identifier (stored as text property)
+   • ‘[trn]’, ‘[!trn]’: translation blocks (blank line separation)
+   • ‘[com]’: comments
+   • ‘[m]’ and ‘[m0]’-‘[m9]’: indentation levels via ‘line-prefix’ and
+     ‘wrap-prefix’ display properties
+   • ‘[p]’: abbreviation markers (rendered as-is)
+   • ‘[']’: stress marks (*note Text styling faces::)
+   • ‘[s]’: media references (content is suppressed)
+
+
+File: johnson.info,  Node: Faces,  Next: Roadmap,  Prev: Functions,  Up: Top
+
+5 Faces
+*******
+
+All faces defined in ‘johnson-dsl.el’ belong to the ‘johnson-dsl-faces’
+customization group.  You can customize them via ‘M-x customize-group
+RET johnson-dsl-faces RET’ to match your preferred color theme.  The
+face ‘johnson-section-header-face’ is defined in ‘johnson.el’ and
+belongs to the ‘johnson’ group.
+
+* Menu:
+
+* Text styling faces::
+* Content type faces::
+* Link faces::
+* Section header face::
+* Color faces::
+
+
+File: johnson.info,  Node: Text styling faces,  Next: Content type faces,  Up: Faces
+
+5.1 Text styling faces
+======================
+
+The face ‘johnson-bold-face’ renders text enclosed in ‘[b]...[/b]’ tags.
+
+It inherits from ‘bold’.
+
+   The face ‘johnson-italic-face’ renders text enclosed in ‘[i]...[/i]’
+tags.  It inherits from ‘italic’.
+
+   The face ‘johnson-underline-face’ renders text enclosed in
+‘[u]...[/u]’ tags.  It sets the ‘:underline’ attribute to ‘t’.
+
+   The face ‘johnson-stress-face’ renders stress marks enclosed in
+‘[']’...=[/']= tags.  It inherits from ‘bold’, making accented
+syllables visually prominent in pronunciation guides.
+
+
+File: johnson.info,  Node: Content type faces,  Next: Link faces,  Prev: Text styling faces,  Up: Faces
+
+5.2 Content type faces
+======================
+
+The face ‘johnson-example-face’ renders example sentences enclosed in
+‘[ex]...[/ex]’ tags.  It inherits from ‘italic’ with a ‘dim gray’
+foreground, visually distinguishing examples from definitions.
+
+   The face ‘johnson-optional-face’ renders optional or secondary text
+enclosed in ‘[*]...[/*]’ tags.  It uses a muted gray foreground that
+adapts to the background: ‘gray50’ on light backgrounds and ‘gray60’
+on dark backgrounds.
+
+   The face ‘johnson-comment-face’ renders comment annotations enclosed
+in
+‘[com]...[/com]’ tags.  It inherits from ‘font-lock-comment-face’,
+giving comments a consistent appearance with the rest of Emacs.
+
+
+File: johnson.info,  Node: Link faces,  Next: Section header face,  Prev: Content type faces,  Up: Faces
+
+5.3 Link faces
+==============
+
+The face ‘johnson-ref-face’ renders cross-reference links enclosed in
+‘[ref]...[/ref]’ tags or ‘<<...>>’ markers.  It inherits from ‘link’.
+Cross-references are rendered as clickable buttons that invoke
+‘johnson-lookup’ for the referenced word
+(*note Following cross-references::).
+
+   The face ‘johnson-url-face’ renders external URL links enclosed in
+‘[url]...[/url]’ tags.  It inherits from ‘link’.  URL links are rendered
+
+as clickable buttons that open the URL via ‘browse-url’.
+
+
+File: johnson.info,  Node: Section header face,  Next: Color faces,  Prev: Link faces,  Up: Faces
+
+5.4 Section header face
+=======================
+
+The face ‘johnson-section-header-face’ renders dictionary section
+headers in the results buffer (the lines using Unicode box-drawing
+character ‘━’).  It inherits from ‘bold’ with the ‘:extend’ attribute
+set to ‘t’, ensuring the face extends to the edge of the window.
+
+   This face is defined in ‘johnson.el’ (for the results buffer headers)
+
+and also in ‘johnson-dsl.el’ (for DSL-specific section headers).
+
+
+File: johnson.info,  Node: Color faces,  Prev: Section header face,  Up: Faces
+
+5.5 Color faces
+===============
+
+DSL dictionaries use ‘[c]...[/c]’ and ‘[c NAME]...[/c]’ tags to apply
+color to text.  The module maps DSL color names (case-insensitively) to
+a fixed set of customizable Emacs faces.  All color faces define
+separate foreground colors for light and dark backgrounds.
+
+   The face ‘johnson-color-default-face’ is used when no color name is
+specified (i.e., a bare ‘[c]’ tag).  It defaults to green (‘dark green’
+on light backgrounds, ‘green3’ on dark backgrounds).
+
+   The face ‘johnson-color-green-face’ is used for the DSL color names
+‘green’ and ‘darkgreen’.
+
+   The face ‘johnson-color-red-face’ is used for ‘red’, ‘darkred’, and
+‘crimson’.
+
+   The face ‘johnson-color-blue-face’ is used for ‘blue’, ‘darkblue’,
+and
+‘steelblue’.
+
+   The face ‘johnson-color-gray-face’ is used for ‘gray’, ‘darkgray’,
+and
+‘dimgray’.
+
+   The face ‘johnson-color-brown-face’ is used for ‘brown’ and
+‘saddlebrown’.
+
+   The face ‘johnson-color-violet-face’ is used for ‘violet’, ‘purple’,
+and ‘darkviolet’.
+
+   The face ‘johnson-color-orange-face’ is used for ‘orange’ and
+‘darkorange’.
+
+   Any unrecognized color name falls back to
+‘johnson-color-default-face’.
+
+
+File: johnson.info,  Node: Roadmap,  Next: Indices,  Prev: Faces,  Up: Top
+
+6 Roadmap
+*********
+
+* Menu:
+
+* Version 0.1 -- DSL: Version 01 --- DSL.
+* Version 0.2 -- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL.
+* Version 0.3 -- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
+* Version 0.4 (current) -- BGL, DICT, and more: Version 04 (current).
+* Future features::
+
+
+File: johnson.info,  Node: Version 01 --- DSL,  Next: Version 02 --- StarDict and compressed DSL,  Up: Roadmap
+
+6.1 Version 0.1 -- DSL
+======================
+
+   • ‘johnson-dsl.el’ backend for ‘.dsl’ files.
+   • Auto-discovery and indexing of uncompressed DSL dictionaries.
+   • Encoding auto-detection (UTF-8, UTF-16LE, UTF-16BE).
+   • Headword alternation (‘{/}’), optional parts (‘(...)’), and
+     multi-headword entries.
+   • Case-insensitive and accent-insensitive search via NFKD
+     normalization.
+   • Dynamic ‘completing-read’ with sqlite-backed prefix matching.
+   • Full DSL markup rendering with text properties and faces.
+   • Cross-reference navigation with back/forward history.
+   • Dictionary groups by language pair, with configurable scope.
+   • Collapsible dictionary sections in the results buffer.
+   • Dictionary list buffer (‘tabulated-list-mode’).
+   • Completion-at-point (CAPF) backend.
+   • Plain-text entry copying.
+
+
+File: johnson.info,  Node: Version 02 --- StarDict and compressed DSL,  Next: Version 03 --- MDict and DSL abbreviations,  Prev: Version 01 --- DSL,  Up: Roadmap
+
+6.2 Version 0.2 -- StarDict and compressed DSL
+==============================================
+
+   • ‘johnson-stardict.el’ backend for ‘.ifo’, ‘.idx’, ‘.dict’, and
+     ‘.syn’ files.
+   • Dictzip random-access support for compressed ‘.dict.dz’ and
+     ‘.dsl.dz’ files.
+   • StarDict content types: plain text, HTML, Pango markup, phonetic.
+   • Include table of contents at the beginning of the buffer.
+     Integrate it with ace-link for quick navigation.
+   • Allow collapsing all sections, not just individual ones (like org
+     does).
+   • Display a buffer of all indexed dictionaries and allow the user to
+     reorder them, so that the new order can be saved as the new order
+     in ‘johnson-dictionary-priorities’.
+        • When saving, prompt the user whether they want to set the new
+          value via defcustom, for the current session, or to set it
+          manually in their init file; in the latter case, copy the new
+          value to the kill ring and display instructions on how to use
+          it.
+   • Provide basic media support (audio pronunciation).
+
+
+File: johnson.info,  Node: Version 03 --- MDict and DSL abbreviations,  Next: Version 04 (current),  Prev: Version 02 --- StarDict and compressed DSL,  Up: Roadmap
+
+6.3 Version 0.3 -- MDict and DSL abbreviations
+==============================================
+
+   • ‘johnson-mdict.el’ backend for ‘.mdx’ and ‘.mdd’ files.
+   • Support for MDict's HTML+CSS content.
+   • ‘_abrv.dsl’ abbreviation table support for DSL dictionaries
+     (‘[p]’ tag expansion).
+
+
+File: johnson.info,  Node: Version 04 (current),  Next: Future features,  Prev: Version 03 --- MDict and DSL abbreviations,  Up: Roadmap
+
+6.4 Version 0.4 (current) -- BGL, DICT, and more
+================================================
+
+   • ‘johnson-bgl.el’ backend for ‘.bgl’ files, with automatic
+     detection via file extension and magic bytes (‘0x12 0x34’).
+   • ‘johnson-dict.el’ DICT protocol client (RFC 2229) for remote
+     dictionary servers.
+   • Inline image support across all format backends (DSL ‘[s]’ tags,
+     HTML ‘<img>’ tags in MDict, StarDict, and BGL).
+   • Wildcard search using ‘?’ (single character) and ‘*’ (multiple
+     characters) in lookups.
+   • Full-text search within dictionary definitions
+     (‘johnson-search’).
+   • Eldoc integration via ‘johnson-eldoc-mode’.
+   • Scan-popup mode via ‘johnson-scan-mode’ (popup definitions on
+     selection or idle).
+   • Bookmarking entries for later reference.
+   • Browsable history buffer with timestamps and result counts.
+   • Auto-detection of non-standard 64-bit ‘.idx’ entry formats in
+     StarDict dictionaries whose ‘.ifo’ files omit the
+     ‘idxoffsetbits=64’ declaration.
+   • Clearer error message when a StarDict ‘.idx’ file is missing
+     (incomplete dictionary distribution).
+
+
+File: johnson.info,  Node: Future features,  Prev: Version 04 (current),  Up: Roadmap
+
+6.5 Future features
+===================
+
+The following features are planned but not yet scheduled for a specific
+version:
+
+   • EPWING format.
+
+
+File: johnson.info,  Node: Indices,  Prev: Roadmap,  Up: Top
+
+7 Indices
+*********
+
+* Menu:
+
+* Function index::
+* Variable index::
+
+
+File: johnson.info,  Node: Function index,  Next: Variable index,  Up: Indices
+
+7.1 Function index
+==================
+
+ [index ]
+* Menu:
+
+* johnson-bookmark-add:                  Managing bookmarks.   (line  6)
+* johnson-bookmark-list:                 Managing bookmarks.   (line  6)
+* johnson-bookmark-remove:               Managing bookmarks.   (line  6)
+* johnson-clear-resource-cache:          Audio playback.       (line 35)
+* johnson-clear-resource-cache <1>:      Cache management.     (line 21)
+* johnson-close-caches:                  Cache management.     (line  6)
+* johnson-completion-at-point-function:  Completion at point.  (line  6)
+* johnson-copy-dictionary-name:          Copying entries.      (line 19)
+* johnson-copy-entry:                    Copying entries.      (line  6)
+* johnson-db-close:                      Database lifecycle.   (line  6)
+* johnson-db-entry-count:                Querying entries.     (line  6)
+* johnson-db-get-all-metadata:           Metadata storage.     (line  6)
+* johnson-db-get-metadata:               Metadata storage.     (line  6)
+* johnson-db-insert-entries-batch:       Entry insertion.      (line  6)
+* johnson-db-insert-entry:               Entry insertion.      (line  6)
+* johnson-db-normalize:                  Headword normalization.
+                                                               (line  6)
+* johnson-db-open:                       Database lifecycle.   (line  6)
+* johnson-db-query-exact:                Querying entries.     (line  6)
+* johnson-db-query-prefix:               Querying entries.     (line  6)
+* johnson-db-reset:                      Staleness detection and reset.
+                                                               (line  6)
+* johnson-db-set-metadata:               Metadata storage.     (line  6)
+* johnson-db-stale-p:                    Staleness detection and reset.
+                                                               (line  6)
+* johnson-dict-list-reindex:             Dictionary list.      (line  6)
+* johnson-dict-list-show-details:        Dictionary list.      (line  6)
+* johnson-dsl-build-index:               DSL index building.   (line  6)
+* johnson-dsl-detect:                    DSL format detection. (line  6)
+* johnson-dsl-parse-metadata:            DSL metadata parsing. (line  6)
+* johnson-dsl-render-entry:              DSL entry rendering.  (line  6)
+* johnson-dsl-retrieve-entry:            DSL entry retrieval.  (line  6)
+* johnson-eldoc-mode:                    Eldoc integration commands.
+                                                               (line  6)
+* johnson-follow-ref:                    Following cross-references.
+                                                               (line  6)
+* johnson-history-back:                  Navigation history.   (line  6)
+* johnson-history-clear:                 Browsing history.     (line  6)
+* johnson-history-forward:               Navigation history.   (line  6)
+* johnson-history-list:                  Browsing history.     (line  6)
+* johnson-index:                         Indexing dictionaries.
+                                                               (line  6)
+* johnson-insert-audio-button:           Audio playback.       (line  6)
+* johnson-list-dictionaries:             Dictionary list.      (line  6)
+* johnson-lookup:                        Looking up words.     (line  6)
+* johnson-menu:                          Transient menu.       (line  6)
+* johnson-new-search:                    Looking up words.     (line  6)
+* johnson-next-section:                  Navigating the results buffer.
+                                                               (line  6)
+* johnson-play-audio-at-point:           Audio playback.       (line  6)
+* johnson-play-sound:                    Audio playback.       (line  6)
+* johnson-prev-section:                  Navigating the results buffer.
+                                                               (line  6)
+* johnson-prev-section-header:           Navigating the results buffer.
+                                                               (line  6)
+* johnson-refresh:                       Looking up words.     (line  6)
+* johnson-register-format:               Format registration.  (line  6)
+* johnson-scan-mode:                     Scan-popup mode commands.
+                                                               (line  6)
+* johnson-search:                        Searching definitions.
+                                                               (line  6)
+* johnson-select-group:                  Managing groups and scope.
+                                                               (line  6)
+* johnson-stop-indexing:                 Indexing dictionaries.
+                                                               (line  6)
+* johnson-toggle-images:                 Toggling images.      (line  6)
+* johnson-toggle-section:                Navigating the results buffer.
+                                                               (line  6)
+
+
+File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
+
+7.2 Variable index
+==================
+
+ [index ]
+* Menu:
+
+* johnson-audio-external-players:        Audio playback.        (line 6)
+* johnson-audio-player:                  Audio playback.        (line 6)
+* johnson-bold-face:                     Text styling faces.    (line 6)
+* johnson-bookmarks-file:                Bookmarks.             (line 6)
+* johnson-cache-directory:               Cache directory.       (line 6)
+* johnson-color-blue-face:               Color faces.           (line 6)
+* johnson-color-brown-face:              Color faces.           (line 6)
+* johnson-color-default-face:            Color faces.           (line 6)
+* johnson-color-gray-face:               Color faces.           (line 6)
+* johnson-color-green-face:              Color faces.           (line 6)
+* johnson-color-orange-face:             Color faces.           (line 6)
+* johnson-color-red-face:                Color faces.           (line 6)
+* johnson-color-violet-face:             Color faces.           (line 6)
+* johnson-comment-face:                  Content type faces.    (line 6)
+* johnson-default-search-scope:          Search scope and groups.
+                                                                (line 6)
+* johnson-dict-enabled:                  DICT protocol.         (line 6)
+* johnson-dict-servers:                  DICT protocol.         (line 6)
+* johnson-dictionary-directories:        Dictionary discovery.  (line 6)
+* johnson-dictionary-groups:             Search scope and groups.
+                                                                (line 6)
+* johnson-dictionary-priorities:         Display ordering.      (line 6)
+* johnson-display-images:                Images.                (line 6)
+* johnson-eldoc-max-length:              Eldoc integration.     (line 6)
+* johnson-example-face:                  Content type faces.    (line 6)
+* johnson-fts-enabled:                   Full-text search.      (line 6)
+* johnson-history:                       Lookup history.        (line 6)
+* johnson-history-file:                  History buffer.        (line 6)
+* johnson-history-max:                   Lookup history.        (line 6)
+* johnson-history-persist:               History buffer.        (line 6)
+* johnson-italic-face:                   Text styling faces.    (line 6)
+* johnson-optional-face:                 Content type faces.    (line 6)
+* johnson-ref-face:                      Link faces.            (line 6)
+* johnson-ref-scope:                     Cross-reference scope. (line 6)
+* johnson-scan-idle-delay:               Scan-popup mode.       (line 6)
+* johnson-scan-popup-duration:           Scan-popup mode.       (line 6)
+* johnson-scan-trigger:                  Scan-popup mode.       (line 6)
+* johnson-section-header-face:           Section header face.   (line 6)
+* johnson-stress-face:                   Text styling faces.    (line 6)
+* johnson-underline-face:                Text styling faces.    (line 6)
+* johnson-url-face:                      Link faces.            (line 6)
+* johnson-wildcard-max-results:          Wildcard search.       (line 6)
+
+
+Tag Table:
+Node: Top215
+Node: Overview2028
+Node: User options5764
+Node: Dictionary discovery6195
+Node: Search scope and groups7167
+Node: Cross-reference scope8842
+Node: Display ordering9553
+Node: Lookup history10352
+Node: Cache directory11146
+Node: Audio playback12092
+Node: DICT protocol14305
+Node: Images15379
+Node: Wildcard search16058
+Node: Full-text search16875
+Node: Eldoc integration17600
+Node: Scan-popup mode18160
+Node: Bookmarks19352
+Node: History buffer19958
+Node: Commands20764
+Node: Transient menu21280
+Node: Looking up words24414
+Node: Indexing dictionaries26724
+Node: Managing groups and scope28403
+Node: Navigating the results buffer29488
+Node: Following cross-references30814
+Node: Navigation history31724
+Node: Copying entries33134
+Node: Dictionary list34388
+Node: Cache management35801
+Node: Toggling images36728
+Node: Searching definitions37235
+Node: Eldoc integration commands37967
+Node: Scan-popup mode commands38652
+Node: Managing bookmarks39411
+Node: Browsing history40445
+Node: Functions41289
+Node: Format registration41720
+Node: Completion at point43481
+Node: Database lifecycle44384
+Node: Metadata storage45284
+Node: Headword normalization46458
+Node: Entry insertion47296
+Node: Querying entries48309
+Node: Staleness detection and reset49619
+Node: DSL format detection50628
+Node: DSL metadata parsing51604
+Node: DSL index building52617
+Node: DSL entry retrieval54648
+Node: DSL entry rendering55554
+Node: Faces57660
+Node: Text styling faces58202
+Node: Content type faces58907
+Node: Link faces59743
+Node: Section header face60403
+Node: Color faces60992
+Node: Roadmap62379
+Node: Version 01 --- DSL62800
+Node: Version 02 --- StarDict and compressed DSL63800
+Node: Version 03 --- MDict and DSL abbreviations65093
+Node: Version 04 (current)65579
+Node: Future features66937
+Node: Indices67172
+Node: Function index67305
+Node: Variable index72352
+
+End Tag Table
+
+
+Local Variables:
+coding: utf-8
+Info-documentlanguage: en
+End:
