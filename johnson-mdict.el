@@ -20,6 +20,9 @@
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-insert-audio-button "johnson")
+(declare-function johnson-db-open "johnson-db")
+(declare-function johnson-db-close "johnson-db")
+(declare-function johnson-db-query-exact "johnson-db")
 
 (defvar johnson-cache-directory)
 
@@ -698,9 +701,10 @@ where record-offset is the byte offset into the decompressed record stream."
   "Retrieve the entry data from the MDict dictionary at PATH.
 RECORD-OFFSET is the offset into the decompressed record stream.
 Returns the entry data as a decoded string."
-  (let* ((johnson-mdict--current-dict-dir (file-name-directory path))
-         (johnson-mdict--current-dict-path path)
-         (header (johnson-mdict--parse-header path))
+  ;; Set dict context for the renderer (called separately after retrieval).
+  (setq johnson-mdict--current-dict-dir (file-name-directory path))
+  (setq johnson-mdict--current-dict-path path)
+  (let* ((header (johnson-mdict--parse-header path))
          (encoding (plist-get header :encoding))
          (loc (johnson-mdict--locate-record path record-offset))
          (block-idx (car loc))
@@ -747,16 +751,22 @@ Returns the entry data as a decoded string."
   "Resolve @@@LINK= TARGET in dictionary at PATH.
 Returns the final entry data string, following up to
 `johnson-mdict--max-link-depth' redirects.  DEPTH tracks
-recursion level."
-  (let ((d (or depth 0)))
+recursion level.  Uses the SQLite index for fast lookup."
+  (let ((d (or depth 0))
+        (target (string-trim target)))
     (when (>= d johnson-mdict--max-link-depth)
       (error "MDict: @@@LINK= redirect loop for %s" target))
-    ;; Look up the target headword in the keyword index.
-    (let* ((entries (johnson-mdict--parse-keyword-section path))
-           (match (cl-find target entries :key #'car :test #'string=)))
-      (if (not match)
+    ;; Look up the target headword via the SQLite index.
+    (require 'johnson-db)
+    (let* ((db (johnson-db-open path))
+           (matches (johnson-db-query-exact db target)))
+      (johnson-db-close db)
+      (if (not matches)
           (format "Link target \"%s\" not found" target)
-        (let ((raw (johnson-mdict-retrieve-entry path (cdr match) 0)))
+        (let* ((match (car matches))
+               (byte-offset (nth 1 match))
+               (byte-length (nth 2 match))
+               (raw (johnson-mdict-retrieve-entry path byte-offset byte-length)))
           (if (string-prefix-p "@@@LINK=" raw)
               (johnson-mdict--resolve-link
                path (substring raw 8) (1+ d))
@@ -884,10 +894,12 @@ MDD hit.  Returns the local file path or nil."
          (disk-path (expand-file-name resource-name dir)))
     (if (file-exists-p disk-path)
         disk-path
-      ;; Try MDD.
+      ;; Try MDD (with error protection for malformed .mdd files).
       (let ((mdd (johnson-mdict--mdd-path mdx-path)))
         (when mdd
-          (let ((data (johnson-mdict--mdd-lookup mdd resource-name)))
+          (let ((data (condition-case nil
+                          (johnson-mdict--mdd-lookup mdd resource-name)
+                        (error nil))))
             (when data
               ;; Write to resource cache.
               (let* ((cache-dir (expand-file-name
