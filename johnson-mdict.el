@@ -732,7 +732,11 @@ Returns the entry data as a decoded string."
                   (cl-decf remaining take)
                   (cl-incf bi)))
               (apply #'concat (nreverse parts))))))
-    (decode-coding-string entry-data encoding)))
+    (let ((decoded (decode-coding-string entry-data encoding)))
+      ;; MDict entries are null-terminated; strip the null and any trailing data.
+      (if-let ((null-pos (cl-position 0 decoded)))
+          (substring decoded 0 null-pos)
+        decoded))))
 
 ;;;; Entry rendering
 
@@ -744,7 +748,17 @@ DATA is a decoded string containing HTML content."
         (johnson-html--current-dict-path johnson-mdict--current-dict-path)
         (johnson-html--resolve-resource-fn #'johnson-mdict--resolve-resource))
     (insert data)
-    (johnson-html-render-region start (point))))
+    (johnson-html-render-region start (point))
+    ;; Trim trailing whitespace-only lines (including NBSP).
+    (let ((end (point)))
+      (while (and (> end start)
+                  (progn
+                    (goto-char end)
+                    (forward-line -1)
+                    (looking-at-p "^[[:space:]\u00a0]*$")))
+        (delete-region (point) end)
+        (setq end (point)))
+      (goto-char end))))
 
 ;;;; MDD resource lookup
 
