@@ -647,6 +647,9 @@ Inserts the rendered text at point."
          (text (string-join stripped "\n")))
     ;; Unescape backslash-space sequences (DSL uses `\ ' for literal spaces).
     (setq text (replace-regexp-in-string "\\\\ " " " text))
+    ;; Strip standalone backslash lines (used as visual separators in some
+    ;; DSL dictionaries, e.g. Oxford Advanced Pronunciation Dictionary).
+    (setq text (replace-regexp-in-string "^\\\\$" "" text))
     ;; Process {{...}} media references: render images, strip others.
     (setq text
           (replace-regexp-in-string

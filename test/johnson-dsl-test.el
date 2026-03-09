@@ -409,5 +409,12 @@
   (johnson-dsl-test--kill-cache-buffers)
   (clrhash johnson-dsl--abbreviation-cache))
 
+(ert-deftest johnson-dsl-test-render-strips-standalone-backslash ()
+  "Standalone backslash lines are stripped during rendering."
+  (with-temp-buffer
+    (johnson-dsl-render-entry "\t\\\n\t[p]noun[/p]\n\t\\")
+    (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+      (should-not (string-match-p "\\\\" text)))))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here

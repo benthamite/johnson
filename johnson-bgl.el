@@ -416,6 +416,25 @@ stream (cached in a unibyte buffer)."
             (dolist (entry entries)
               (funcall callback (nth 0 entry) (nth 1 entry) (nth 2 entry))))))))))
 
+;;;; Definition encoding
+
+(defvar johnson-bgl--charset-cache (make-hash-table :test #'equal)
+  "Cache of target coding systems per BGL file path.")
+
+(defun johnson-bgl--definition-coding-system (path)
+  "Return the coding system for definitions in the BGL file at PATH.
+Uses the target charset from the dictionary metadata, falling
+back to UTF-8.  Result is cached."
+  (or (gethash path johnson-bgl--charset-cache)
+      (let* ((buf (johnson-bgl--get-buffer path))
+             (data (with-current-buffer buf (buffer-string)))
+             (blocks (johnson-bgl--parse-blocks data))
+             (meta (johnson-bgl--parse-metadata-from-blocks data blocks))
+             (charset-code (plist-get meta :target-charset))
+             (coding (johnson-bgl--charset-coding-system charset-code)))
+        (puthash path coding johnson-bgl--charset-cache)
+        coding)))
+
 ;;;; Entry retrieval
 
 (defun johnson-bgl-retrieve-entry (path byte-offset byte-size)
@@ -426,8 +445,9 @@ stream.  Returns the raw definition as a decoded string."
          (data (with-current-buffer buf (buffer-string)))
          (raw (substring data byte-offset (+ byte-offset byte-size))))
     ;; Strip BGL control sequences before decoding.
-    (let ((cleaned (johnson-bgl--strip-control-codes raw)))
-      (decode-coding-string cleaned 'utf-8))))
+    (let* ((cleaned (johnson-bgl--strip-control-codes raw))
+           (coding (johnson-bgl--definition-coding-system path)))
+      (decode-coding-string cleaned coding))))
 
 ;;;; Control code stripping
 
@@ -521,7 +541,8 @@ DATA is a decoded string containing HTML content."
                (kill-buffer buf)))
            johnson-bgl--cache-buffers)
   (clrhash johnson-bgl--cache-buffers)
-  (clrhash johnson-bgl--metadata-cache))
+  (clrhash johnson-bgl--metadata-cache)
+  (clrhash johnson-bgl--charset-cache))
 
 ;;;; Format registration
 

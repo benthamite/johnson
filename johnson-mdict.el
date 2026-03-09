@@ -740,9 +740,38 @@ Returns the entry data as a decoded string."
 
 ;;;; Entry rendering
 
+(defconst johnson-mdict--max-link-depth 5
+  "Maximum depth for following @@@LINK= redirects.")
+
+(defun johnson-mdict--resolve-link (path target &optional depth)
+  "Resolve @@@LINK= TARGET in dictionary at PATH.
+Returns the final entry data string, following up to
+`johnson-mdict--max-link-depth' redirects.  DEPTH tracks
+recursion level."
+  (let ((d (or depth 0)))
+    (when (>= d johnson-mdict--max-link-depth)
+      (error "MDict: @@@LINK= redirect loop for %s" target))
+    ;; Look up the target headword in the keyword index.
+    (let* ((entries (johnson-mdict--parse-keyword-section path))
+           (match (cl-find target entries :key #'car :test #'string=)))
+      (if (not match)
+          (format "Link target \"%s\" not found" target)
+        (let ((raw (johnson-mdict-retrieve-entry path (cdr match) 0)))
+          (if (string-prefix-p "@@@LINK=" raw)
+              (johnson-mdict--resolve-link
+               path (substring raw 8) (1+ d))
+            raw))))))
+
 (defun johnson-mdict-render-entry (data)
   "Render MDict entry DATA into the current buffer.
-DATA is a decoded string containing HTML content."
+DATA is a decoded string containing HTML content.
+If DATA starts with `@@@LINK=', the target entry is resolved
+and rendered instead."
+  ;; Follow @@@LINK= redirects.
+  (when (string-prefix-p "@@@LINK=" data)
+    (setq data (johnson-mdict--resolve-link
+                johnson-mdict--current-dict-path
+                (substring data 8))))
   (let ((start (point))
         (johnson-html--current-dict-dir johnson-mdict--current-dict-dir)
         (johnson-html--current-dict-path johnson-mdict--current-dict-path)
