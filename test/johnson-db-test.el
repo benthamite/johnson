@@ -290,6 +290,38 @@ Also binds `dict-path' to a dummy path.  Cleans up afterwards."
         (johnson-db-close db1)
         (johnson-db-close db2)))))
 
+(ert-deftest johnson-db-test-rebuild-completion-index-case-variants ()
+  "Dict count aggregates across case variants of the same normalized form."
+  (johnson-db-test--with-temp-cache
+    (let* ((dict1 "/tmp/johnson-comp-case-1.dsl")
+           (dict2 "/tmp/johnson-comp-case-2.dsl")
+           (dict3 "/tmp/johnson-comp-case-3.dsl")
+           (db1 (johnson-db-open dict1))
+           (db2 (johnson-db-open dict2))
+           (db3 (johnson-db-open dict3)))
+      (unwind-protect
+          (progn
+            ;; dict1 has "Beatrice", dict2 has "beatrice", dict3 has "BEATRICE"
+            (johnson-db-insert-entry db1 "Beatrice" 100 50)
+            (johnson-db-insert-entry db2 "beatrice" 200 60)
+            (johnson-db-insert-entry db3 "BEATRICE" 300 70)
+            (let ((count (johnson-db-rebuild-completion-index
+                          (list dict1 dict2 dict3))))
+              (should (= count 3))  ; 3 distinct headword strings
+              (let ((comp-db (johnson-db-get-completion-db)))
+                (unwind-protect
+                    (let ((results (johnson-db-query-completion comp-db "beatrice")))
+                      ;; All three variants should appear.
+                      (should (= (length results) 3))
+                      ;; Each variant should report dict_count = 3
+                      ;; (all 3 dicts have the same normalized form).
+                      (dolist (row results)
+                        (should (= (cadr row) 3))))
+                  (johnson-db-close-completion-db)))))
+        (johnson-db-close db1)
+        (johnson-db-close db2)
+        (johnson-db-close db3)))))
+
 (ert-deftest johnson-db-test-rebuild-completion-index-empty ()
   "Rebuilding with no dictionaries produces zero headwords."
   (johnson-db-test--with-temp-cache
