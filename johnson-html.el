@@ -187,6 +187,12 @@ Replaces tags with text properties."
             (delete-region script-start script-end)
             (setq end (- end (- script-end script-start)))
             (goto-char script-start)))))
+    ;; Strip <link> tags (CSS references, not useful in Emacs).
+    (goto-char start)
+    (while (re-search-forward "<link[^>]*/?>\\|<link[^>]*>" end t)
+      (let ((len (- (match-end 0) (match-beginning 0))))
+        (replace-match "")
+        (setq end (- end len))))
     ;; Replace <br>, <br/>, <hr>, <hr/> with newlines.
     (goto-char start)
     (while (re-search-forward "<br\\s-*/?>\\|<hr\\s-*/?>" end t)
@@ -281,9 +287,15 @@ Replaces tags with text properties."
         (when (markerp (nth 1 entry))
           (set-marker (nth 1 entry) nil)))
       ;; Decode HTML entities after all tag processing.
-      (let ((result (johnson-html--decode-entities start (marker-position end-marker))))
+      (let ((new-end (johnson-html--decode-entities start (marker-position end-marker))))
         (set-marker end-marker nil)
-        result))))
+        ;; Collapse runs of 3+ newlines (from nested div/p tags) to 2.
+        (goto-char start)
+        (while (re-search-forward "\n\\{3,\\}" new-end t)
+          (let ((len (- (match-end 0) (match-beginning 0))))
+            (replace-match "\n\n")
+            (setq new-end (- new-end len -2))))
+        new-end))))
 
 (provide 'johnson-html)
 
