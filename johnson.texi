@@ -175,7 +175,7 @@ supports Info-like navigation: press @samp{n} and @samp{p} to move between @*
 sections, @samp{TAB} to collapse or expand a section, @samp{RET} to follow @*
 cross-references, @samp{l} and @samp{r} to navigate back and forward through @*
 lookup history, @samp{I} to toggle inline images, @samp{S} to search within @*
-definitions, @samp{m} to bookmark an entry, @samp{M} to remove a bookmark, and @*
+definitions, @samp{b} to bookmark an entry, @samp{M} to remove a bookmark, and @*
 @samp{H} to browse the full lookup history. @*
 
 Dictionaries are organized into groups by language pair @*
@@ -630,7 +630,7 @@ history buffer. @*
 @findex johnson-menu
 The command @code{johnson-menu} opens a transient dispatch menu that @*
 provides quick access to all major johnson commands and toggles.  It @*
-is bound to @samp{?} in @code{johnson-mode}. @*
+is bound to @samp{m} in @code{johnson-mode}. @*
 
 The menu is organized into the following groups: @*
 
@@ -674,7 +674,7 @@ Clear history (@code{johnson-history-clear}). @*
 @subheading Bookmarks
 
 @table @samp
-@item m
+@item b
 Add bookmark (@code{johnson-bookmark-add}). @*
 @item M
 Remove bookmark (@code{johnson-bookmark-remove}). @*
