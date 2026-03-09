@@ -266,20 +266,30 @@ DICT-PATHS is a list of dictionary file paths whose sqlite indexes
 should be aggregated.  Returns the total number of unique headwords."
   (johnson-db--ensure-cache-directory)
   (johnson-db-close-completion-db)
-  (let ((agg (make-hash-table :test #'equal))
+  (let ((norm-count (make-hash-table :test #'equal))
+        (all-headwords (make-hash-table :test #'equal))
         (db (sqlite-open (johnson-db-completion-index-path))))
     (unwind-protect
         (progn
           ;; Collect headwords from all per-dict databases.
+          ;; Count dictionaries by *normalized* form so the annotation
+          ;; matches what the normalized lookup will actually find.
           (dolist (path dict-paths)
             (let ((idx (johnson-db--index-path path)))
               (when (file-exists-p idx)
-                (let ((per-db (sqlite-open idx)))
+                (let ((per-db (sqlite-open idx))
+                      (seen (make-hash-table :test #'equal)))
                   (unwind-protect
                       (dolist (row (sqlite-select per-db
                                     "SELECT DISTINCT headword FROM entries"))
-                        (let ((hw (car row)))
-                          (puthash hw (1+ (gethash hw agg 0)) agg)))
+                        (let* ((hw (car row))
+                               (norm (johnson-db-normalize hw)))
+                          (puthash hw t all-headwords)
+                          ;; Count each normalized form at most once per dict.
+                          (unless (gethash norm seen)
+                            (puthash norm t seen)
+                            (puthash norm (1+ (gethash norm norm-count 0))
+                                     norm-count))))
                     (sqlite-close per-db))))))
           ;; Recreate the table and bulk-insert inside a single transaction.
           (condition-case err
@@ -291,19 +301,21 @@ should be aggregated.  Returns the total number of unique headwords."
                      headword TEXT NOT NULL,
                      headword_normalized TEXT NOT NULL,
                      dict_count INTEGER NOT NULL DEFAULT 1)")
-                (maphash (lambda (hw count)
-                           (sqlite-execute db
-                             "INSERT INTO completions (headword, headword_normalized, dict_count)
-                              VALUES (?, ?, ?)"
-                             (list hw (johnson-db-normalize hw) count)))
-                         agg)
+                (maphash (lambda (hw _)
+                           (let* ((norm (johnson-db-normalize hw))
+                                  (count (gethash norm norm-count 0)))
+                             (sqlite-execute db
+                               "INSERT INTO completions (headword, headword_normalized, dict_count)
+                                VALUES (?, ?, ?)"
+                               (list hw norm count))))
+                         all-headwords)
                 (sqlite-execute db
                   "CREATE INDEX idx_comp_normalized ON completions(headword_normalized)")
                 (sqlite-execute db "COMMIT"))
             (error
              (ignore-errors (sqlite-execute db "ROLLBACK"))
              (signal (car err) (cdr err))))
-          (hash-table-count agg))
+          (hash-table-count all-headwords))
       (sqlite-close db))))
 
 (defun johnson-db-query-completion (db prefix &optional limit)
