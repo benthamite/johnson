@@ -166,7 +166,7 @@ supports Info-like navigation: press ‘n’ and ‘p’ to move between
 sections, ‘TAB’ to collapse or expand a section, ‘RET’ to follow
 cross-references, ‘l’ and ‘r’ to navigate back and forward through
 lookup history, ‘I’ to toggle inline images, ‘S’ to search within
-definitions, ‘m’ to bookmark an entry, ‘M’ to remove a bookmark, and
+definitions, ‘b’ to bookmark an entry, ‘M’ to remove a bookmark, and
 ‘H’ to browse the full lookup history.
 
    Dictionaries are organized into groups by language pair
@@ -612,7 +612,7 @@ File: johnson.info,  Node: Transient menu,  Next: Looking up words,  Up: Command
 
 The command ‘johnson-menu’ opens a transient dispatch menu that
 provides quick access to all major johnson commands and toggles.  It
-is bound to ‘?’ in ‘johnson-mode’.
+is bound to ‘m’ in ‘johnson-mode’.
 
    The menu is organized into the following groups:
 
@@ -653,7 +653,7 @@ History
 Bookmarks
 ---------
 
-‘m’
+‘b’
      Add bookmark (‘johnson-bookmark-add’).
 ‘M’
      Remove bookmark (‘johnson-bookmark-remove’).

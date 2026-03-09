@@ -72,7 +72,7 @@ supports Info-like navigation: press =n= and =p= to move between
 sections, =TAB= to collapse or expand a section, =RET= to follow
 cross-references, =l= and =r= to navigate back and forward through
 lookup history, =I= to toggle inline images, =S= to search within
-definitions, =m= to bookmark an entry, =M= to remove a bookmark, and
+definitions, =b= to bookmark an entry, =M= to remove a bookmark, and
 =H= to browse the full lookup history.
 
 Dictionaries are organized into groups by language pair
@@ -889,7 +889,7 @@ entry at point for later reference.  The bookmark records the
 headword, dictionary name, and current date.  Bookmarks are
 persisted to ~johnson-bookmarks-file~ ([[#h:bookmarks][Bookmarks]]).
 
-It is bound to =m= in ~johnson-mode~.
+It is bound to =b= in ~johnson-mode~.
 
 The command ~johnson-bookmark-remove~ removes the bookmark for
 the dictionary entry at point.  If the entry is not bookmarked, the
