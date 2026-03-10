@@ -67,6 +67,7 @@
 (declare-function johnson-clear-index "johnson")
 (declare-function johnson-clear-resource-cache "johnson")
 (declare-function johnson-close-caches "johnson")
+(declare-function johnson-browse-dictionary "johnson")
 (declare-function johnson-eldoc-mode "johnson")
 (declare-function johnson-scan-mode "johnson")
 
@@ -193,7 +194,8 @@
     ("g" "Refresh" johnson-refresh)
     ("w" "Copy entry" johnson-copy-entry)
     ("W" "Copy dictionary name" johnson-copy-dictionary-name)
-    ("a" "Play audio" johnson-play-audio-at-point)]
+    ("a" "Play audio" johnson-play-audio-at-point)
+    ("D" "Browse dictionary dir" johnson-browse-dictionary)]
    ["Sections"
     ("TAB" "Toggle section" johnson-toggle-section)
     ("<backtab>" "Toggle all sections" johnson-toggle-all-sections)

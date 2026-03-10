@@ -1,4 +1,4 @@
-This is johnson.info, produced by makeinfo version 7.2 from
+This is johnson.info, produced by makeinfo version 7.3 from
 johnson.texi.
 
 INFO-DIR-SECTION Emacs misc features
@@ -51,6 +51,7 @@ Commands
 * Following cross-references::
 * Navigation history::
 * Copying entries::
+* Browsing dictionary directory::
 * Dictionary list::
 * Cache management::
 * Toggling images::
@@ -595,6 +596,7 @@ File: johnson.info,  Node: Commands,  Next: Functions,  Prev: User options,  Up:
 * Following cross-references::
 * Navigation history::
 * Copying entries::
+* Browsing dictionary directory::
 * Dictionary list::
 * Cache management::
 * Toggling images::
@@ -931,7 +933,7 @@ push suppressed (via the internal ‘johnson--navigating-history’ flag),
 preventing duplicate entries from cluttering the history.
 
 
-File: johnson.info,  Node: Copying entries,  Next: Dictionary list,  Prev: Navigation history,  Up: Commands
+File: johnson.info,  Node: Copying entries,  Next: Browsing dictionary directory,  Prev: Navigation history,  Up: Commands
 
 3.8 Copying entries
 ===================
@@ -964,10 +966,24 @@ found, it displays "No dictionary section at point".
    It is bound to ‘W’ in ‘johnson-mode’.
 
 
-File: johnson.info,  Node: Dictionary list,  Next: Cache management,  Prev: Copying entries,  Up: Commands
+File: johnson.info,  Node: Browsing dictionary directory,  Next: Dictionary list,  Prev: Copying entries,  Up: Commands
 
-3.9 Dictionary list
-===================
+3.9 Browsing dictionary directory
+=================================
+
+The command ‘johnson-browse-dictionary’ opens Dired on the directory
+containing the dictionary file for the section at point.  This is useful
+
+for inspecting dictionary resources, ancillary files, or the directory
+structure on disk.
+
+   It is bound to ‘D’ in the transient menu (‘johnson-menu’).
+
+
+File: johnson.info,  Node: Dictionary list,  Next: Cache management,  Prev: Browsing dictionary directory,  Up: Commands
+
+3.10 Dictionary list
+====================
 
 The command ‘johnson-list-dictionaries’ opens a ‘*johnson-dictionaries*’
 
@@ -997,7 +1013,7 @@ index is stale.  It is bound to ‘RET’ in ‘johnson-dict-list-mode’.
 
 File: johnson.info,  Node: Cache management,  Next: Toggling images,  Prev: Dictionary list,  Up: Commands
 
-3.10 Cache management
+3.11 Cache management
 =====================
 
 The command ‘johnson-close-caches’ kills all dictionary file cache
@@ -1023,7 +1039,7 @@ removing all audio files extracted from companion zip archives
 
 File: johnson.info,  Node: Toggling images,  Next: Searching definitions,  Prev: Cache management,  Up: Commands
 
-3.11 Toggling images
+3.12 Toggling images
 ====================
 
 The command ‘johnson-toggle-images’ toggles the display of
@@ -1037,7 +1053,7 @@ buffer with images visible.  The toggle affects the value of
 
 File: johnson.info,  Node: Searching definitions,  Next: Eldoc integration commands,  Prev: Toggling images,  Up: Commands
 
-3.12 Searching definitions
+3.13 Searching definitions
 ==========================
 
 The command ‘johnson-search’ performs a full-text search across
@@ -1056,7 +1072,7 @@ command signals an error.
 
 File: johnson.info,  Node: Eldoc integration commands,  Next: Scan-popup mode commands,  Prev: Searching definitions,  Up: Commands
 
-3.13 Eldoc integration
+3.14 Eldoc integration
 ======================
 
 The command ‘johnson-eldoc-mode’ is a buffer-local minor mode
@@ -1074,7 +1090,7 @@ lighter is ‘" JDict"’.
 
 File: johnson.info,  Node: Scan-popup mode commands,  Next: Managing bookmarks,  Prev: Eldoc integration commands,  Up: Commands
 
-3.14 Scan-popup mode
+3.15 Scan-popup mode
 ====================
 
 The command ‘johnson-scan-mode’ is a global minor mode that
@@ -1095,7 +1111,7 @@ echo area.
 
 File: johnson.info,  Node: Managing bookmarks,  Next: Browsing history,  Prev: Scan-popup mode commands,  Up: Commands
 
-3.15 Managing bookmarks
+3.16 Managing bookmarks
 =======================
 
 The command ‘johnson-bookmark-add’ bookmarks the dictionary
@@ -1124,7 +1140,7 @@ Dictionary, and Date.
 
 File: johnson.info,  Node: Browsing history,  Prev: Managing bookmarks,  Up: Commands
 
-3.16 Browsing history
+3.17 Browsing history
 =====================
 
 The command ‘johnson-history-list’ opens a
@@ -1806,6 +1822,8 @@ File: johnson.info,  Node: Function index,  Next: Variable index,  Up: Indices
 * johnson-bookmark-add:                  Managing bookmarks.   (line  6)
 * johnson-bookmark-list:                 Managing bookmarks.   (line  6)
 * johnson-bookmark-remove:               Managing bookmarks.   (line  6)
+* johnson-browse-dictionary:             Browsing dictionary directory.
+                                                               (line  6)
 * johnson-clear-resource-cache:          Audio playback.       (line 35)
 * johnson-clear-resource-cache <1>:      Cache management.     (line 21)
 * johnson-close-caches:                  Cache management.     (line  6)
@@ -1927,69 +1945,70 @@ File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
 
 Tag Table:
 Node: Top215
-Node: Overview2028
-Node: User options5764
-Node: Dictionary discovery6195
-Node: Search scope and groups7167
-Node: Cross-reference scope8842
-Node: Display ordering9553
-Node: Lookup history10352
-Node: Cache directory11146
-Node: Audio playback12092
-Node: DICT protocol14305
-Node: Images15379
-Node: Wildcard search16058
-Node: Full-text search16875
-Node: Eldoc integration17600
-Node: Scan-popup mode18160
-Node: Bookmarks19352
-Node: History buffer19958
-Node: Commands20764
-Node: Transient menu21280
-Node: Looking up words24414
-Node: Indexing dictionaries26724
-Node: Managing groups and scope28403
-Node: Navigating the results buffer29488
-Node: Following cross-references30814
-Node: Navigation history31724
-Node: Copying entries33134
-Node: Dictionary list34388
-Node: Cache management35801
-Node: Toggling images36728
-Node: Searching definitions37235
-Node: Eldoc integration commands37967
-Node: Scan-popup mode commands38652
-Node: Managing bookmarks39411
-Node: Browsing history40445
-Node: Functions41289
-Node: Format registration41720
-Node: Completion at point43481
-Node: Database lifecycle44384
-Node: Metadata storage45284
-Node: Headword normalization46458
-Node: Entry insertion47296
-Node: Querying entries48309
-Node: Staleness detection and reset49619
-Node: DSL format detection50628
-Node: DSL metadata parsing51604
-Node: DSL index building52617
-Node: DSL entry retrieval54648
-Node: DSL entry rendering55554
-Node: Faces57660
-Node: Text styling faces58202
-Node: Content type faces58907
-Node: Link faces59743
-Node: Section header face60403
-Node: Color faces60992
-Node: Roadmap62379
-Node: Version 01 --- DSL62800
-Node: Version 02 --- StarDict and compressed DSL63800
-Node: Version 03 --- MDict and DSL abbreviations65093
-Node: Version 04 (current)65579
-Node: Future features66937
-Node: Indices67172
-Node: Function index67305
-Node: Variable index72352
+Node: Overview2062
+Node: User options5798
+Node: Dictionary discovery6229
+Node: Search scope and groups7201
+Node: Cross-reference scope8876
+Node: Display ordering9587
+Node: Lookup history10386
+Node: Cache directory11180
+Node: Audio playback12126
+Node: DICT protocol14339
+Node: Images15413
+Node: Wildcard search16092
+Node: Full-text search16909
+Node: Eldoc integration17634
+Node: Scan-popup mode18194
+Node: Bookmarks19386
+Node: History buffer19992
+Node: Commands20798
+Node: Transient menu21348
+Node: Looking up words24482
+Node: Indexing dictionaries26792
+Node: Managing groups and scope28471
+Node: Navigating the results buffer29556
+Node: Following cross-references30882
+Node: Navigation history31792
+Node: Copying entries33202
+Node: Browsing dictionary directory34470
+Node: Dictionary list34971
+Node: Cache management36400
+Node: Toggling images37327
+Node: Searching definitions37834
+Node: Eldoc integration commands38566
+Node: Scan-popup mode commands39251
+Node: Managing bookmarks40010
+Node: Browsing history41044
+Node: Functions41888
+Node: Format registration42319
+Node: Completion at point44080
+Node: Database lifecycle44983
+Node: Metadata storage45883
+Node: Headword normalization47057
+Node: Entry insertion47895
+Node: Querying entries48908
+Node: Staleness detection and reset50218
+Node: DSL format detection51227
+Node: DSL metadata parsing52203
+Node: DSL index building53216
+Node: DSL entry retrieval55247
+Node: DSL entry rendering56153
+Node: Faces58259
+Node: Text styling faces58801
+Node: Content type faces59506
+Node: Link faces60342
+Node: Section header face61002
+Node: Color faces61591
+Node: Roadmap62978
+Node: Version 01 --- DSL63399
+Node: Version 02 --- StarDict and compressed DSL64399
+Node: Version 03 --- MDict and DSL abbreviations65692
+Node: Version 04 (current)66178
+Node: Future features67536
+Node: Indices67771
+Node: Function index67904
+Node: Variable index73096
 
 End Tag Table
 

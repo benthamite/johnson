@@ -1438,6 +1438,24 @@ dictionary whose section contains the link."
                (message "Copied dictionary name: %s" name))
       (message "No dictionary section at point"))))
 
+;;;; Browse dictionary directory
+
+(defun johnson-browse-dictionary ()
+  "Open Dired on the directory of the dictionary at point."
+  (interactive)
+  (unless (derived-mode-p 'johnson-mode)
+    (user-error "Not in a johnson buffer"))
+  (let ((name (or (get-text-property (point) 'johnson-section-header)
+                  (johnson--section-name-at (point)))))
+    (unless name
+      (user-error "No dictionary section at point"))
+    (let ((dict (cl-find name johnson--dictionaries
+                         :key (lambda (d) (plist-get d :name))
+                         :test #'equal)))
+      (unless dict
+        (user-error "Dictionary %s not found" name))
+      (dired (file-name-directory (plist-get dict :path))))))
+
 ;;;; Dictionary list
 
 (defvar johnson-dict-list-mode-map
