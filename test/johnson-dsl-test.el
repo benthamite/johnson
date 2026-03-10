@@ -416,5 +416,21 @@
     (let ((text (buffer-substring-no-properties (point-min) (point-max))))
       (should-not (string-match-p "\\\\" text)))))
 
+(ert-deftest johnson-dsl-test-render-escaped-brackets ()
+  "Escaped brackets \\=\\[ \\=\\] are unescaped and not consumed as tags."
+  (with-temp-buffer
+    (johnson-dsl-render-entry "\t[m1]\\[haus\\]")
+    (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+      (should (string-match-p "\\[haus\\]" text))
+      (should-not (string-match-p "\\\\" text)))))
+
+(ert-deftest johnson-dsl-test-render-escaped-brackets-uppercase ()
+  "Escaped brackets with uppercase content are preserved."
+  (with-temp-buffer
+    (johnson-dsl-render-entry "\t[m1]\\[SER un DIP uh tee\\]")
+    (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+      (should (string-match-p "\\[SER un DIP uh tee\\]" text))
+      (should-not (string-match-p "\\\\" text)))))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here
