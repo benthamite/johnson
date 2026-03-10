@@ -1434,6 +1434,51 @@ The face ~johnson-color-orange-face~ is used for =orange= and
 
 Any unrecognized color name falls back to ~johnson-color-default-face~.
 
+* Tips
+:PROPERTIES:
+:CUSTOM_ID: h:tips
+:END:
+
+** Looking up words in PDF documents
+:PROPERTIES:
+:CUSTOM_ID: h:pdf-lookup
+:END:
+
+If you use =pdf-tools= for reading PDFs, you can look up words by
+double-clicking them.  The following snippet defines a minor mode
+that binds ~[double-mouse-1]~ to a command that extracts the word
+under the mouse cursor and passes it to ~johnson-lookup~:
+
+#+begin_src emacs-lisp
+(defun my-pdf-lookup-word-at-mouse (ev)
+  "Select word at mouse event EV and look it up with `johnson-lookup'."
+  (interactive "@e")
+  (let* ((posn (event-start ev))
+         (xy (posn-object-x-y posn))
+         (size (pdf-view-image-size))
+         (page (pdf-view-current-page))
+         (x (/ (car xy) (float (car size))))
+         (y (/ (cdr xy) (float (cdr size))))
+         (word (string-trim (pdf-info-gettext page (list x y x y) 'word))))
+    (setq pdf-view-active-region
+          (cons page (pdf-info-getselection page (list x y x y) 'word)))
+    (pdf-view-display-region pdf-view-active-region)
+    (when (string-empty-p word)
+      (user-error "No word found at click position"))
+    (johnson-lookup word)))
+
+(defvar my-pdf-lookup-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [double-mouse-1] 'my-pdf-lookup-word-at-mouse)
+    map))
+
+(define-minor-mode my-pdf-lookup-mode
+  "Minor mode for looking up words in PDFs by double-clicking."
+  :keymap my-pdf-lookup-mode-map)
+
+(add-hook 'pdf-view-mode-hook #'my-pdf-lookup-mode)
+#+end_src
+
 * Roadmap
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap
