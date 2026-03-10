@@ -650,6 +650,10 @@ Inserts the rendered text at point."
     ;; Strip standalone backslash lines (used as visual separators in some
     ;; DSL dictionaries, e.g. Oxford Advanced Pronunciation Dictionary).
     (setq text (replace-regexp-in-string "^\\\\$" "" text))
+    ;; Replace escaped brackets with placeholders before tag processing
+    ;; so that \[...\] is not falsely consumed as a DSL tag.
+    (setq text (replace-regexp-in-string "\\\\\\[" "\0LBRK\0" text))
+    (setq text (replace-regexp-in-string "\\\\\\]" "\0RBRK\0" text))
     ;; Process {{...}} media references: render images, strip others.
     (setq text
           (replace-regexp-in-string
@@ -666,7 +670,8 @@ Inserts the rendered text at point."
     ;; Insert and parse tags in-place.
     (let ((start (point))
           (tag-re "\\[/?[a-z!*'][^]]*\\]")
-          (stack nil))
+          (stack nil)
+          (case-fold-search nil))
       (insert text)
       (let ((end (copy-marker (point) t)))
         ;; First pass: handle <<...>> cross-references.
@@ -757,8 +762,16 @@ Inserts the rendered text at point."
                           (region-args (nth 2 entry)))
                       (johnson-dsl--apply-tag tag-name region-start (point)
                                               region-args)))))))))
-        ;; Unescape DSL backslash sequences that couldn't be handled before
-        ;; tag processing (brackets would cause false tag matches).
+        ;; Restore escaped bracket placeholders.
+        (save-excursion
+          (goto-char start)
+          (while (search-forward "\0LBRK\0" end t)
+            (replace-match "[" t t)))
+        (save-excursion
+          (goto-char start)
+          (while (search-forward "\0RBRK\0" end t)
+            (replace-match "]" t t)))
+        ;; Unescape remaining DSL backslash sequences.
         (save-excursion
           (goto-char start)
           (while (re-search-forward "\\\\\\([][()<>{}~@\\\\]\\)" end t)

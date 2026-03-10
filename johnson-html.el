@@ -193,6 +193,16 @@ Replaces tags with text properties."
       (let ((len (- (match-end 0) (match-beginning 0))))
         (replace-match "")
         (setq end (- end len))))
+    ;; Strip HTML comments <!-- ... -->.
+    (goto-char start)
+    (while (re-search-forward "<!--" end t)
+      (let ((comment-start (match-beginning 0)))
+        (if (search-forward "-->" end t)
+            (let ((comment-end (point)))
+              (delete-region comment-start comment-end)
+              (setq end (- end (- comment-end comment-start)))
+              (goto-char comment-start))
+          (goto-char end))))
     ;; Replace <br>, <br/>, <hr>, <hr/> with newlines.
     (goto-char start)
     (while (re-search-forward "<br\\s-*/?>\\|<hr\\s-*/?>" end t)

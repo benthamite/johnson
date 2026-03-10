@@ -239,6 +239,22 @@
       (should-not (string-match-p "script" text))
       (should-not (string-match-p "alert" text)))))
 
+(ert-deftest johnson-html-test-strip-comment ()
+  "Strips HTML comments <!-- ... -->."
+  (with-temp-buffer
+    (insert "before<!--s054951a-->after")
+    (johnson-html-render-region (point-min) (point-max))
+    (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+      (should (equal text "beforeafter")))))
+
+(ert-deftest johnson-html-test-strip-comment-multiline ()
+  "Strips multiline HTML comments."
+  (with-temp-buffer
+    (insert "before<!-- multi\nline\ncomment -->after")
+    (johnson-html-render-region (point-min) (point-max))
+    (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+      (should (equal text "beforeafter")))))
+
 ;;;; Nested tags
 
 (ert-deftest johnson-html-test-nested-tags ()
