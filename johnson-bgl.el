@@ -221,30 +221,31 @@ Returns a plist with :name, :source-lang, :target-lang,
       (let ((btype (nth 0 block))
             (payload-start (nth 1 block))
             (payload-length (nth 2 block)))
-        ;; Type 3 blocks: byte 0 is a flag (always 0x00), byte 1 is
-        ;; the property ID, and the data follows from byte 2 onward.
-        (when (and (= btype 3) (> payload-length 1))
-          (let ((prop-id (aref data (+ payload-start 1))))
+        ;; Type 3 blocks: byte 0 is the property ID and the value
+        ;; follows from byte 1 onward.
+        (when (and (= btype 3) (>= payload-length 1))
+          (let ((prop-id (aref data payload-start)))
             (pcase prop-id
               (#x01 ; title (keep raw bytes; decode after charset is known)
-               (setq name-raw (substring data (+ payload-start 2)
-                                         (+ payload-start payload-length))))
+               (when (> payload-length 1)
+                 (setq name-raw (substring data (+ payload-start 1)
+                                           (+ payload-start payload-length)))))
               (#x07 ; source language
-               (when (>= payload-length 6)
+               (when (>= payload-length 2)
                  (setq source-lang
                        (johnson-bgl--language-name
-                        (aref data (+ payload-start 5))))))
+                        (aref data (+ payload-start 1))))))
               (#x08 ; target language
-               (when (>= payload-length 6)
+               (when (>= payload-length 2)
                  (setq target-lang
                        (johnson-bgl--language-name
-                        (aref data (+ payload-start 5))))))
+                        (aref data (+ payload-start 1))))))
               (#x1A ; source charset
-               (when (>= payload-length 3)
-                 (setq source-charset (aref data (+ payload-start 2)))))
+               (when (>= payload-length 2)
+                 (setq source-charset (aref data (+ payload-start 1)))))
               (#x1B ; target charset
-               (when (>= payload-length 3)
-                 (setq target-charset (aref data (+ payload-start 2))))))))))
+               (when (>= payload-length 2)
+                 (setq target-charset (aref data (+ payload-start 1))))))))))
     (list :name (if name-raw
                     (decode-coding-string
                      name-raw
