@@ -212,7 +212,7 @@ DATA is a unibyte string."
   "Extract metadata from BGL block list BLOCKS with DATA.
 Returns a plist with :name, :source-lang, :target-lang,
 :source-charset, and :target-charset."
-  (let ((name nil)
+  (let ((name-raw nil)
         (source-lang nil)
         (target-lang nil)
         (source-charset nil)
@@ -221,31 +221,36 @@ Returns a plist with :name, :source-lang, :target-lang,
       (let ((btype (nth 0 block))
             (payload-start (nth 1 block))
             (payload-length (nth 2 block)))
-        (when (and (= btype 3) (> payload-length 0))
-          (let ((subtype (aref data payload-start)))
-            (pcase subtype
-              (#x01 ; title
-               (setq name (decode-coding-string
-                           (substring data (1+ payload-start)
-                                      (+ payload-start payload-length))
-                           'utf-8)))
+        ;; Type 3 blocks: byte 0 is a flag (always 0x00), byte 1 is
+        ;; the property ID, and the data follows from byte 2 onward.
+        (when (and (= btype 3) (> payload-length 1))
+          (let ((prop-id (aref data (+ payload-start 1))))
+            (pcase prop-id
+              (#x01 ; title (keep raw bytes; decode after charset is known)
+               (setq name-raw (substring data (+ payload-start 2)
+                                         (+ payload-start payload-length))))
               (#x07 ; source language
-               (when (>= payload-length 2)
+               (when (>= payload-length 6)
                  (setq source-lang
                        (johnson-bgl--language-name
-                        (aref data (1+ payload-start))))))
+                        (aref data (+ payload-start 5))))))
               (#x08 ; target language
-               (when (>= payload-length 2)
+               (when (>= payload-length 6)
                  (setq target-lang
                        (johnson-bgl--language-name
-                        (aref data (1+ payload-start))))))
+                        (aref data (+ payload-start 5))))))
               (#x1A ; source charset
-               (when (>= payload-length 2)
-                 (setq source-charset (aref data (1+ payload-start)))))
+               (when (>= payload-length 3)
+                 (setq source-charset (aref data (+ payload-start 2)))))
               (#x1B ; target charset
-               (when (>= payload-length 2)
-                 (setq target-charset (aref data (1+ payload-start))))))))))
-    (list :name (or name "")
+               (when (>= payload-length 3)
+                 (setq target-charset (aref data (+ payload-start 2))))))))))
+    (list :name (if name-raw
+                    (decode-coding-string
+                     name-raw
+                     (johnson-bgl--charset-coding-system
+                      (or source-charset #x41)))
+                  "")
           :source-lang (or source-lang "")
           :target-lang (or target-lang "")
           :source-charset (or source-charset #x41)
