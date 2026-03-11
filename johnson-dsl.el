@@ -24,6 +24,7 @@
 (declare-function johnson-insert-audio-button "johnson")
 (declare-function johnson--image-file-p "johnson")
 (declare-function johnson--insert-image "johnson")
+(declare-function johnson--resolve-audio-file "johnson")
 
 ;;;; Faces
 
@@ -671,14 +672,17 @@ buffer (1-based offset, suitable for `buffer-substring-no-properties')."
              ;; Blank line: skip.
              ((looking-at "^[ \t]*$")
               (forward-line 1))
-             ;; Indented line: part of an entry body.
-             ((looking-at "^[\t ]")
+             ;; Body line: indented, or flush-left starting with `['
+             ;; (DSL headwords never start with unescaped `['; some
+             ;; dictionaries omit tab indentation and use `[m' tags
+             ;; at column 0 for body lines).
+             ((looking-at "^\\(?:[\t ]\\|\\[\\)")
               (unless body-start
                 (setq body-start (point)))
               (forward-line 1)
-              ;; Consume remaining indented lines.
+              ;; Consume remaining body lines.
               (while (and (not (eobp))
-                          (looking-at "^[\t ]"))
+                          (looking-at "^\\(?:[\t ]\\|\\[\\)"))
                 (forward-line 1))
               ;; End of body.  Trim trailing blank lines.
               (let ((body-end (point)))
@@ -734,6 +738,8 @@ positions in the decoded buffer (1-based offset)."
 (defun johnson-dsl-render-entry (raw-text)
   "Render DSL markup in RAW-TEXT into the current buffer with text properties.
 Inserts the rendered text at point."
+  ;; Strip carriage returns (common in UTF-16LE dictzip files).
+  (setq raw-text (string-replace "\r" "" raw-text))
   ;; Strip leading tab/indentation from each line.
   (let* ((lines (split-string raw-text "\n"))
          (stripped (mapcar (lambda (line)
@@ -742,6 +748,10 @@ Inserts the rendered text at point."
                               line))
                           lines))
          (text (string-join stripped "\n")))
+    ;; Replace non-breaking spaces with regular spaces.  Some DSL
+    ;; dictionaries use U+00A0 for indentation, which Emacs highlights
+    ;; via `nobreak-space' face, producing visible underlines.
+    (setq text (string-replace "\u00a0" " " text))
     ;; Unescape backslash-space sequences (DSL uses `\ ' for literal spaces).
     (setq text (replace-regexp-in-string "\\\\ " " " text))
     ;; Strip standalone backslash lines (used as visual separators in some
@@ -839,14 +849,18 @@ Inserts the rendered text at point."
                       (delete-region tag-beg s-end)
                       (when (and (not (string-empty-p filename))
                                  johnson-dsl--current-dict-dir)
-                        (let ((path (expand-file-name
-                                     filename
-                                     johnson-dsl--current-dict-dir)))
-                          (if (and (fboundp 'johnson--image-file-p)
-                                   (johnson--image-file-p path))
-                              (johnson--insert-image path)
-                            (johnson-insert-audio-button
-                             path nil johnson-dsl--current-dict-path))))))))
+                        (let* ((path (expand-file-name
+                                      filename
+                                      johnson-dsl--current-dict-dir))
+                               (resolved
+                                (johnson--resolve-audio-file
+                                 path johnson-dsl--current-dict-path)))
+                          (when resolved
+                            (if (and (fboundp 'johnson--image-file-p)
+                                     (johnson--image-file-p resolved))
+                                (johnson--insert-image resolved)
+                              (johnson-insert-audio-button
+                               resolved nil johnson-dsl--current-dict-path)))))))))
                ;; Opening tags: push onto stack.
                ((not closing-p)
                 (push (list tag-name (point) tag-args) stack))
@@ -883,9 +897,13 @@ Inserts the rendered text at point."
               (delete-region m-beg m-end)
               (goto-char m-beg)
               (when johnson-dsl--current-dict-dir
-                (let ((path (expand-file-name
-                             filename johnson-dsl--current-dict-dir)))
-                  (johnson--insert-image path))))))
+                (let* ((path (expand-file-name
+                              filename johnson-dsl--current-dict-dir))
+                       (resolved
+                        (johnson--resolve-audio-file
+                         path johnson-dsl--current-dict-path)))
+                  (when resolved
+                    (johnson--insert-image resolved)))))))
         (set-marker end nil)))))
 
 (defun johnson-dsl--apply-tag (tag-name region-start region-end tag-args)

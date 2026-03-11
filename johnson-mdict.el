@@ -765,14 +765,26 @@ recursion level.  Uses the SQLite index for fast lookup."
       (johnson-db-close db)
       (if (not matches)
           (format "Link target \"%s\" not found" target)
-        (let* ((match (car matches))
-               (byte-offset (nth 1 match))
-               (byte-length (nth 2 match))
-               (raw (johnson-mdict-retrieve-entry path byte-offset byte-length)))
-          (if (string-prefix-p "@@@LINK=" raw)
-              (johnson-mdict--resolve-link
-               path (substring raw 8) (1+ d))
-            raw))))))
+        ;; Try each match; prefer a non-redirect entry to avoid loops
+        ;; when multiple entries share the same normalized headword.
+        (let ((non-redirect nil)
+              (first-redirect nil))
+          (dolist (match matches)
+            (let* ((byte-offset (nth 1 match))
+                   (byte-length (nth 2 match))
+                   (raw (johnson-mdict-retrieve-entry
+                         path byte-offset byte-length)))
+              (if (string-prefix-p "@@@LINK=" raw)
+                  (unless first-redirect
+                    (setq first-redirect raw))
+                (unless non-redirect
+                  (setq non-redirect raw)))))
+          (cond
+           (non-redirect non-redirect)
+           (first-redirect
+            (johnson-mdict--resolve-link
+             path (substring first-redirect 8) (1+ d)))
+           (t (format "Link target \"%s\" not found" target))))))))
 
 (defun johnson-mdict-render-entry (data)
   "Render MDict entry DATA into the current buffer.

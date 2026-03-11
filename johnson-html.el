@@ -266,6 +266,16 @@ Returns the new end position."
   "Process HTML tags in the region from START to END.
 Replaces tags with text properties."
   (save-excursion
+    ;; Strip carriage returns (common in some MDict/StarDict entries).
+    (goto-char start)
+    (while (search-forward "\r" end t)
+      (replace-match "")
+      (setq end (1- end)))
+    ;; Replace non-breaking spaces with regular spaces to avoid
+    ;; visible underlines from the `nobreak-space' face.
+    (goto-char start)
+    (while (search-forward "\u00a0" end t)
+      (replace-match " "))
     ;; Strip <style>...</style> and <script>...</script> blocks.
     (goto-char start)
     (while (re-search-forward "<style[^>]*>" end t)
