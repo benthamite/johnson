@@ -1780,9 +1780,20 @@ dictionary whose section contains the link."
 
 (defun johnson--goldendict-normalize (name)
   "Normalize NAME for fuzzy matching.
-Downcase, strip language tags like [en-en], collapse whitespace."
-  (let ((s (downcase name)))
+Decode XML entities, downcase, strip language tags like [en-en],
+collapse whitespace, and remove non-alphanumeric characters."
+  (let ((s name))
+    ;; Decode common XML/HTML entities.
+    (setq s (replace-regexp-in-string "&amp;" "&" s))
+    (setq s (replace-regexp-in-string "&apos;" "'" s))
+    (setq s (replace-regexp-in-string "&quot;" "\"" s))
+    (setq s (replace-regexp-in-string "&lt;" "<" s))
+    (setq s (replace-regexp-in-string "&gt;" ">" s))
+    (setq s (replace-regexp-in-string "&#[0-9]+;" "" s))
+    (setq s (downcase s))
     (setq s (replace-regexp-in-string "\\[[-a-z]+\\]" "" s))
+    ;; Strip everything except alphanumeric and space for loose comparison.
+    (setq s (replace-regexp-in-string "[^[:alnum:] ]" "" s))
     (setq s (string-trim (replace-regexp-in-string "[ \t]+" " " s)))
     s))
 
