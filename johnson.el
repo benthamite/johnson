@@ -1336,7 +1336,8 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
         (unless (equal name "Contents")
           (push (cons name pos) sections))))
     (if sections
-        (let* ((names (mapcar #'car (nreverse sections)))
+        (let* ((sections (nreverse sections))
+               (names (mapcar #'car sections))
                (chosen (completing-read "Jump to section: " names nil t)))
           (when-let* ((entry (assoc chosen sections)))
             (goto-char (cdr entry))))
