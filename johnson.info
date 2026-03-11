@@ -830,23 +830,19 @@ File: johnson.info,  Node: Managing groups and scope,  Next: Navigating the resu
 
 The command ‘johnson-select-group’ lets you choose the active dictionary
 
-group.  It presents a ‘completing-read’ prompt with all available groups
+group by source and target language.  It prompts you in two steps:
+first for the source language, then for the target language.  Each
+step offers an ‘<all>’ option, enabling flexible filtering.  For
+example, ‘<all> → French’ selects all dictionaries with
+French as the target language regardless of source, while
+‘Spanish → <all>’ selects all dictionaries with Spanish as
+the source language.  It is bound to ‘G’ in ‘johnson-mode’.
 
-plus an ‘"All"’ pseudo-group.  It is bound to ‘G’ in
-‘johnson-mode’.
-
-   Selecting ‘"All"’ sets the search scope to ‘all’, meaning lookups
-will
-search across every discovered dictionary.  Selecting a specific group
-sets the scope to ‘group’ and activates that group, restricting lookups
-to dictionaries within it.  If called from the results buffer, the
+   Selecting ‘<all>’ for both source and target sets the search scope
+to ‘all’, meaning lookups search across every discovered dictionary.
+Any other combination sets the scope to ‘group’, restricting lookups
+to matching dictionaries.  If called from the results buffer, the
 current lookup is automatically refreshed to reflect the new scope.
-
-   The available groups depend on your configuration.  If
-‘johnson-dictionary-groups’ is ‘nil’ (the default), groups are
-auto-detected from dictionary metadata as language pairs
-(*note Search scope and groups::).  If you have defined
-custom groups, those are used instead.
 
 
 File: johnson.info,  Node: Navigating the results buffer,  Next: Following cross-references,  Prev: Managing groups and scope,  Up: Commands
@@ -1967,48 +1963,48 @@ Node: Transient menu21348
 Node: Looking up words24482
 Node: Indexing dictionaries26792
 Node: Managing groups and scope28471
-Node: Navigating the results buffer29556
-Node: Following cross-references30882
-Node: Navigation history31792
-Node: Copying entries33202
-Node: Browsing dictionary directory34470
-Node: Dictionary list34971
-Node: Cache management36400
-Node: Toggling images37327
-Node: Searching definitions37834
-Node: Eldoc integration commands38566
-Node: Scan-popup mode commands39251
-Node: Managing bookmarks40010
-Node: Browsing history41044
-Node: Functions41888
-Node: Format registration42319
-Node: Completion at point44080
-Node: Database lifecycle44983
-Node: Metadata storage45883
-Node: Headword normalization47057
-Node: Entry insertion47895
-Node: Querying entries48908
-Node: Staleness detection and reset50218
-Node: DSL format detection51227
-Node: DSL metadata parsing52203
-Node: DSL index building53216
-Node: DSL entry retrieval55247
-Node: DSL entry rendering56153
-Node: Faces58259
-Node: Text styling faces58801
-Node: Content type faces59506
-Node: Link faces60342
-Node: Section header face61002
-Node: Color faces61591
-Node: Roadmap62978
-Node: Version 01 --- DSL63399
-Node: Version 02 --- StarDict and compressed DSL64399
-Node: Version 03 --- MDict and DSL abbreviations65692
-Node: Version 04 (current)66178
-Node: Future features67536
-Node: Indices67771
-Node: Function index67904
-Node: Variable index73096
+Node: Navigating the results buffer29561
+Node: Following cross-references30887
+Node: Navigation history31797
+Node: Copying entries33207
+Node: Browsing dictionary directory34475
+Node: Dictionary list34976
+Node: Cache management36405
+Node: Toggling images37332
+Node: Searching definitions37839
+Node: Eldoc integration commands38571
+Node: Scan-popup mode commands39256
+Node: Managing bookmarks40015
+Node: Browsing history41049
+Node: Functions41893
+Node: Format registration42324
+Node: Completion at point44085
+Node: Database lifecycle44988
+Node: Metadata storage45888
+Node: Headword normalization47062
+Node: Entry insertion47900
+Node: Querying entries48913
+Node: Staleness detection and reset50223
+Node: DSL format detection51232
+Node: DSL metadata parsing52208
+Node: DSL index building53221
+Node: DSL entry retrieval55252
+Node: DSL entry rendering56158
+Node: Faces58264
+Node: Text styling faces58806
+Node: Content type faces59511
+Node: Link faces60347
+Node: Section header face61007
+Node: Color faces61596
+Node: Roadmap62983
+Node: Version 01 --- DSL63404
+Node: Version 02 --- StarDict and compressed DSL64404
+Node: Version 03 --- MDict and DSL abbreviations65697
+Node: Version 04 (current)66183
+Node: Future features67541
+Node: Indices67776
+Node: Function index67909
+Node: Variable index73101
 
 End Tag Table
 
