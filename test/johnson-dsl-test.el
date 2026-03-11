@@ -432,5 +432,40 @@
       (should (string-match-p "\\[SER un DIP uh tee\\]" text))
       (should-not (string-match-p "\\\\" text)))))
 
+(ert-deftest johnson-dsl-test-color-darkmagenta ()
+  "Color name `darkmagenta' maps to violet, not the green default."
+  (should (eq (johnson-dsl--color-face "darkmagenta")
+              'johnson-color-violet-face)))
+
+(ert-deftest johnson-dsl-test-color-cadetblue ()
+  "Color name `cadetblue' maps to blue."
+  (should (eq (johnson-dsl--color-face "cadetblue")
+              'johnson-color-blue-face)))
+
+(ert-deftest johnson-dsl-test-color-darkcyan ()
+  "Color name `darkcyan' maps to blue."
+  (should (eq (johnson-dsl--color-face "darkcyan")
+              'johnson-color-blue-face)))
+
+(ert-deftest johnson-dsl-test-color-darkolivegreen ()
+  "Color name `darkolivegreen' maps to green."
+  (should (eq (johnson-dsl--color-face "darkolivegreen")
+              'johnson-color-green-face)))
+
+(ert-deftest johnson-dsl-test-render-transcription-tag ()
+  "The [t] tag applies italic face to transcription content."
+  (with-temp-buffer
+    (johnson-dsl-render-entry "\t[m1]\\[[t]eɪ[/t]\\]")
+    (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+      (should (string-match-p "\\[eɪ\\]" text)))
+    ;; Check that the transcription text has italic face.
+    (goto-char (point-min))
+    (let* ((bracket-pos (text-property-search-forward 'face 'johnson-italic-face
+                                                       (lambda (val prop)
+                                                         (if (listp prop)
+                                                             (memq val prop)
+                                                           (eq val prop))))))
+      (should bracket-pos))))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here

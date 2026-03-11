@@ -139,25 +139,119 @@
 ;;;; Color mapping
 
 (defconst johnson-dsl--color-alist
-  '(("green"      . johnson-color-green-face)
-    ("darkgreen"   . johnson-color-green-face)
-    ("red"         . johnson-color-red-face)
-    ("darkred"     . johnson-color-red-face)
-    ("crimson"     . johnson-color-red-face)
-    ("blue"        . johnson-color-blue-face)
-    ("darkblue"    . johnson-color-blue-face)
-    ("steelblue"   . johnson-color-blue-face)
-    ("gray"        . johnson-color-gray-face)
-    ("darkgray"    . johnson-color-gray-face)
-    ("dimgray"     . johnson-color-gray-face)
-    ("brown"       . johnson-color-brown-face)
-    ("saddlebrown" . johnson-color-brown-face)
-    ("violet"      . johnson-color-violet-face)
-    ("purple"      . johnson-color-violet-face)
-    ("darkviolet"  . johnson-color-violet-face)
-    ("orange"      . johnson-color-orange-face)
-    ("darkorange"  . johnson-color-orange-face))
+  '(;; Green
+    ("green"           . johnson-color-green-face)
+    ("darkgreen"       . johnson-color-green-face)
+    ("darkolivegreen"  . johnson-color-green-face)
+    ("darkseagreen"    . johnson-color-green-face)
+    ("forestgreen"     . johnson-color-green-face)
+    ("limegreen"       . johnson-color-green-face)
+    ("mediumseagreen"  . johnson-color-green-face)
+    ("olive"           . johnson-color-green-face)
+    ("olivedrab"       . johnson-color-green-face)
+    ("seagreen"        . johnson-color-green-face)
+    ("yellowgreen"     . johnson-color-green-face)
+    ;; Red
+    ("red"             . johnson-color-red-face)
+    ("darkred"         . johnson-color-red-face)
+    ("crimson"         . johnson-color-red-face)
+    ("firebrick"       . johnson-color-red-face)
+    ("indianred"       . johnson-color-red-face)
+    ("lightcoral"      . johnson-color-red-face)
+    ("maroon"          . johnson-color-red-face)
+    ("tomato"          . johnson-color-red-face)
+    ;; Blue
+    ("blue"            . johnson-color-blue-face)
+    ("aqua"            . johnson-color-blue-face)
+    ("cadetblue"       . johnson-color-blue-face)
+    ("cyan"            . johnson-color-blue-face)
+    ("darkblue"        . johnson-color-blue-face)
+    ("darkcyan"        . johnson-color-blue-face)
+    ("darkturquoise"   . johnson-color-blue-face)
+    ("dodgerblue"      . johnson-color-blue-face)
+    ("lightblue"       . johnson-color-blue-face)
+    ("lightseagreen"   . johnson-color-blue-face)
+    ("mediumblue"      . johnson-color-blue-face)
+    ("midnightblue"    . johnson-color-blue-face)
+    ("navy"            . johnson-color-blue-face)
+    ("royalblue"       . johnson-color-blue-face)
+    ("skyblue"         . johnson-color-blue-face)
+    ("steelblue"       . johnson-color-blue-face)
+    ("teal"            . johnson-color-blue-face)
+    ;; Gray
+    ("black"           . johnson-color-gray-face)
+    ("gray"            . johnson-color-gray-face)
+    ("darkgray"        . johnson-color-gray-face)
+    ("darkslategray"   . johnson-color-gray-face)
+    ("dimgray"         . johnson-color-gray-face)
+    ("lightgray"       . johnson-color-gray-face)
+    ("lightslategray"  . johnson-color-gray-face)
+    ("silver"          . johnson-color-gray-face)
+    ("slategray"       . johnson-color-gray-face)
+    ;; Brown
+    ("brown"           . johnson-color-brown-face)
+    ("burlywood"       . johnson-color-brown-face)
+    ("chocolate"       . johnson-color-brown-face)
+    ("coral"           . johnson-color-brown-face)
+    ("darkgoldenrod"   . johnson-color-brown-face)
+    ("goldenrod"       . johnson-color-brown-face)
+    ("peru"            . johnson-color-brown-face)
+    ("rosybrown"       . johnson-color-brown-face)
+    ("saddlebrown"     . johnson-color-brown-face)
+    ("sandybrown"      . johnson-color-brown-face)
+    ("sienna"          . johnson-color-brown-face)
+    ("tan"             . johnson-color-brown-face)
+    ("wheat"           . johnson-color-brown-face)
+    ;; Violet / purple / magenta
+    ("blueviolet"      . johnson-color-violet-face)
+    ("darkmagenta"     . johnson-color-violet-face)
+    ("darkorchid"      . johnson-color-violet-face)
+    ("darkslateblue"   . johnson-color-violet-face)
+    ("deeppink"        . johnson-color-violet-face)
+    ("fuchsia"         . johnson-color-violet-face)
+    ("indigo"          . johnson-color-violet-face)
+    ("magenta"         . johnson-color-violet-face)
+    ("mediumslateblue" . johnson-color-violet-face)
+    ("mediumvioletred" . johnson-color-violet-face)
+    ("orchid"          . johnson-color-violet-face)
+    ("palevioletred"   . johnson-color-violet-face)
+    ("plum"            . johnson-color-violet-face)
+    ("purple"          . johnson-color-violet-face)
+    ("slateblue"       . johnson-color-violet-face)
+    ("violet"          . johnson-color-violet-face)
+    ("darkviolet"      . johnson-color-violet-face)
+    ;; Orange
+    ("darkorange"      . johnson-color-orange-face)
+    ("lightsalmon"     . johnson-color-orange-face)
+    ("orange"          . johnson-color-orange-face)
+    ("orangered"       . johnson-color-orange-face))
   "Mapping of DSL color names (downcased) to johnson faces.")
+
+(defun johnson-dsl--classify-color-rgb (r g b)
+  "Classify 16-bit RGB values R, G, B to a johnson color face."
+  (let ((mx (max r g b))
+        (mn (min r g b)))
+    (cond
+     ;; Near-black or near-white or low saturation → gray
+     ((or (< mx 6554) (> mn 58982) (< (- mx mn) (/ mx 7)))
+      'johnson-color-gray-face)
+     ;; Red dominant
+     ((= mx r)
+      (cond
+       ((> b (/ (* mx 3) 5)) 'johnson-color-violet-face)
+       ((> g (/ (* mx 7) 10)) 'johnson-color-orange-face)
+       ((> g (/ (* mx 2) 5)) 'johnson-color-brown-face)
+       (t 'johnson-color-red-face)))
+     ;; Green dominant
+     ((= mx g)
+      (if (> b (/ (* mx 7) 10))
+          'johnson-color-blue-face
+        'johnson-color-green-face))
+     ;; Blue dominant
+     (t
+      (if (> r (/ (* mx 3) 5))
+          'johnson-color-violet-face
+        'johnson-color-blue-face)))))
 
 (defun johnson-dsl--color-face (name)
   "Return the face for DSL color NAME (case-insensitive).
@@ -165,6 +259,9 @@ If NAME is nil or empty, return `johnson-color-default-face'."
   (if (or (null name) (string-empty-p name))
       'johnson-color-default-face
     (or (cdr (assoc (downcase name) johnson-dsl--color-alist))
+        (when-let* ((rgb (color-values name)))
+          (johnson-dsl--classify-color-rgb
+           (nth 0 rgb) (nth 1 rgb) (nth 2 rgb)))
         'johnson-color-default-face)))
 
 ;;;; Dictionary context for rendering
@@ -853,7 +950,9 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
            (put-text-property region-start region-end
                               'help-echo expansion)))))
     ("'"
-     (add-face-text-property region-start region-end 'johnson-stress-face))))
+     (add-face-text-property region-start region-end 'johnson-stress-face))
+    ("t"
+     (add-face-text-property region-start region-end 'johnson-italic-face))))
 
 (defun johnson-dsl--ensure-block-separation (region-start region-end)
   "Ensure blank line separation around the region from REGION-START to REGION-END."
