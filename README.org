@@ -10,6 +10,9 @@
 #+texinfo_dir_title: Johnson: (johnson)
 #+texinfo_dir_desc: Multi-format dictionary UI for Emacs
 * Overview
+:PROPERTIES:
+:CUSTOM_ID: h:overview
+:END:
 #+html: <img src="https://github.com/benthamite/johnson/blob/main/johnson.jpg?raw=true" align="right" width="300">
 =johnson= is a multi-format dictionary UI for Emacs.  It
 provides the functionality of programs such as GoldenDict and StarDict,
@@ -291,6 +294,9 @@ this list if your preferred player is not included or if you want to
 change the priority order.
 
 *** Companion zip archives
+:PROPERTIES:
+:CUSTOM_ID: h:companion-zip-archives
+:END:
 
 #+findex: johnson-clear-resource-cache
 Many DSL dictionaries bundle audio in a companion
@@ -514,6 +520,45 @@ When ~nil~, history exists only for the current Emacs session.
 See [[#h:browsing-history][Browsing history]] for commands that display and manage the
 history buffer.
 
+** Completion behavior
+:PROPERTIES:
+:CUSTOM_ID: h:completion-behavior
+:END:
+
+#+vindex: johnson-completion-min-chars
+The user option ~johnson-completion-min-chars~ sets the minimum number
+of characters you must type before completion candidates are fetched
+from the headword index.  Shorter inputs return no candidates, avoiding
+expensive prefix queries against the full index.
+
+The default value is ~3~ (type: ~natnum~).  You may want to lower this
+for small dictionary collections where prefix queries are fast, or
+raise it if completion feels sluggish with very large indexes:
+
+#+begin_src emacs-lisp
+(setopt johnson-completion-min-chars 2)
+#+end_src
+
+** Rendering performance
+:PROPERTIES:
+:CUSTOM_ID: h:rendering-performance
+:END:
+
+#+vindex: johnson-render-batch-size
+The user option ~johnson-render-batch-size~ controls how many
+dictionary results are rendered per batch.  The first batch is rendered
+synchronously when results are displayed; remaining results are rendered
+in the background during idle time.  This batched approach keeps the
+results buffer responsive even when a lookup matches many dictionaries.
+
+The default value is ~5~ (type: ~(integer 1 100)~).  Increase this
+value if you want more results visible immediately; decrease it if
+rendering large entries causes a noticeable pause:
+
+#+begin_src emacs-lisp
+(setopt johnson-render-batch-size 10)
+#+end_src
+
 * Commands
 :PROPERTIES:
 :CUSTOM_ID: h:commands
@@ -637,8 +682,11 @@ lookup is automatically refreshed to reflect the new scope.
 
 #+findex: johnson-next-section
 #+findex: johnson-prev-section
-#+findex: johnson-prev-section-header
 #+findex: johnson-toggle-section
+#+findex: johnson-toggle-all-sections
+#+findex: johnson-collapse-all
+#+findex: johnson-expand-all
+#+findex: johnson-ace-link
 The command ~johnson-next-section~ moves point to the next dictionary
 section header in the results buffer.  If point is already on a header,
 it moves past it to find the next one.  When there are no more sections
@@ -649,16 +697,28 @@ The command ~johnson-prev-section~ moves point to the previous
 dictionary section header.  When there is no previous section, it
 displays "No previous section".  It is bound to =p= in ~johnson-mode~.
 
-The command ~johnson-prev-section-header~ is an alias for
-~johnson-prev-section~, bound to =S-TAB= (=<backtab>=) in
-~johnson-mode~.
-
 The command ~johnson-toggle-section~ collapses or expands the dictionary
 section at point.  Collapsed sections hide their content using an
 overlay with the ~invisible~ property and display a =[+]= indicator.
 Expanding the section removes the overlay, revealing the full entry
 content.  The command works whether point is on the section header or
 within the section body.  It is bound to =TAB= in ~johnson-mode~.
+
+The command ~johnson-toggle-all-sections~ toggles all sections at once:
+if any section is currently expanded, it collapses all of them;
+otherwise, it expands all of them.  This mirrors Org mode's global
+cycling behavior.  It is bound to =S-TAB= (=<backtab>=) in
+~johnson-mode~.
+
+The command ~johnson-collapse-all~ collapses every section in the
+results buffer.  The command ~johnson-expand-all~ expands every section.
+These commands are available from the transient menu
+([[#h:transient-menu][Transient menu]]).
+
+The command ~johnson-ace-link~ uses =avy= to jump to a visible link in
+the results buffer.  All cross-reference buttons and URL buttons are
+collected as candidates and displayed with avy overlays for rapid
+selection.  It is bound to =o= in ~johnson-mode~.
 
 ** Following cross-references
 :PROPERTIES:
@@ -932,6 +992,120 @@ history and, if persistence is enabled, the history file on disk.
 History persistence is controlled by ~johnson-history-persist~
 and ~johnson-history-file~ ([[#h:history-buffer][History buffer]]).
 
+** Browsing dictionary files
+:PROPERTIES:
+:CUSTOM_ID: h:browsing-dictionary-files
+:END:
+
+#+findex: johnson-browse-dictionary
+The command ~johnson-browse-dictionary~ opens Dired on the directory
+containing the dictionary file for the section at point.  This is
+useful when you want to inspect companion files (abbreviation tables,
+audio archives, resource files) that reside alongside the dictionary.
+
+This command is available from the transient menu
+([[#h:transient-menu][Transient menu]]).
+
+** Clearing the index
+:PROPERTIES:
+:CUSTOM_ID: h:clearing-the-index
+:END:
+
+#+findex: johnson-clear-index
+The command ~johnson-clear-index~ deletes all sqlite index files in the
+cache directory and resets internal state.  Dictionaries will be
+re-indexed on the next lookup.  This is a more thorough reset than
+~johnson-close-caches~ ([[#h:cache-management][Cache management]]), which closes
+connections without deleting files.
+
+Use this command when you suspect index corruption or when you want to
+force a complete rebuild of every dictionary index.  This command is
+available from the transient menu ([[#h:transient-menu][Transient menu]]).
+
+** Reordering dictionaries
+:PROPERTIES:
+:CUSTOM_ID: h:reordering-dictionaries
+:END:
+
+#+findex: johnson-reorder-dictionaries
+#+findex: johnson-reorder-move-up
+#+findex: johnson-reorder-move-down
+#+findex: johnson-reorder-save
+The command ~johnson-reorder-dictionaries~ opens a
+=*johnson-reorder*= buffer listing all discovered dictionaries.  You
+can rearrange them to define a custom display order that is then saved
+as ~johnson-dictionary-priorities~ ([[#h:display-ordering][Display ordering]]).
+
+The buffer uses ~johnson-reorder-mode~, which provides:
+
+- =M-<up>= (~johnson-reorder-move-up~) --- move the dictionary at
+  point up one position.
+- =M-<down>= (~johnson-reorder-move-down~) --- move the dictionary at
+  point down one position.
+- =C-c C-c= (~johnson-reorder-save~) --- save the current ordering.
+  When saving, you are prompted to choose between saving via
+  ~customize-save-variable~ (persists across sessions), setting for the
+  current session only, or copying the value to the kill ring so you can
+  paste it into your init file manually.
+
+This command is available from the transient menu
+([[#h:transient-menu][Transient menu]]).
+
+** Importing GoldenDict order
+:PROPERTIES:
+:CUSTOM_ID: h:importing-goldendict-order
+:END:
+
+#+findex: johnson-import-goldendict-order
+The command ~johnson-import-goldendict-order~ imports the dictionary
+display order from a GoldenDict configuration file.  It prompts for the
+path to the configuration file, parses the dictionary order, and opens
+the reorder buffer ([[#h:reordering-dictionaries][Reordering dictionaries]]) with
+dictionaries sorted according to GoldenDict's order.
+
+Dictionaries that could not be matched to any discovered johnson
+dictionary are appended at the end and highlighted with
+~johnson-reorder-unmatched-face~ ([[#h:ui-faces][UI faces]]).
+This lets you identify dictionaries that need manual attention.
+
+This command is available from the transient menu
+([[#h:transient-menu][Transient menu]]).
+
+** Transient menu
+:PROPERTIES:
+:CUSTOM_ID: h:transient-menu
+:END:
+
+#+findex: johnson-menu
+The command ~johnson-menu~ opens a transient popup menu providing quick
+access to all johnson commands and toggleable options.  It requires the
+=transient= package (bundled with Emacs 29+).
+
+The menu is organized into the following groups:
+
+- *Lookup* --- ~johnson-lookup~, ~johnson-search~, ~johnson-select-group~.
+- *Navigate* --- section movement, ace-link, follow reference.
+- *History* --- back, forward, history list, clear history.
+- *Bookmarks* --- add, remove, list bookmarks.
+- *Actions* --- refresh, copy entry, copy dictionary name, play audio,
+  browse dictionary directory.
+- *Sections* --- toggle, toggle all, expand all, collapse all.
+- *Manage* --- list dictionaries, reorder, import GoldenDict order,
+  index, stop indexing, clear index, clear resource cache, close caches.
+
+The menu also exposes toggleable options as transient infixes:
+
+- =-i= --- toggle ~johnson-display-images~.
+- =-f= --- toggle ~johnson-fts-enabled~.
+- =-e= --- toggle ~johnson-eldoc-mode~.
+- =-s= --- toggle ~johnson-scan-mode~.
+- =-p= --- toggle ~johnson-history-persist~.
+- =-c= --- cycle ~johnson-default-search-scope~ (=all= / =group=).
+- =-r= --- cycle ~johnson-ref-scope~ (=all= / =same=).
+- =-d= --- edit ~johnson-dictionary-directories~.
+
+The transient menu is defined in =johnson-transient.el=.
+
 * Functions
 :PROPERTIES:
 :CUSTOM_ID: h:functions
@@ -1127,6 +1301,7 @@ buffer ([[#h:dictionary-list][Dictionary list]]) and in indexing progress messag
 :END:
 
 #+findex: johnson-db-stale-p
+#+findex: johnson-db-stale-quick-p
 #+findex: johnson-db-reset
 The function ~johnson-db-stale-p~ checks whether the index for a
 dictionary file is stale or does not exist.  It compares the file
@@ -1142,6 +1317,76 @@ preparation for re-indexing.  It issues =DELETE FROM entries= but does
 not drop the table or remove metadata.  After a reset, the entry count
 is zero and new entries can be inserted via
 ~johnson-db-insert-entries-batch~ ([[#h:entry-insertion][Entry insertion]]).
+
+The function ~johnson-db-stale-quick-p~ performs a fast,
+filesystem-only staleness check.  Unlike ~johnson-db-stale-p~, it never
+opens a sqlite database; it simply checks whether the index file exists
+and whether the dictionary file's modification time is newer than the
+index file's.  This makes it suitable for rapid scanning during
+discovery without the overhead of opening every database.
+
+** Wildcard and full-text search queries
+:PROPERTIES:
+:CUSTOM_ID: h:wildcard-and-fts-queries
+:END:
+
+#+findex: johnson-db-query-wildcard
+#+findex: johnson-db-insert-fts
+#+findex: johnson-db-query-fts
+#+findex: johnson-db-fts-indexed-p
+#+findex: johnson-db-set-fts-indexed
+The function ~johnson-db-query-wildcard~ queries the database for
+headwords matching a wildcard PATTERN.  The pattern uses =?= for a
+single character and =*= for zero or more characters, which are
+translated to SQL =_= and =%=.  It returns a list of distinct headword
+strings, with an optional LIMIT (default 200).  This function powers the
+wildcard search feature described in [[#h:wildcard-search][Wildcard search]].
+
+The function ~johnson-db-insert-fts~ inserts a headword and its
+plain-text definition into the FTS (full-text search) virtual table.
+It is called during indexing when ~johnson-fts-enabled~ is non-nil
+([[#h:full-text-search][Full-text search]]).
+
+The function ~johnson-db-query-fts~ queries the FTS table for a search
+term and returns a list of =(HEADWORD SNIPPET)= pairs.  The optional
+LIMIT defaults to 50.  This function powers ~johnson-search~
+([[#h:searching-definitions][Searching definitions]]).
+
+The function ~johnson-db-fts-indexed-p~ returns non-nil if the database
+has been indexed for full-text search.  The function
+~johnson-db-set-fts-indexed~ marks a database as having been FTS-indexed.
+
+** Completion index
+:PROPERTIES:
+:CUSTOM_ID: h:completion-index
+:END:
+
+#+findex: johnson-db-rebuild-completion-index
+#+findex: johnson-db-query-completion
+#+findex: johnson-db-get-completion-db
+#+findex: johnson-db-close-completion-db
+#+findex: johnson-db-completion-index-path
+The completion index is a unified sqlite database that aggregates
+headwords from all per-dictionary indexes into a single file.  This
+enables fast cross-dictionary prefix queries for ~completing-read~
+without opening every individual database.
+
+The function ~johnson-db-rebuild-completion-index~ builds or rebuilds
+the unified index from a list of dictionary file paths.  It returns
+the total number of unique headwords aggregated.
+
+The function ~johnson-db-query-completion~ queries the unified
+completion index for headwords matching a PREFIX.  It returns a list of
+=(HEADWORD DICT-COUNT)= pairs, where DICT-COUNT indicates how many
+dictionaries contain that headword.  The optional LIMIT defaults to 200.
+
+The function ~johnson-db-get-completion-db~ returns the cached
+completion index database connection, opening it on first use.  It
+returns ~nil~ if the index file does not exist.  The function
+~johnson-db-close-completion-db~ closes this cached connection.
+
+The function ~johnson-db-completion-index-path~ returns the filesystem
+path to the unified completion index database.
 
 ** DSL format detection
 :PROPERTIES:
@@ -1298,17 +1543,253 @@ The supported tags include:
 - =[']=: stress marks ([[#h:text-styling-faces][Text styling faces]])
 - =[s]=: media references (content is suppressed)
 
+** StarDict backend
+:PROPERTIES:
+:CUSTOM_ID: h:stardict-backend
+:END:
+
+#+findex: johnson-stardict-detect
+#+findex: johnson-stardict-parse-metadata
+#+findex: johnson-stardict-build-index
+#+findex: johnson-stardict-retrieve-entry
+#+findex: johnson-stardict-render-entry
+The StarDict backend (=johnson-stardict.el=) handles =.ifo=, =.idx=,
+=.dict=, and =.syn= files.  It supports dictzip-compressed =.dict.dz=
+files via =johnson-dictzip.el= ([[#h:dictzip-backend][Dictzip backend]]).
+
+The function ~johnson-stardict-detect~ checks whether a file is a
+StarDict =.ifo= file by verifying the extension and the presence of
+the =StarDict's dict ifo file= magic line.
+
+The function ~johnson-stardict-parse-metadata~ parses the =.ifo= file
+to extract the dictionary name, source language, and target language.
+
+The function ~johnson-stardict-build-index~ parses the binary =.idx=
+file (or =.idx.gz=) to extract headword entries.  Each entry's byte
+offset and size reference the uncompressed =.dict= data.  The function
+auto-detects non-standard 64-bit entry formats in dictionaries whose
+=.ifo= files omit the ~idxoffsetbits=64~ declaration.
+
+The function ~johnson-stardict-retrieve-entry~ reads the raw entry data
+from the =.dict= file at the given byte offset and size.  For
+dictzip-compressed files, it delegates to ~johnson-dictzip-read~.  It
+also records the ~sametypesequence~ setting for use by the renderer.
+
+The function ~johnson-stardict-render-entry~ renders raw StarDict data
+into the current buffer.  It interprets the ~sametypesequence~ field to
+parse data fields, supporting plain text, HTML, Pango markup, phonetic,
+and resource content types.  HTML content is rendered using
+~johnson-html-render-region~ ([[#h:html-rendering][HTML rendering]]).
+
+** MDict backend
+:PROPERTIES:
+:CUSTOM_ID: h:mdict-backend
+:END:
+
+#+findex: johnson-mdict-detect
+#+findex: johnson-mdict-parse-metadata
+#+findex: johnson-mdict-build-index
+#+findex: johnson-mdict-retrieve-entry
+#+findex: johnson-mdict-render-entry
+#+findex: johnson-mdict-clear-caches
+The MDict backend (=johnson-mdict.el=) handles =.mdx= and =.mdd=
+files, including encrypted files (=Encrypted="2"=).  Encryption
+support uses the pure Elisp RIPEMD-128 implementation in
+=johnson-ripemd128.el= ([[#h:ripemd128-backend][RIPEMD-128 hashing]]).
+
+The function ~johnson-mdict-detect~ checks whether a file is an MDict
+=.mdx= file by verifying the extension.
+
+The function ~johnson-mdict-parse-metadata~ reads the MDict header to
+extract the dictionary name, source language, and target language.  If
+the title field contains HTML, the function falls back to the filename.
+
+The function ~johnson-mdict-build-index~ parses the MDict keyword
+blocks to extract headwords and their record offsets.  Entry sizes are
+not stored in the keyword index; they are computed at retrieval time via
+a sorted offset cache and binary search for the next offset.
+
+The function ~johnson-mdict-retrieve-entry~ decompresses and decodes
+the entry data at a given record offset.  It handles zlib-compressed
+record blocks.
+
+The function ~johnson-mdict-render-entry~ renders MDict HTML content
+into the current buffer using ~johnson-html-render-region~.  If the
+entry data starts with =@@@LINK==, the target entry is resolved and
+rendered instead (following MDict's redirect convention).
+
+The function ~johnson-mdict-clear-caches~ clears all MDict-specific
+caches (header data, record block info, offset caches).
+
+** BGL backend
+:PROPERTIES:
+:CUSTOM_ID: h:bgl-backend
+:END:
+
+#+findex: johnson-bgl-detect
+#+findex: johnson-bgl-parse-metadata
+#+findex: johnson-bgl-build-index
+#+findex: johnson-bgl-retrieve-entry
+#+findex: johnson-bgl-render-entry
+#+findex: johnson-bgl-clear-caches
+The BGL backend (=johnson-bgl.el=) handles Babylon =.bgl= files.
+
+The function ~johnson-bgl-detect~ checks whether a file is a BGL
+dictionary by verifying the extension and the presence of magic bytes
+(=0x12 0x34=) at the start of the file.
+
+The function ~johnson-bgl-parse-metadata~ reads BGL header records to
+extract the dictionary name, source language, and target language.
+
+The function ~johnson-bgl-build-index~ decompresses the BGL file
+(which uses gzip compression) and parses the entry records.  Byte
+offsets reference positions in the decompressed stream, which is cached
+in a unibyte buffer.
+
+The function ~johnson-bgl-retrieve-entry~ retrieves the raw definition
+from the decompressed stream at the given offset and returns it as a
+decoded string.
+
+The function ~johnson-bgl-render-entry~ renders BGL HTML content into
+the current buffer using ~johnson-html-render-region~
+([[#h:html-rendering][HTML rendering]]).
+
+The function ~johnson-bgl-clear-caches~ clears all BGL-specific caches.
+
+** DICT protocol backend
+:PROPERTIES:
+:CUSTOM_ID: h:dict-protocol-backend
+:END:
+
+#+findex: johnson-dict-discover
+#+findex: johnson-dict-query-exact
+#+findex: johnson-dict-retrieve-entry
+#+findex: johnson-dict-render-entry
+#+findex: johnson-dict-clear-caches
+The DICT protocol backend (=johnson-dict.el=) communicates with remote
+dictionary servers using RFC 2229 over TCP.  Unlike file-based backends,
+it does not use the standard ~:detect~ / ~:build-index~ registration
+keys (those are set to ~ignore~).  Instead, it has its own discovery and
+query mechanisms.
+
+The function ~johnson-dict-discover~ connects to each server listed in
+~johnson-dict-servers~ ([[#h:dict-protocol][DICT protocol]]), lists the
+available databases, and returns a list of dictionary plists suitable
+for the internal dictionary registry.  Discovered DICT dictionaries
+appear under the "DICT Servers" group.
+
+The function ~johnson-dict-query-exact~ queries a DICT server for a
+word and caches the results locally.  It returns a list of
+=(HEADWORD OFFSET LENGTH)= triples, where OFFSET encodes the word and
+result index for deterministic cache retrieval.
+
+The function ~johnson-dict-retrieve-entry~ retrieves a previously
+cached DICT definition using the encoded offset string.
+
+The function ~johnson-dict-render-entry~ inserts a DICT definition as
+plain text, since DICT responses do not contain markup.
+
+The function ~johnson-dict-clear-caches~ clears all DICT caches and
+disconnects from servers.
+
+** Dictzip backend
+:PROPERTIES:
+:CUSTOM_ID: h:dictzip-backend
+:END:
+
+#+findex: johnson-dictzip-read
+#+findex: johnson-dictzip-read-full
+#+findex: johnson-dictzip-clear-caches
+The dictzip module (=johnson-dictzip.el=) provides random-access
+decompression for dictzip-compressed files (=.dsl.dz= and =.dict.dz=).
+Dictzip is a gzip-compatible format that partitions the compressed data
+into fixed-size chunks, enabling decompression of arbitrary byte ranges
+without reading the entire file.
+
+The function ~johnson-dictzip-read~ reads a specified number of bytes
+at a given uncompressed offset from a dictzip file.  It decompresses
+only the chunks that overlap the requested range, caching decompressed
+chunks for subsequent reads.
+
+The function ~johnson-dictzip-read-full~ reads the entire uncompressed
+content of a dictzip file.  This is used during indexing when the full
+file must be scanned.
+
+The function ~johnson-dictzip-clear-caches~ clears all cached dictzip
+headers and decompressed chunks.
+
+** HTML rendering
+:PROPERTIES:
+:CUSTOM_ID: h:html-rendering
+:END:
+
+#+findex: johnson-html-color-to-face
+#+findex: johnson-html-render-region
+The HTML rendering module (=johnson-html.el=) provides shared
+infrastructure for rendering HTML content from StarDict, MDict, and BGL
+entries.  It converts HTML tags into Emacs text properties and faces,
+without relying on =shr= or an external browser.
+
+The function ~johnson-html-render-region~ processes HTML tags in a
+buffer region, replacing them with appropriate text properties.  It
+handles common tags: =<b>=, =<i>=, =<u>=, =<font>=, =<span>=,
+=<div>=, =<br>=, =<p>=, =<img>=, =<a>=, and others.  CSS =color= and
+=font-weight= style attributes are parsed and applied as face
+properties.
+
+The function ~johnson-html-color-to-face~ maps an HTML color name or
+hex code to a johnson face.  It supports CSS named colors and falls
+back to creating an anonymous face with the specified RGB foreground.
+
+** RIPEMD-128 hashing
+:PROPERTIES:
+:CUSTOM_ID: h:ripemd128-backend
+:END:
+
+#+findex: johnson-ripemd128-hash
+#+findex: johnson-ripemd128-hash-hex
+The RIPEMD-128 module (=johnson-ripemd128.el=) provides a pure Elisp
+implementation of the RIPEMD-128 hash algorithm.  This is used by the
+MDict backend ([[#h:mdict-backend][MDict backend]]) to decrypt MDict files
+with =Encrypted="2"= headers, which require RIPEMD-128 key derivation.
+
+The function ~johnson-ripemd128-hash~ computes the RIPEMD-128 hash of a
+unibyte string and returns a 16-byte unibyte digest.
+
+The function ~johnson-ripemd128-hash-hex~ computes the RIPEMD-128 hash
+as a hexadecimal string.  It accepts both multibyte strings (encoding
+to UTF-8 first) and unibyte strings.
+
+** Audio playback functions
+:PROPERTIES:
+:CUSTOM_ID: h:audio-playback-functions
+:END:
+
+#+findex: johnson-play-sound
+#+findex: johnson-insert-audio-button
+The function ~johnson-play-sound~ plays an audio file using the
+configured player.  It respects ~johnson-audio-player~
+([[#h:audio-playback][Audio playback]]): when set to ~auto~, it tries
+~play-sound-file~ first, then falls back to external players in
+~johnson-audio-external-players~.
+
+The function ~johnson-insert-audio-button~ inserts a clickable play
+button (=▶=) for an audio file at point.  The optional DICT-PATH
+argument identifies the dictionary file, which is used to locate a
+companion zip archive for on-demand audio extraction.  This function
+is called by format renderers when they encounter audio references.
+
 * Faces
 :PROPERTIES:
 :CUSTOM_ID: h:faces
 :ID:       3C6FBB0E-1699-4339-9798-6435E1088E89
 :END:
 
-All faces defined in =johnson-dsl.el= belong to the ~johnson-dsl-faces~
-customization group.  You can customize them via =M-x customize-group
-RET johnson-dsl-faces RET= to match your preferred color theme.  The
-face ~johnson-section-header-face~ is defined in =johnson.el= and
-belongs to the ~johnson~ group.
+DSL-specific faces defined in =johnson-dsl.el= belong to the
+~johnson-dsl-faces~ customization group.  You can customize them via
+=M-x customize-group RET johnson-dsl-faces RET= to match your
+preferred color theme.  Faces defined in =johnson.el= belong to the
+~johnson~ group.
 
 ** Text styling faces
 :PROPERTIES:
@@ -1342,6 +1823,7 @@ syllables visually prominent in pronunciation guides.
 #+vindex: johnson-example-face
 #+vindex: johnson-optional-face
 #+vindex: johnson-comment-face
+#+vindex: johnson-abbreviation-face
 The face ~johnson-example-face~ renders example sentences enclosed in
 =[ex]...[/ex]= tags.  It inherits from ~italic~ with a =dim gray=
 foreground, visually distinguishing examples from definitions.
@@ -1354,6 +1836,13 @@ on dark backgrounds.
 The face ~johnson-comment-face~ renders comment annotations enclosed in
 =[com]...[/com]= tags.  It inherits from ~font-lock-comment-face~,
 giving comments a consistent appearance with the rest of Emacs.
+
+The face ~johnson-abbreviation-face~ renders abbreviation markers
+enclosed in =[p]...[/p]= tags.  It uses a green foreground (=dark
+green= on light backgrounds, =green3= on dark backgrounds), matching
+the default color face convention for DSL dictionaries.  Abbreviation
+markers typically contain short labels (e.g., "noun", "verb") that are
+expanded from a companion =_abrv.dsl= file when available.
 
 ** Link faces
 :PROPERTIES:
@@ -1433,6 +1922,27 @@ The face ~johnson-color-orange-face~ is used for =orange= and
 =darkorange=.
 
 Any unrecognized color name falls back to ~johnson-color-default-face~.
+
+** UI faces
+:PROPERTIES:
+:CUSTOM_ID: h:ui-faces
+:END:
+
+#+vindex: johnson-toc-face
+#+vindex: johnson-audio-button-face
+#+vindex: johnson-reorder-unmatched-face
+The face ~johnson-toc-face~ renders table-of-contents entries at the
+top of the results buffer.  TOC entries are clickable links that jump
+to the corresponding dictionary section.  It inherits from ~link~.
+
+The face ~johnson-audio-button-face~ renders audio playback buttons
+(=▶=) in dictionary entries ([[#h:audio-playback][Audio playback]]).  It
+inherits from ~link~.
+
+The face ~johnson-reorder-unmatched-face~ highlights dictionaries in
+the reorder buffer that could not be matched during a GoldenDict
+import ([[#h:importing-goldendict-order][Importing GoldenDict order]]).  It
+inherits from ~warning~.
 
 * Tips
 :PROPERTIES:

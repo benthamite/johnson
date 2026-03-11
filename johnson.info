@@ -653,6 +653,8 @@ Navigate
      Next section (‘johnson-next-section’).
 ‘p’
      Previous section (‘johnson-prev-section’).
+‘j’
+     Jump to section (‘johnson-jump-to-section’).
 ‘o’
      Ace link (‘johnson-ace-link’).
 ‘RET’
@@ -883,6 +885,11 @@ displays "No previous section".  It is bound to ‘p’ in ‘johnson-mode’.
    The command ‘johnson-prev-section-header’ is an alias for
 ‘johnson-prev-section’, bound to ‘S-TAB’ (‘<backtab>’) in
 ‘johnson-mode’.
+
+   The command ‘johnson-jump-to-section’ prompts for a dictionary
+section using completion and jumps to it.  This is useful when the
+results buffer contains many dictionaries and the desired section is
+not visible.  It is bound to ‘j’ in ‘johnson-mode’.
 
    The command ‘johnson-toggle-section’ collapses or expands the
 dictionary
@@ -1881,6 +1888,8 @@ File: johnson.info,  Node: Function index,  Next: Variable index,  Up: Indices
 * johnson-index:                         Indexing dictionaries.
                                                                (line  6)
 * johnson-insert-audio-button:           Audio playback.       (line  6)
+* johnson-jump-to-section:               Navigating the results buffer.
+                                                               (line 20)
 * johnson-list-dictionaries:             Dictionary list.      (line  6)
 * johnson-lookup:                        Looking up words.     (line  6)
 * johnson-menu:                          Transient menu.       (line  6)
@@ -1981,51 +1990,51 @@ Node: Bookmarks20241
 Node: History buffer20847
 Node: Commands21653
 Node: Transient menu22203
-Node: Looking up words25415
-Node: Indexing dictionaries27725
-Node: Managing groups and scope29404
-Node: Navigating the results buffer30494
-Node: Following cross-references31820
-Node: Navigation history32730
-Node: Copying entries34140
-Node: Browsing dictionary directory35408
-Node: Dictionary list35909
-Node: Cache management37338
-Node: Toggling images38265
-Node: Searching definitions38772
-Node: Eldoc integration commands39504
-Node: Scan-popup mode commands40189
-Node: Managing bookmarks40948
-Node: Browsing history41982
-Node: Functions42826
-Node: Format registration43257
-Node: Completion at point45018
-Node: Database lifecycle45921
-Node: Metadata storage46821
-Node: Headword normalization47995
-Node: Entry insertion48833
-Node: Querying entries49846
-Node: Staleness detection and reset51156
-Node: DSL format detection52165
-Node: DSL metadata parsing53141
-Node: DSL index building54154
-Node: DSL entry retrieval56185
-Node: DSL entry rendering57091
-Node: Faces59197
-Node: Text styling faces59739
-Node: Content type faces60444
-Node: Link faces61280
-Node: Section header face61940
-Node: Color faces62529
-Node: Roadmap63916
-Node: Version 01 --- DSL64337
-Node: Version 02 --- StarDict and compressed DSL65337
-Node: Version 03 --- MDict and DSL abbreviations66630
-Node: Version 04 (current)67116
-Node: Future features68474
-Node: Indices68709
-Node: Function index68842
-Node: Variable index74107
+Node: Looking up words25477
+Node: Indexing dictionaries27787
+Node: Managing groups and scope29466
+Node: Navigating the results buffer30556
+Node: Following cross-references32149
+Node: Navigation history33059
+Node: Copying entries34469
+Node: Browsing dictionary directory35737
+Node: Dictionary list36238
+Node: Cache management37667
+Node: Toggling images38594
+Node: Searching definitions39101
+Node: Eldoc integration commands39833
+Node: Scan-popup mode commands40518
+Node: Managing bookmarks41277
+Node: Browsing history42311
+Node: Functions43155
+Node: Format registration43586
+Node: Completion at point45347
+Node: Database lifecycle46250
+Node: Metadata storage47150
+Node: Headword normalization48324
+Node: Entry insertion49162
+Node: Querying entries50175
+Node: Staleness detection and reset51485
+Node: DSL format detection52494
+Node: DSL metadata parsing53470
+Node: DSL index building54483
+Node: DSL entry retrieval56514
+Node: DSL entry rendering57420
+Node: Faces59526
+Node: Text styling faces60068
+Node: Content type faces60773
+Node: Link faces61609
+Node: Section header face62269
+Node: Color faces62858
+Node: Roadmap64245
+Node: Version 01 --- DSL64666
+Node: Version 02 --- StarDict and compressed DSL65666
+Node: Version 03 --- MDict and DSL abbreviations66959
+Node: Version 04 (current)67445
+Node: Future features68803
+Node: Indices69038
+Node: Function index69171
+Node: Variable index74581
 
 End Tag Table
 
