@@ -192,6 +192,11 @@ delay, `both' triggers on either."
   "Face for audio playback buttons in dictionary entries."
   :group 'johnson)
 
+(defface johnson-reorder-unmatched-face
+  '((t :inherit warning))
+  "Face for dictionaries that could not be matched during import."
+  :group 'johnson)
+
 ;;;; Internal variables
 
 (defvar johnson--formats nil
@@ -1656,6 +1661,9 @@ dictionary whose section contains the link."
 (defvar-local johnson-reorder--names nil
   "Ordered list of dictionary names in the reorder buffer.")
 
+(defvar-local johnson-reorder--unmatched nil
+  "Set of dictionary names that could not be matched during import.")
+
 (defun johnson-reorder--refresh ()
   "Redraw the reorder buffer from `johnson-reorder--names'."
   (let ((inhibit-read-only t)
@@ -1664,8 +1672,10 @@ dictionary whose section contains the link."
     (insert "Reorder dictionaries (M-up/M-down to move, C-c C-c to save, q to quit)\n\n")
     (let ((i 0))
       (dolist (name johnson-reorder--names)
-        (insert (propertize (format "%3d  %s\n" i name)
-                            'johnson-reorder-name name))
+        (let ((text (format "%3d  %s\n" i name)))
+          (when (member name johnson-reorder--unmatched)
+            (setq text (propertize text 'face 'johnson-reorder-unmatched-face)))
+          (insert (propertize text 'johnson-reorder-name name)))
         (cl-incf i)))
     (goto-char (point-min))
     (forward-line (1- (min line (+ 2 (length johnson-reorder--names)))))))
@@ -1743,6 +1753,100 @@ dictionary whose section contains the link."
       (plist-put dict :priority
                  (or (cdr (assoc (plist-get dict :name) priorities)) 0)))
     (quit-window)))
+
+(declare-function dom-by-tag "dom" (dom tag))
+(declare-function dom-attr "dom" (dom attr))
+
+(defun johnson--goldendict-config-file ()
+  "Return the path to the GoldenDict configuration file, or nil."
+  (let ((candidates (list (expand-file-name "~/.goldendict/config")
+                          ;; GoldenDict-ng
+                          (expand-file-name "~/.goldendict-ng/config"))))
+    (cl-find-if #'file-readable-p candidates)))
+
+(defun johnson--goldendict-parse-order (file)
+  "Parse GoldenDict config FILE and return an ordered list of dictionary names."
+  (require 'dom)
+  (with-temp-buffer
+    (insert-file-contents file)
+    (let ((xml (libxml-parse-xml-region (point-min) (point-max)))
+          (names nil))
+      (when-let* ((order-node (car (dom-by-tag xml 'dictionaryOrder))))
+        (dolist (dict-node (dom-by-tag order-node 'dictionary))
+          (when-let* ((name (dom-attr dict-node 'name)))
+            ;; GoldenDict encodes newlines as &#xa; which libxml decodes to \n
+            (push (string-trim name) names))))
+      (nreverse names))))
+
+(defun johnson--goldendict-normalize (name)
+  "Normalize NAME for fuzzy matching.
+Downcase, strip language tags like [en-en], collapse whitespace."
+  (let ((s (downcase name)))
+    (setq s (replace-regexp-in-string "\\[[-a-z]+\\]" "" s))
+    (setq s (string-trim (replace-regexp-in-string "[ \t]+" " " s)))
+    s))
+
+(defun johnson--goldendict-match-names (gd-names johnson-names)
+  "Match GD-NAMES to JOHNSON-NAMES.
+Return (ORDERED-NAMES . UNMATCHED-NAMES) where ORDERED-NAMES is
+the full list of johnson dictionary names sorted by GoldenDict order,
+and UNMATCHED-NAMES is the list of johnson names not found in GoldenDict."
+  (let ((remaining (copy-sequence johnson-names))
+        (ordered nil)
+        ;; Build normalized lookup: (normalized . original) for johnson names
+        (norm-table (mapcar (lambda (n)
+                              (cons (johnson--goldendict-normalize n) n))
+                            johnson-names)))
+    (dolist (gd-name gd-names)
+      ;; Try exact match first.
+      (let ((match (cl-find gd-name remaining :test #'equal)))
+        (unless match
+          ;; Try normalized fuzzy match.
+          (let* ((gd-norm (johnson--goldendict-normalize gd-name))
+                 (entry (cl-find gd-norm norm-table
+                                 :key #'car :test #'equal)))
+            (when entry
+              (setq match (cdr entry)))))
+        (when (and match (member match remaining))
+          (push match ordered)
+          (setq remaining (delete match remaining)))))
+    ;; Append unmatched johnson dictionaries at the end.
+    (cons (append (nreverse ordered) remaining)
+          remaining)))
+
+;;;###autoload
+(defun johnson-import-goldendict-order (&optional file)
+  "Import dictionary order from a GoldenDict configuration FILE.
+Opens the reorder buffer with dictionaries sorted according to
+GoldenDict's order.  Dictionaries that could not be matched are
+appended at the end and highlighted."
+  (interactive
+   (list (let ((default (johnson--goldendict-config-file)))
+           (if (and default
+                    (y-or-n-p (format "Use %s? " default)))
+               default
+             (read-file-name "GoldenDict config file: "
+                             (expand-file-name "~/.goldendict/")
+                             nil t "config")))))
+  (unless (and file (file-readable-p file))
+    (user-error "Cannot read GoldenDict config file: %s" file))
+  (johnson--ensure-dictionaries)
+  (let* ((gd-names (johnson--goldendict-parse-order file))
+         (johnson-names (mapcar (lambda (d) (plist-get d :name))
+                                johnson--dictionaries))
+         (result (johnson--goldendict-match-names gd-names johnson-names))
+         (ordered (car result))
+         (unmatched (cdr result))
+         (matched-count (- (length ordered) (length unmatched)))
+         (buf (get-buffer-create "*johnson-reorder*")))
+    (with-current-buffer buf
+      (johnson-reorder-mode)
+      (setq johnson-reorder--names ordered
+            johnson-reorder--unmatched unmatched)
+      (johnson-reorder--refresh))
+    (pop-to-buffer buf)
+    (message "Imported GoldenDict order: %d matched, %d unmatched (appended at end)"
+             matched-count (length unmatched))))
 
 ;;;; CAPF
 

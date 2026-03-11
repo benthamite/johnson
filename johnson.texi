@@ -310,6 +310,23 @@ appear before ``Collins English-Spanish'', assign it a lower priority: @*
           ("Collins English-Spanish" . -5)))
 @end lisp
 
+@subheading Importing order from GoldenDict
+
+@findex johnson-import-goldendict-order
+If you have a GoldenDict (or GoldenDict-ng) installation with an @*
+established dictionary order, the command @*
+@code{johnson-import-goldendict-order} can import it.  The command @*
+parses the @code{<dictionaryOrder>} section of the GoldenDict @*
+configuration file (usually @file{~/.goldendict/config}) and matches @*
+each dictionary name against the dictionaries discovered by Johnson. @*
+
+Matching is done first by exact name, then by a normalized comparison @*
+that strips language tags (e.g., @samp{[en-en]}) and ignores case.  The @*
+result is presented in the @samp{*johnson-reorder*} buffer, where you @*
+can review and adjust the order before saving.  Dictionaries that could @*
+not be matched to any GoldenDict entry are appended at the end and @*
+highlighted with the @code{johnson-reorder-unmatched-face} face. @*
+
 @node Lookup history
 @section Lookup history
 
@@ -717,6 +734,8 @@ Collapse all (@code{johnson-collapse-all}). @*
 List dictionaries (@code{johnson-list-dictionaries}). @*
 @item r
 Reorder dictionaries (@code{johnson-reorder-dictionaries}). @*
+@item I
+Import GoldenDict order (@code{johnson-import-goldendict-order}). @*
 @item i
 Index/re-index (@code{johnson-index}). @*
 @item k
