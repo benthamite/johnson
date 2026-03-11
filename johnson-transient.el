@@ -168,11 +168,6 @@
   :choices '(all same)
   :description "Ref scope")
 
-(transient-define-infix johnson-transient:dict-dirs ()
-  :class 'johnson-transient-dirs
-  :variable 'johnson-dictionary-directories
-  :description "Dictionary directories")
-
 ;;;; Directory-list infix class
 
 (defclass johnson-transient-dirs (transient-lisp-variable)
@@ -201,6 +196,11 @@
                 'face (if val
                           'transient-value
                         'transient-inactive-value))))
+
+(transient-define-infix johnson-transient:dict-dirs ()
+  :class 'johnson-transient-dirs
+  :variable 'johnson-dictionary-directories
+  :description "Dictionary directories")
 
 ;;;; Main menu
 
