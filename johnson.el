@@ -202,8 +202,15 @@ delay, `both' triggers on either."
 Each element has keys :path, :format-name, :name,
 :source-lang, :target-lang, :group, :priority.")
 
-(defvar johnson--current-group nil
-  "Currently active dictionary group name, or nil for all.")
+(defvar johnson--current-source-lang nil
+  "Currently active source language filter, or nil for all.")
+
+(defvar johnson--current-target-lang nil
+  "Currently active target language filter, or nil for all.")
+
+(defvar johnson--current-custom-group nil
+  "Currently active custom group name, or nil for all.
+Only used when `johnson-dictionary-groups' is non-nil.")
 
 (defvar johnson-history nil
   "History of looked-up words for `completing-read'.")
@@ -385,41 +392,104 @@ PROPS is a plist with keys :name, :extensions, :detect,
 
 ;;;; Groups
 
-(defun johnson--available-groups ()
-  "Return a list of available group names."
+(defun johnson--available-source-langs ()
+  "Return a sorted list of unique source languages."
   (johnson--ensure-dictionaries)
-  (if johnson-dictionary-groups
-      (mapcar #'car johnson-dictionary-groups)
-    (delete-dups
-     (mapcar (lambda (d) (plist-get d :group))
-             johnson--dictionaries))))
+  (sort (delete-dups
+         (cl-loop for d in johnson--dictionaries
+                  for src = (plist-get d :source-lang)
+                  when (and src (not (string-empty-p src)))
+                  collect src))
+        #'string<))
+
+(defun johnson--available-target-langs (&optional source-lang)
+  "Return a sorted list of unique target languages.
+When SOURCE-LANG is non-nil, only consider dictionaries with that
+source language."
+  (johnson--ensure-dictionaries)
+  (let ((dicts (if source-lang
+                   (cl-remove-if-not
+                    (lambda (d) (equal (plist-get d :source-lang) source-lang))
+                    johnson--dictionaries)
+                 johnson--dictionaries)))
+    (sort (delete-dups
+           (cl-loop for d in dicts
+                    for tgt = (plist-get d :target-lang)
+                    when (and tgt (not (string-empty-p tgt)))
+                    collect tgt))
+          #'string<)))
 
 (defun johnson--dictionaries-in-scope ()
   "Return dictionaries matching the current search scope."
   (johnson--ensure-dictionaries)
-  (if (or (eq johnson-default-search-scope 'all)
-          (null johnson--current-group))
-      johnson--dictionaries
+  (cond
+   ;; Custom groups: filter by dictionary name membership.
+   ((and johnson-dictionary-groups johnson--current-custom-group)
+    (let ((names (cdr (assoc johnson--current-custom-group
+                              johnson-dictionary-groups))))
+      (cl-remove-if-not
+       (lambda (d) (member (plist-get d :name) names))
+       johnson--dictionaries)))
+   ;; Language-based filtering.
+   ((or johnson--current-source-lang johnson--current-target-lang)
     (cl-remove-if-not
-     (lambda (d) (equal (plist-get d :group) johnson--current-group))
-     johnson--dictionaries)))
+     (lambda (d)
+       (and (or (null johnson--current-source-lang)
+                (equal (plist-get d :source-lang) johnson--current-source-lang))
+            (or (null johnson--current-target-lang)
+                (equal (plist-get d :target-lang) johnson--current-target-lang))))
+     johnson--dictionaries))
+   ;; No filter: all dictionaries.
+   (t johnson--dictionaries)))
+
+(defun johnson--format-scope ()
+  "Return a human-readable string for the current scope."
+  (cond
+   (johnson--current-custom-group johnson--current-custom-group)
+   ((or johnson--current-source-lang johnson--current-target-lang)
+    (format "%s → %s"
+            (or johnson--current-source-lang "<all>")
+            (or johnson--current-target-lang "<all>")))
+   (t "<all>")))
 
 ;;;###autoload
 (defun johnson-select-group ()
-  "Select the active dictionary group."
+  "Select the active dictionary group.
+When `johnson-dictionary-groups' is non-nil, select from custom group
+names.  Otherwise, select by source and target language, each with
+an @samp{<all>} option for flexible filtering."
   (interactive)
-  (let* ((groups (johnson--available-groups))
-         (choices (cons "All" groups))
-         (selection (completing-read "Dictionary group: " choices nil t)))
-    (if (equal selection "All")
-        (progn
-          (setq johnson--current-group nil)
-          (setq johnson-default-search-scope 'all))
-      (setq johnson--current-group selection)
-      (setq johnson-default-search-scope 'group))
-    (message "johnson: scope set to %s" (or johnson--current-group "All"))
-    (when johnson--current-word
-      (johnson-refresh))))
+  (if johnson-dictionary-groups
+      ;; Custom groups: flat selection.
+      (let* ((groups (mapcar #'car johnson-dictionary-groups))
+             (choices (cons "<all>" groups))
+             (selection (completing-read "Dictionary group: " choices nil t)))
+        (if (equal selection "<all>")
+            (setq johnson--current-custom-group nil
+                  johnson-default-search-scope 'all)
+          (setq johnson--current-custom-group selection
+                johnson-default-search-scope 'group))
+        (message "johnson: scope set to %s" (johnson--format-scope))
+        (when johnson--current-word
+          (johnson-refresh)))
+    ;; Auto-detected groups: two-step source/target selection.
+    (let* ((all-label "<all>")
+           (src-langs (johnson--available-source-langs))
+           (src-choices (cons all-label src-langs))
+           (src (completing-read "Source language: " src-choices nil t))
+           (source (unless (equal src all-label) src))
+           (tgt-langs (johnson--available-target-langs source))
+           (tgt-choices (cons all-label tgt-langs))
+           (tgt (completing-read "Target language: " tgt-choices nil t))
+           (target (unless (equal tgt all-label) tgt)))
+      (setq johnson--current-source-lang source
+            johnson--current-target-lang target)
+      (if (or source target)
+          (setq johnson-default-search-scope 'group)
+        (setq johnson-default-search-scope 'all))
+      (message "johnson: scope set to %s" (johnson--format-scope))
+      (when johnson--current-word
+        (johnson-refresh)))))
 
 ;;;; Indexing
 

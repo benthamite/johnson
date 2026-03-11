@@ -615,19 +615,19 @@ problem before continuing.
 
 #+findex: johnson-select-group
 The command ~johnson-select-group~ lets you choose the active dictionary
-group.  It presents a ~completing-read~ prompt with all available groups
-plus an ="All"= pseudo-group.
+group by source and target language.  It prompts you in two steps: first
+for the source language, then for the target language.  Each step offers
+an =<all>= option, enabling flexible filtering.  For example,
+=<all> → French= selects all dictionaries with French as the target
+language regardless of source, while =Spanish → <all>= selects all
+dictionaries with Spanish as the source language.  It is bound to =G= in
+~johnson-mode~.
 
-Selecting ="All"= sets the search scope to ~all~, meaning lookups will
-search across every discovered dictionary.  Selecting a specific group
-sets the scope to ~group~ and activates that group, restricting lookups
-to dictionaries within it.
-
-The available groups depend on your configuration.  If
-~johnson-dictionary-groups~ is ~nil~ (the default), groups are
-auto-detected from dictionary metadata as language pairs
-([[#h:search-scope-and-groups][Search scope and groups]]).  If you have defined
-custom groups, those are used instead.
+Selecting =<all>= for both source and target sets the search scope to
+~all~, meaning lookups search across every discovered dictionary.  Any
+other combination sets the scope to ~group~, restricting lookups to
+matching dictionaries.  If called from the results buffer, the current
+lookup is automatically refreshed to reflect the new scope.
 
 ** Navigating the results buffer
 :PROPERTIES:
