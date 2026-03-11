@@ -305,6 +305,24 @@ appear before "Collins English-Spanish", assign it a lower priority:
              '(("Oxford English-Spanish" . -10)
                ("Collins English-Spanish" . -5)))
 
+Importing order from GoldenDict
+-------------------------------
+
+If you have a GoldenDict (or GoldenDict-ng) installation with an
+established dictionary order, the command
+‘johnson-import-goldendict-order’ can import it.  The command
+parses the ‘<dictionaryOrder>’ section of the GoldenDict
+configuration file (usually ‘~/.goldendict/config’) and matches
+each dictionary name against the dictionaries discovered by Johnson.
+
+   Matching is done first by exact name, then by a normalized comparison
+
+that strips language tags (e.g., ‘[en-en]’) and ignores case.  The
+result is presented in the ‘*johnson-reorder*’ buffer, where you
+can review and adjust the order before saving.  Dictionaries that could
+not be matched to any GoldenDict entry are appended at the end and
+highlighted with the ‘johnson-reorder-unmatched-face’ face.
+
 
 File: johnson.info,  Node: Lookup history,  Next: Cache directory,  Prev: Display ordering,  Up: User options
 
@@ -693,6 +711,8 @@ Manage
      List dictionaries (‘johnson-list-dictionaries’).
 ‘r’
      Reorder dictionaries (‘johnson-reorder-dictionaries’).
+‘I’
+     Import GoldenDict order (‘johnson-import-goldendict-order’).
 ‘i’
      Index/re-index (‘johnson-index’).
 ‘k’
@@ -1857,6 +1877,7 @@ File: johnson.info,  Node: Function index,  Next: Variable index,  Up: Indices
 * johnson-history-clear:                 Browsing history.     (line  6)
 * johnson-history-forward:               Navigation history.   (line  6)
 * johnson-history-list:                  Browsing history.     (line  6)
+* johnson-import-goldendict-order:       Display ordering.     (line 22)
 * johnson-index:                         Indexing dictionaries.
                                                                (line  6)
 * johnson-insert-audio-button:           Audio playback.       (line  6)
@@ -1947,64 +1968,64 @@ Node: Dictionary discovery6229
 Node: Search scope and groups7201
 Node: Cross-reference scope8876
 Node: Display ordering9587
-Node: Lookup history10386
-Node: Cache directory11180
-Node: Audio playback12126
-Node: DICT protocol14339
-Node: Images15413
-Node: Wildcard search16092
-Node: Full-text search16909
-Node: Eldoc integration17634
-Node: Scan-popup mode18194
-Node: Bookmarks19386
-Node: History buffer19992
-Node: Commands20798
-Node: Transient menu21348
-Node: Looking up words24482
-Node: Indexing dictionaries26792
-Node: Managing groups and scope28471
-Node: Navigating the results buffer29561
-Node: Following cross-references30887
-Node: Navigation history31797
-Node: Copying entries33207
-Node: Browsing dictionary directory34475
-Node: Dictionary list34976
-Node: Cache management36405
-Node: Toggling images37332
-Node: Searching definitions37839
-Node: Eldoc integration commands38571
-Node: Scan-popup mode commands39256
-Node: Managing bookmarks40015
-Node: Browsing history41049
-Node: Functions41893
-Node: Format registration42324
-Node: Completion at point44085
-Node: Database lifecycle44988
-Node: Metadata storage45888
-Node: Headword normalization47062
-Node: Entry insertion47900
-Node: Querying entries48913
-Node: Staleness detection and reset50223
-Node: DSL format detection51232
-Node: DSL metadata parsing52208
-Node: DSL index building53221
-Node: DSL entry retrieval55252
-Node: DSL entry rendering56158
-Node: Faces58264
-Node: Text styling faces58806
-Node: Content type faces59511
-Node: Link faces60347
-Node: Section header face61007
-Node: Color faces61596
-Node: Roadmap62983
-Node: Version 01 --- DSL63404
-Node: Version 02 --- StarDict and compressed DSL64404
-Node: Version 03 --- MDict and DSL abbreviations65697
-Node: Version 04 (current)66183
-Node: Future features67541
-Node: Indices67776
-Node: Function index67909
-Node: Variable index73101
+Node: Lookup history11241
+Node: Cache directory12035
+Node: Audio playback12981
+Node: DICT protocol15194
+Node: Images16268
+Node: Wildcard search16947
+Node: Full-text search17764
+Node: Eldoc integration18489
+Node: Scan-popup mode19049
+Node: Bookmarks20241
+Node: History buffer20847
+Node: Commands21653
+Node: Transient menu22203
+Node: Looking up words25415
+Node: Indexing dictionaries27725
+Node: Managing groups and scope29404
+Node: Navigating the results buffer30494
+Node: Following cross-references31820
+Node: Navigation history32730
+Node: Copying entries34140
+Node: Browsing dictionary directory35408
+Node: Dictionary list35909
+Node: Cache management37338
+Node: Toggling images38265
+Node: Searching definitions38772
+Node: Eldoc integration commands39504
+Node: Scan-popup mode commands40189
+Node: Managing bookmarks40948
+Node: Browsing history41982
+Node: Functions42826
+Node: Format registration43257
+Node: Completion at point45018
+Node: Database lifecycle45921
+Node: Metadata storage46821
+Node: Headword normalization47995
+Node: Entry insertion48833
+Node: Querying entries49846
+Node: Staleness detection and reset51156
+Node: DSL format detection52165
+Node: DSL metadata parsing53141
+Node: DSL index building54154
+Node: DSL entry retrieval56185
+Node: DSL entry rendering57091
+Node: Faces59197
+Node: Text styling faces59739
+Node: Content type faces60444
+Node: Link faces61280
+Node: Section header face61940
+Node: Color faces62529
+Node: Roadmap63916
+Node: Version 01 --- DSL64337
+Node: Version 02 --- StarDict and compressed DSL65337
+Node: Version 03 --- MDict and DSL abbreviations66630
+Node: Version 04 (current)67116
+Node: Future features68474
+Node: Indices68709
+Node: Function index68842
+Node: Variable index74107
 
 End Tag Table
 
