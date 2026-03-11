@@ -312,7 +312,9 @@
   (should (eq (johnson-html-color-to-face "brown") 'johnson-color-brown-face))
   (should (eq (johnson-html-color-to-face "violet") 'johnson-color-violet-face))
   (should (eq (johnson-html-color-to-face "orange") 'johnson-color-orange-face))
-  (should (eq (johnson-html-color-to-face "#ff0000") 'johnson-color-default-face)))
+  (should (eq (johnson-html-color-to-face "#ff0000") 'johnson-color-red-face))
+  (should (eq (johnson-html-color-to-face "darkmagenta") 'johnson-color-violet-face))
+  (should (eq (johnson-html-color-to-face "#8B008B") 'johnson-color-violet-face)))
 
 (provide 'johnson-html-test)
 ;;; johnson-html-test.el ends here
