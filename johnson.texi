@@ -671,6 +671,8 @@ Select group (@code{johnson-select-group}). @*
 Next section (@code{johnson-next-section}). @*
 @item p
 Previous section (@code{johnson-prev-section}). @*
+@item j
+Jump to section (@code{johnson-jump-to-section}). @*
 @item o
 Ace link (@code{johnson-ace-link}). @*
 @item RET
@@ -897,6 +899,12 @@ displays ``No previous section''.  It is bound to @samp{p} in @code{johnson-mode
 The command @code{johnson-prev-section-header} is an alias for @*
 @code{johnson-prev-section}, bound to @samp{S-TAB} (@samp{<backtab>}) in @*
 @code{johnson-mode}. @*
+
+@findex johnson-jump-to-section
+The command @code{johnson-jump-to-section} prompts for a dictionary @*
+section using completion and jumps to it.  This is useful when the @*
+results buffer contains many dictionaries and the desired section is @*
+not visible.  It is bound to @samp{j} in @code{johnson-mode}. @*
 
 The command @code{johnson-toggle-section} collapses or expands the dictionary @*
 section at point.  Collapsed sections hide their content using an @*

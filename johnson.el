@@ -1265,6 +1265,7 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
     (define-key map "g" #'johnson-refresh)
     (define-key map "G" #'johnson-select-group)
     (define-key map "a" #'johnson-play-audio-at-point)
+    (define-key map "j" #'johnson-jump-to-section)
     (define-key map "o" #'johnson-ace-link)
     (define-key map "w" #'johnson-copy-entry)
     (define-key map "W" #'johnson-copy-dictionary-name)
@@ -1324,6 +1325,22 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
   "Move to the previous dictionary section header."
   (interactive)
   (johnson-prev-section))
+
+(defun johnson-jump-to-section ()
+  "Jump to a dictionary section using completion."
+  (interactive)
+  (let ((sections nil)
+        (pos (point-min)))
+    (while (setq pos (next-single-property-change pos 'johnson-section-header))
+      (when-let* ((name (get-text-property pos 'johnson-section-header)))
+        (unless (equal name "Contents")
+          (push (cons name pos) sections))))
+    (if sections
+        (let* ((names (mapcar #'car (nreverse sections)))
+               (chosen (completing-read "Jump to section: " names nil t)))
+          (when-let* ((entry (assoc chosen sections)))
+            (goto-char (cdr entry))))
+      (message "No sections in buffer"))))
 
 ;;;; Ace-link integration
 
