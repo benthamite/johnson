@@ -676,7 +676,9 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
   (let* ((header (johnson-mdict--parse-header path))
          (title (plist-get header :title))
          (name (if (or (string-empty-p title)
-                      (string= title "Title (No HTML code allowed)"))
+                      (string= title "Title (No HTML code allowed)")
+                      (string-match-p "\\`[ \t\n]*<[!a-zA-Z]" title)
+                      (string-match-p "\\`[ \t\n]*&lt;" title))
                    (file-name-base path)
                  title)))
     (list :name name
