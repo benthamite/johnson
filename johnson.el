@@ -1096,6 +1096,7 @@ at point.  Caller must bind `inhibit-read-only'."
          (format-name (plist-get dict :format-name))
          (fmt (johnson--get-format format-name)))
     (johnson--insert-section-header name)
+    (insert "\n")
     (let ((section-start (point)))
       (dolist (match matches)
         (let* ((byte-offset (nth 1 match))
