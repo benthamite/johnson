@@ -30,6 +30,7 @@
 (require 'cl-lib)
 
 ;; Variables (defined in johnson.el)
+(defvar johnson-dictionary-directories)
 (defvar johnson-display-images)
 (defvar johnson-fts-enabled)
 (defvar johnson-history-persist)
@@ -62,6 +63,7 @@
 (declare-function johnson-collapse-all "johnson")
 (declare-function johnson-list-dictionaries "johnson")
 (declare-function johnson-reorder-dictionaries "johnson")
+(declare-function johnson-import-goldendict-order "johnson")
 (declare-function johnson-index "johnson")
 (declare-function johnson-stop-indexing "johnson")
 (declare-function johnson-clear-index "johnson")
@@ -166,6 +168,27 @@
   :choices '(all same)
   :description "Ref scope")
 
+;;;; Commands
+
+(defun johnson-transient-set-directories ()
+  "Set `johnson-dictionary-directories' interactively.
+Prompt for directories one at a time until the user enters an empty string."
+  (interactive)
+  (let ((dirs '())
+        dir)
+    (while (progn
+             (setq dir (read-directory-name
+                        (format "Dictionary directory (%d so far, empty to finish): "
+                                (length dirs))
+                        nil nil nil))
+             (not (string-empty-p dir)))
+      (push (file-name-as-directory dir) dirs))
+    (when dirs
+      (setq johnson-dictionary-directories (nreverse dirs))
+      (message "Dictionary directories set to: %s"
+               (mapconcat #'abbreviate-file-name
+                          johnson-dictionary-directories ", ")))))
+
 ;;;; Main menu
 
 ;;;###autoload
@@ -204,6 +227,8 @@
   [["Manage"
     ("d" "List dictionaries" johnson-list-dictionaries)
     ("r" "Reorder dictionaries" johnson-reorder-dictionaries)
+    ("I" "Import GoldenDict order" johnson-import-goldendict-order)
+    ("S" "Set dictionary directories" johnson-transient-set-directories)
     ("i" "Index/re-index" johnson-index)
     ("k" "Stop indexing" johnson-stop-indexing)
     ("X" "Clear index" johnson-clear-index)
