@@ -168,12 +168,19 @@
   :choices '(all same)
   :description "Ref scope")
 
-;;;; Commands
+(transient-define-infix johnson-transient:dict-dirs ()
+  :class 'johnson-transient-dirs
+  :variable 'johnson-dictionary-directories
+  :description "Dictionary directories")
 
-(defun johnson-transient-set-directories ()
-  "Set `johnson-dictionary-directories' interactively.
-Prompt for directories one at a time until the user enters an empty string."
-  (interactive)
+;;;; Directory-list infix class
+
+(defclass johnson-transient-dirs (transient-lisp-variable)
+  ((always-read :initform t))
+  "An infix for editing a list of directories.")
+
+(cl-defmethod transient-infix-read ((_obj johnson-transient-dirs))
+  "Prompt for directories one at a time until the user enters an empty string."
   (let ((dirs '())
         dir)
     (while (progn
@@ -183,11 +190,17 @@ Prompt for directories one at a time until the user enters an empty string."
                         nil nil nil))
              (not (string-empty-p dir)))
       (push (file-name-as-directory dir) dirs))
-    (when dirs
-      (setq johnson-dictionary-directories (nreverse dirs))
-      (message "Dictionary directories set to: %s"
-               (mapconcat #'abbreviate-file-name
-                          johnson-dictionary-directories ", ")))))
+    (nreverse dirs)))
+
+(cl-defmethod transient-format-value ((obj johnson-transient-dirs))
+  "Format OBJ value as abbreviated directory paths."
+  (let ((val (oref obj value)))
+    (propertize (if val
+                    (mapconcat #'abbreviate-file-name val ", ")
+                  "(none)")
+                'face (if val
+                          'transient-value
+                        'transient-inactive-value))))
 
 ;;;; Main menu
 
@@ -228,7 +241,6 @@ Prompt for directories one at a time until the user enters an empty string."
     ("d" "List dictionaries" johnson-list-dictionaries)
     ("r" "Reorder dictionaries" johnson-reorder-dictionaries)
     ("I" "Import GoldenDict order" johnson-import-goldendict-order)
-    ("S" "Set dictionary directories" johnson-transient-set-directories)
     ("i" "Index/re-index" johnson-index)
     ("k" "Stop indexing" johnson-stop-indexing)
     ("X" "Clear index" johnson-clear-index)
@@ -241,7 +253,8 @@ Prompt for directories one at a time until the user enters an empty string."
     ("-s" johnson-transient:scan)
     ("-p" johnson-transient:persist-history)
     ("-c" johnson-transient:search-scope)
-    ("-r" johnson-transient:ref-scope)]])
+    ("-r" johnson-transient:ref-scope)
+    ("-d" johnson-transient:dict-dirs)]])
 
 (provide 'johnson-transient)
 ;;; johnson-transient.el ends here
