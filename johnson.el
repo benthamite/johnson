@@ -1754,8 +1754,8 @@ dictionary whose section contains the link."
                  (or (cdr (assoc (plist-get dict :name) priorities)) 0)))
     (quit-window)))
 
+(eval-when-compile (require 'dom))
 (declare-function dom-by-tag "dom" (dom tag))
-(declare-function dom-attr "dom" (dom attr))
 
 (defun johnson--goldendict-config-file ()
   "Return the path to the GoldenDict configuration file, or nil."
