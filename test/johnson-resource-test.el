@@ -122,6 +122,29 @@ Returns the path to the zip file."
       (delete-directory dir t)
       (delete-directory cache-dir t))))
 
+(ert-deftest johnson-resource-test-extract-negative-cache ()
+  "Failed extraction creates a .missing marker, skipping future attempts."
+  (let* ((dir (make-temp-file "johnson-res-test-" t))
+         (cache-dir (make-temp-file "johnson-res-cache-" t))
+         (johnson-cache-directory cache-dir)
+         (paths (johnson-resource-test--make-fixture-zip dir))
+         (zip-path (nth 1 paths)))
+    (unwind-protect
+        (progn
+          ;; First attempt: fails and creates .missing marker.
+          (should-not (johnson--extract-resource zip-path "nonexistent.mp3"))
+          (let ((marker (concat (expand-file-name
+                                 "nonexistent.mp3"
+                                 (johnson--resource-cache-dir zip-path))
+                                ".missing")))
+            (should (file-exists-p marker)))
+          ;; Second attempt: returns nil without calling unzip.
+          ;; (Delete zip to prove unzip is not called.)
+          (delete-file zip-path)
+          (should-not (johnson--extract-resource zip-path "nonexistent.mp3")))
+      (delete-directory dir t)
+      (delete-directory cache-dir t))))
+
 ;;;; johnson--resolve-audio-file
 
 (ert-deftest johnson-resource-test-resolve-existing-file ()

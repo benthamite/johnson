@@ -1957,25 +1957,25 @@ The directory is `johnson-cache-directory/resources/<md5-of-zip-path>/'."
   "Extract FILENAME from ZIP-PATH to the resource cache directory.
 Uses `unzip -p' to extract to stdout, then writes to disk.
 Return the cached file path on success, nil on failure.
-Skip extraction if already cached."
+Skip extraction if already cached or previously failed."
   (let* ((cache-dir (johnson--resource-cache-dir zip-path))
-         (cached (expand-file-name (file-name-nondirectory filename) cache-dir)))
-    (if (file-exists-p cached)
-        cached
+         (cached (expand-file-name (file-name-nondirectory filename) cache-dir))
+         (neg-marker (concat cached ".missing")))
+    (cond
+     ((file-exists-p cached) cached)
+     ((file-exists-p neg-marker) nil)
+     (t
       (make-directory (file-name-directory cached) t)
-      (let ((exit-code
-             (with-temp-buffer
-               (set-buffer-multibyte nil)
-               (let ((code (call-process "unzip" nil t nil "-p" zip-path filename)))
-                 (when (and (zerop code) (> (buffer-size) 0))
-                   (let ((coding-system-for-write 'no-conversion))
-                     (write-region (point-min) (point-max) cached nil 'silent)))
-                 code))))
-        (if (file-exists-p cached)
-            cached
-          (message "johnson: failed to extract %s from %s (exit %s)"
-                   filename zip-path exit-code)
-          nil)))))
+      (with-temp-buffer
+        (set-buffer-multibyte nil)
+        (let ((code (call-process "unzip" nil t nil "-p" zip-path filename)))
+          (when (and (zerop code) (> (buffer-size) 0))
+            (let ((coding-system-for-write 'no-conversion))
+              (write-region (point-min) (point-max) cached nil 'silent)))))
+      (if (file-exists-p cached)
+          cached
+        (write-region "" nil neg-marker nil 'silent)
+        nil)))))
 
 (defun johnson--find-resource-zips (dir)
   "Return all `.dsl.files.zip' archives in DIR, or nil."
