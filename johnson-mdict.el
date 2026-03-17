@@ -17,6 +17,7 @@
 (require 'cl-lib)
 (require 'johnson-html)
 (require 'johnson-ripemd128)
+(require 'johnson-binary)
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-insert-audio-button "johnson")
@@ -26,37 +27,12 @@
 
 (defvar johnson-cache-directory)
 
-;;;; Binary integer helpers — from unibyte strings
-
-(defsubst johnson-mdict--u16be (data pos)
-  "Read unsigned 16-bit big-endian integer from DATA at POS."
-  (logior (ash (aref data pos) 8)
-          (aref data (+ pos 1))))
-
-(defsubst johnson-mdict--u32be (data pos)
-  "Read unsigned 32-bit big-endian integer from DATA at POS."
-  (logior (ash (aref data pos) 24)
-          (ash (aref data (+ pos 1)) 16)
-          (ash (aref data (+ pos 2)) 8)
-          (aref data (+ pos 3))))
-
-(defsubst johnson-mdict--u64be (data pos)
-  "Read unsigned 64-bit big-endian integer from DATA at POS."
-  (logior (ash (aref data pos) 56)
-          (ash (aref data (+ pos 1)) 48)
-          (ash (aref data (+ pos 2)) 40)
-          (ash (aref data (+ pos 3)) 32)
-          (ash (aref data (+ pos 4)) 24)
-          (ash (aref data (+ pos 5)) 16)
-          (ash (aref data (+ pos 6)) 8)
-          (aref data (+ pos 7))))
-
 (defun johnson-mdict--read-number (data pos width)
   "Read a big-endian unsigned integer from DATA at POS.
 WIDTH is 4 or 8 bytes."
   (if (= width 8)
-      (johnson-mdict--u64be data pos)
-    (johnson-mdict--u32be data pos)))
+      (johnson-binary-u64be data pos)
+    (johnson-binary-u32be data pos)))
 
 ;;;; Internal variables
 
@@ -228,7 +204,7 @@ kernel (lib/lzo/lzo1x_decompress.c)."
 DATA is a unibyte string containing the raw block (with 8-byte header).
 DECOMP-SIZE is the expected decompressed size (required for LZO blocks).
 Returns the decompressed unibyte string."
-  (let ((comp-type (johnson-mdict--u32be data 0)))
+  (let ((comp-type (johnson-binary-u32be data 0)))
     (pcase comp-type
       (#x00000000
        ;; No compression: strip 8-byte header.
@@ -272,7 +248,7 @@ Returns a plist with keys:
     (set-buffer-multibyte nil)
     ;; Read first 4 bytes: header size (big-endian).
     (insert-file-contents-literally path nil 0 4)
-    (let* ((header-size (johnson-mdict--u32be (buffer-string) 0))
+    (let* ((header-size (johnson-binary-u32be (buffer-string) 0))
            ;; Read header-size bytes + 4 bytes checksum after header.
            (total-read (+ 4 header-size 4)))
       (erase-buffer)
@@ -490,7 +466,7 @@ Returns the number of bytes consumed."
   (if (= num-width 8)
       ;; v2.0: 2-byte size (BE, in basic units), then text, then null
       ;; terminator.  For UTF-16LE, the size is in 2-byte code units.
-      (let* ((text-size (johnson-mdict--u16be data pos))
+      (let* ((text-size (johnson-binary-u16be data pos))
              (byte-size (if (eq encoding 'utf-16le) (* text-size 2) text-size))
              (null-size (if (eq encoding 'utf-16le) 2 1)))
         (+ 2 byte-size null-size))
@@ -663,7 +639,7 @@ Returns the next offset, or -1 if this is the last entry."
              (set-buffer-multibyte nil)
              (insert-file-contents-literally path nil 0 4)
              ;; Header size should be a reasonable positive number.
-             (let ((header-size (johnson-mdict--u32be (buffer-string) 0)))
+             (let ((header-size (johnson-binary-u32be (buffer-string) 0)))
                (and (> header-size 0)
                     (< header-size 1048576))))
          (error nil))))

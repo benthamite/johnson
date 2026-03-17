@@ -17,23 +17,10 @@
 
 (require 'cl-lib)
 (require 'johnson-html)
+(require 'johnson-binary)
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
-
-;;;; Binary integer helpers
-
-(defsubst johnson-bgl--u16be (data pos)
-  "Read unsigned 16-bit big-endian integer from DATA at POS."
-  (logior (ash (aref data pos) 8)
-          (aref data (+ pos 1))))
-
-(defsubst johnson-bgl--u32be (data pos)
-  "Read unsigned 32-bit big-endian integer from DATA at POS."
-  (logior (ash (aref data pos) 24)
-          (ash (aref data (+ pos 1)) 16)
-          (ash (aref data (+ pos 2)) 8)
-          (aref data (+ pos 3))))
 
 ;;;; Language code table
 
@@ -154,7 +141,7 @@ Returns a plist with :magic and :gzip-offset."
     (insert-file-contents-literally path nil 0 6)
     (let* ((data (buffer-string))
            (magic (substring data 0 4))
-           (gz-offset (johnson-bgl--u16be data 4)))
+           (gz-offset (johnson-binary-u16be data 4)))
       (list :magic magic :gzip-offset gz-offset))))
 
 (defun johnson-bgl--gzip-offset (path)
@@ -283,7 +270,7 @@ Multiple triples are returned when alternate headwords are present."
       ;; Need at least 2 bytes for definition length.
       (when (> (+ def-len-pos 2) (+ payload-start payload-length))
         (cl-return-from johnson-bgl--parse-entry-block nil))
-      (let* ((def-len (johnson-bgl--u16be data def-len-pos))
+      (let* ((def-len (johnson-binary-u16be data def-len-pos))
              (def-start (+ def-len-pos 2))
              (def-end (+ def-start def-len))
              (block-end (+ payload-start payload-length)))
@@ -315,7 +302,7 @@ Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
   (let* ((block-end (+ payload-start payload-length))
          ;; Word: first byte is flags, next 4 bytes are word length.
          (_flags (aref data payload-start))
-         (hw-len (johnson-bgl--u32be data (1+ payload-start)))
+         (hw-len (johnson-binary-u32be data (1+ payload-start)))
          (hw-start (+ payload-start 5))
          (hw-end (+ hw-start hw-len)))
     (when (> hw-end block-end)
@@ -328,13 +315,13 @@ Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
       ;; Alternates count: 4 bytes.
       (when (> (+ pos 4) block-end)
         (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
-      (let ((alt-count (johnson-bgl--u32be data pos)))
+      (let ((alt-count (johnson-binary-u32be data pos)))
         (setq pos (+ pos 4))
         ;; Skip alternates for now, just index the primary.
         (dotimes (_ alt-count)
           (when (> (+ pos 4) block-end)
             (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
-          (let ((alt-len (johnson-bgl--u32be data pos)))
+          (let ((alt-len (johnson-binary-u32be data pos)))
             (setq pos (+ pos 4))
             (when (> (+ pos alt-len) block-end)
               (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
@@ -346,7 +333,7 @@ Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
         ;; Definition: 4 bytes length + data.
         (when (> (+ pos 4) block-end)
           (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
-        (let* ((def-len (johnson-bgl--u32be data pos))
+        (let* ((def-len (johnson-binary-u32be data pos))
                (def-start (+ pos 4))
                (def-end (+ def-start def-len)))
           (when (> def-end block-end)
@@ -375,7 +362,7 @@ Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
                     (= (aref magic 2) #x00)
                     (memq (aref magic 3) '(#x01 #x02))
                     ;; Gzip offset should be reasonable.
-                    (let ((gz-offset (johnson-bgl--u16be data 4)))
+                    (let ((gz-offset (johnson-binary-u16be data 4)))
                       (and (> gz-offset 0)
                            (< gz-offset 256))))))
          (error nil))))
@@ -491,7 +478,7 @@ and similar control bytes.  Returns cleaned unibyte string."
                ((= field-code #x28)
                 ;; Title with transcription: 2-byte length + data.
                 (when (< (1+ pos) len)
-                  (let ((flen (johnson-bgl--u16be data pos)))
+                  (let ((flen (johnson-binary-u16be data pos)))
                     (cl-incf pos 2)
                     (cl-incf pos flen))))
                ((= field-code #x50)
@@ -505,7 +492,7 @@ and similar control bytes.  Returns cleaned unibyte string."
                 ;; Transcription type 2: 1 byte type + 2 byte length + data.
                 (when (< (+ pos 2) len)
                   (cl-incf pos) ; type byte
-                  (let ((flen (johnson-bgl--u16be data pos)))
+                  (let ((flen (johnson-binary-u16be data pos)))
                     (cl-incf pos 2)
                     (cl-incf pos flen))))
                (t

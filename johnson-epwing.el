@@ -26,6 +26,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'johnson-binary)
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
@@ -70,20 +71,6 @@
     (puthash #x39 46 tbl)
     tbl)
   "Hash table mapping escape command bytes to total sequence length.")
-
-;;;; Binary helpers
-
-(defsubst johnson-epwing--u16be (data pos)
-  "Read unsigned 16-bit big-endian integer from DATA at POS."
-  (logior (ash (aref data pos) 8)
-          (aref data (1+ pos))))
-
-(defsubst johnson-epwing--u32be (data pos)
-  "Read unsigned 32-bit big-endian integer from DATA at POS."
-  (logior (ash (aref data pos) 24)
-          (ash (aref data (1+ pos)) 16)
-          (ash (aref data (+ pos 2)) 8)
-          (aref data (+ pos 3))))
 
 ;;;; File I/O
 
@@ -226,7 +213,7 @@ Navigates up the directory tree from HONMON-PATH."
 Returns a list of subbook plists with keys :title, :directory,
 :index-page."
   (let* ((data (johnson-epwing--read-file-unibyte catalogs-path))
-         (count (johnson-epwing--u16be data 0))
+         (count (johnson-binary-u16be data 0))
          (epwing-p (johnson-epwing--epwing-catalog-p catalogs-path)))
     (cl-loop for i below count
              collect (if epwing-p
@@ -239,7 +226,7 @@ Returns a list of subbook plists with keys :title, :directory,
          (title (johnson-epwing--decode-catalog-title
                  (substring data (+ off 2) (+ off 82))))
          (directory (string-trim (substring data (+ off 82) (+ off 90))))
-         (index-page (johnson-epwing--u16be data (+ off 94))))
+         (index-page (johnson-binary-u16be data (+ off 94))))
     (list :title title :directory directory :index-page index-page)))
 
 (defun johnson-epwing--parse-eb-subbook (data index)
@@ -299,8 +286,8 @@ entry plists with keys :id, :start-page, :page-count, :flags."
              for off = (+ 16 (* i 16))
              when (< (+ off 15) (length data))
              collect (list :id (aref data off)
-                           :start-page (johnson-epwing--u32be data (+ off 2))
-                           :page-count (johnson-epwing--u32be data (+ off 6))
+                           :start-page (johnson-binary-u32be data (+ off 2))
+                           :page-count (johnson-binary-u32be data (+ off 6))
                            :flags (aref data (+ off 10))))))
 
 (defun johnson-epwing--find-search-index (index-table)
@@ -331,7 +318,7 @@ pages already processed."
   (let* ((data (johnson-epwing--read-page path page-num))
          (flags (aref data 0))
          (entry-len (aref data 1))
-         (count (johnson-epwing--u16be data 2))
+         (count (johnson-binary-u16be data 2))
          (leaf-p (not (zerop (logand flags #x80)))))
     (if leaf-p
         (johnson-epwing--process-leaf-entries
@@ -355,8 +342,8 @@ the number of entries.  CODING is the character encoding."
              (key-raw (substring data pos key-end))
              (headword (johnson-epwing--decode-search-key key-raw coding)))
         (setq pos key-end)
-        (let* ((text-page (johnson-epwing--u32be data pos))
-               (text-off (johnson-epwing--u16be data (+ pos 4)))
+        (let* ((text-page (johnson-binary-u32be data pos))
+               (text-off (johnson-binary-u16be data (+ pos 4)))
                (text-pos (johnson-epwing--page-pos text-page text-off)))
           (cl-incf pos 12)
           (when (and (> text-page 0)
@@ -377,7 +364,7 @@ character encoding.  CALLBACK and VISITED are forwarded."
                          (prog1 (aref data pos) (cl-incf pos))
                        entry-len)))
         (cl-incf pos key-len)
-        (let ((child-page (johnson-epwing--u32be data pos)))
+        (let ((child-page (johnson-binary-u32be data pos)))
           (cl-incf pos 4)
           (when (> child-page 0)
             (johnson-epwing--traverse-page

@@ -26,116 +26,29 @@
 (declare-function johnson--insert-image "johnson")
 (declare-function johnson--resolve-audio-file "johnson")
 
-;;;; Faces
-
-(defgroup johnson-dsl-faces nil
-  "Faces for DSL dictionary rendering."
-  :group 'johnson)
-
-(defface johnson-bold-face
-  '((t :inherit bold))
-  "Face for bold text in DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-italic-face
-  '((t :inherit italic))
-  "Face for italic text in DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-underline-face
-  '((t :underline t))
-  "Face for underlined text in DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-example-face
-  '((t :inherit italic :foreground "dim gray"))
-  "Face for example text in DSL entries."
-  :group 'johnson-dsl-faces)
+;;;; DSL-specific faces
 
 (defface johnson-optional-face
   '((((background light)) :foreground "gray50")
     (((background dark)) :foreground "gray60"))
   "Face for optional/secondary text in DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-ref-face
-  '((t :inherit link))
-  "Face for cross-reference links in DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-url-face
-  '((t :inherit link))
-  "Face for URL links in DSL entries."
-  :group 'johnson-dsl-faces)
+  :group 'johnson)
 
 (defface johnson-comment-face
   '((t :inherit font-lock-comment-face))
   "Face for comment text in DSL entries."
-  :group 'johnson-dsl-faces)
+  :group 'johnson)
 
 (defface johnson-stress-face
   '((t :inherit bold))
   "Face for stress marks in DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-section-header-face
-  '((t :inherit bold :extend t))
-  "Face for section headers in DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-color-default-face
-  '((((background light)) :foreground "dark green")
-    (((background dark)) :foreground "green3"))
-  "Default color face for DSL entries (green)."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-color-green-face
-  '((((background light)) :foreground "dark green")
-    (((background dark)) :foreground "green3"))
-  "Green color face for DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-color-red-face
-  '((((background light)) :foreground "dark red")
-    (((background dark)) :foreground "indian red"))
-  "Red color face for DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-color-blue-face
-  '((((background light)) :foreground "dark blue")
-    (((background dark)) :foreground "steel blue"))
-  "Blue color face for DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-color-gray-face
-  '((((background light)) :foreground "dim gray")
-    (((background dark)) :foreground "dark gray"))
-  "Gray color face for DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-color-brown-face
-  '((((background light)) :foreground "saddle brown")
-    (((background dark)) :foreground "burlywood"))
-  "Brown color face for DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-color-violet-face
-  '((((background light)) :foreground "dark violet")
-    (((background dark)) :foreground "plum"))
-  "Violet color face for DSL entries."
-  :group 'johnson-dsl-faces)
-
-(defface johnson-color-orange-face
-  '((((background light)) :foreground "dark orange")
-    (((background dark)) :foreground "orange"))
-  "Orange color face for DSL entries."
-  :group 'johnson-dsl-faces)
+  :group 'johnson)
 
 (defface johnson-abbreviation-face
   '((((background light)) :foreground "dark green")
     (((background dark)) :foreground "green3"))
   "Face for abbreviation markers ([p] tags) in DSL entries."
-  :group 'johnson-dsl-faces)
+  :group 'johnson)
 
 ;;;; Color mapping
 
