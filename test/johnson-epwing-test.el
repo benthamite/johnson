@@ -126,11 +126,11 @@
     (should (= (plist-get (nth 1 table) :id) #x71))
     (should (= (plist-get (nth 1 table) :start-page) 2))))
 
-(ert-deftest johnson-epwing-test-find-word-index ()
-  "Finds the word search index."
+(ert-deftest johnson-epwing-test-find-search-index ()
+  "Finds the search index (word search preferred)."
   (let* ((table (johnson-epwing--read-index-table
                  (johnson-epwing-test--honmon) 1))
-         (idx (johnson-epwing--find-word-index table)))
+         (idx (johnson-epwing--find-search-index table)))
     (should idx)
     (should (= (plist-get idx :id) #x71))
     (should (= (plist-get idx :start-page) 2))))
