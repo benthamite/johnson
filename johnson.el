@@ -197,6 +197,84 @@ delay, `both' triggers on either."
   "Face for dictionaries that could not be matched during import."
   :group 'johnson)
 
+(defface johnson-bold-face
+  '((t :inherit bold))
+  "Face for bold text in dictionary entries."
+  :group 'johnson)
+
+(defface johnson-italic-face
+  '((t :inherit italic))
+  "Face for italic text in dictionary entries."
+  :group 'johnson)
+
+(defface johnson-underline-face
+  '((t :underline t))
+  "Face for underlined text in dictionary entries."
+  :group 'johnson)
+
+(defface johnson-example-face
+  '((t :inherit italic :foreground "dim gray"))
+  "Face for example text in dictionary entries."
+  :group 'johnson)
+
+(defface johnson-ref-face
+  '((t :inherit link))
+  "Face for cross-reference links in dictionary entries."
+  :group 'johnson)
+
+(defface johnson-url-face
+  '((t :inherit link))
+  "Face for URL links in dictionary entries."
+  :group 'johnson)
+
+(defface johnson-color-default-face
+  '((((background light)) :foreground "dark green")
+    (((background dark)) :foreground "green3"))
+  "Default color face for dictionary entries (green)."
+  :group 'johnson)
+
+(defface johnson-color-green-face
+  '((((background light)) :foreground "dark green")
+    (((background dark)) :foreground "green3"))
+  "Green color face for dictionary entries."
+  :group 'johnson)
+
+(defface johnson-color-red-face
+  '((((background light)) :foreground "dark red")
+    (((background dark)) :foreground "indian red"))
+  "Red color face for dictionary entries."
+  :group 'johnson)
+
+(defface johnson-color-blue-face
+  '((((background light)) :foreground "dark blue")
+    (((background dark)) :foreground "steel blue"))
+  "Blue color face for dictionary entries."
+  :group 'johnson)
+
+(defface johnson-color-gray-face
+  '((((background light)) :foreground "dim gray")
+    (((background dark)) :foreground "dark gray"))
+  "Gray color face for dictionary entries."
+  :group 'johnson)
+
+(defface johnson-color-brown-face
+  '((((background light)) :foreground "saddle brown")
+    (((background dark)) :foreground "burlywood"))
+  "Brown color face for dictionary entries."
+  :group 'johnson)
+
+(defface johnson-color-violet-face
+  '((((background light)) :foreground "dark violet")
+    (((background dark)) :foreground "plum"))
+  "Violet color face for dictionary entries."
+  :group 'johnson)
+
+(defface johnson-color-orange-face
+  '((((background light)) :foreground "dark orange")
+    (((background dark)) :foreground "orange"))
+  "Orange color face for dictionary entries."
+  :group 'johnson)
+
 ;;;; Internal variables
 
 (defvar johnson--formats nil
@@ -1083,6 +1161,15 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
     (johnson--display-results word results)))
 
 ;;;; Results buffer
+
+(defun johnson--make-ref-button (start end ref-text)
+  "Make a cross-reference button from START to END for REF-TEXT.
+The button triggers a lookup of REF-TEXT when activated."
+  (make-text-button start end
+                    'face 'johnson-ref-face
+                    'johnson-ref-word ref-text
+                    'action (lambda (_btn) (johnson-lookup ref-text))
+                    'help-echo (format "Look up \"%s\"" ref-text)))
 
 (defun johnson--render-one-result (result)
   "Render a single dictionary RESULT into the current buffer.

@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'johnson-binary)
 
 ;;;; Constants
 
@@ -27,13 +28,6 @@
   "Magic string at the start of EBZIP files.")
 
 ;;;; Binary helpers
-
-(defsubst johnson-ebzip--u32be (data pos)
-  "Read unsigned 32-bit big-endian integer from DATA at POS."
-  (logior (ash (aref data pos) 24)
-          (ash (aref data (1+ pos)) 16)
-          (ash (aref data (+ pos 2)) 8)
-          (aref data (+ pos 3))))
 
 (defsubst johnson-ebzip--u40be (data pos)
   "Read unsigned 40-bit big-endian integer from DATA at POS."
@@ -103,7 +97,7 @@ width per entry.  Returns a vector of (SLICE-COUNT + 1) offsets."
     (2 (logior (ash (aref data pos) 8) (aref data (1+ pos))))
     (3 (logior (ash (aref data pos) 16) (ash (aref data (1+ pos)) 8)
                (aref data (+ pos 2))))
-    (4 (johnson-ebzip--u32be data pos))
+    (4 (johnson-binary-u32be data pos))
     (5 (johnson-ebzip--u40be data pos))
     (_ (error "Unsupported EBZIP index width: %d" width))))
 

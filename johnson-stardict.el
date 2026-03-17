@@ -19,6 +19,7 @@
 (require 'cl-lib)
 (require 'johnson-dictzip)
 (require 'johnson-html)
+(require 'johnson-binary)
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
@@ -151,23 +152,6 @@ Returns a cons cell (STRING . NEW-POS) where NEW-POS is past the null byte."
     (cons (decode-coding-string (substring data pos end) 'utf-8)
           (1+ end))))
 
-(defun johnson-stardict--u32be-from-string (data pos)
-  "Read a 32-bit big-endian unsigned integer from DATA at byte POS."
-  (logior (ash (aref data pos) 24)
-          (ash (aref data (+ pos 1)) 16)
-          (ash (aref data (+ pos 2)) 8)
-          (aref data (+ pos 3))))
-
-(defun johnson-stardict--u64be-from-string (data pos)
-  "Read a 64-bit big-endian unsigned integer from DATA at byte POS."
-  (logior (ash (aref data pos) 56)
-          (ash (aref data (+ pos 1)) 48)
-          (ash (aref data (+ pos 2)) 40)
-          (ash (aref data (+ pos 3)) 32)
-          (ash (aref data (+ pos 4)) 24)
-          (ash (aref data (+ pos 5)) 16)
-          (ash (aref data (+ pos 6)) 8)
-          (aref data (+ pos 7))))
 
 (defun johnson-stardict--do-parse-idx (data offset-bytes size-bytes)
   "Parse idx DATA using OFFSET-BYTES and SIZE-BYTES per entry.
@@ -179,11 +163,11 @@ Returns a vector of (HEADWORD OFFSET SIZE) triples, in file order."
              (headword (car str-result))
              (cur-pos (cdr str-result))
              (offset (if (= offset-bytes 8)
-                         (johnson-stardict--u64be-from-string data cur-pos)
-                       (johnson-stardict--u32be-from-string data cur-pos)))
+                         (johnson-binary-u64be data cur-pos)
+                       (johnson-binary-u32be data cur-pos)))
              (size (if (= size-bytes 8)
-                       (johnson-stardict--u64be-from-string data (+ cur-pos offset-bytes))
-                     (johnson-stardict--u32be-from-string data (+ cur-pos offset-bytes)))))
+                       (johnson-binary-u64be data (+ cur-pos offset-bytes))
+                     (johnson-binary-u32be data (+ cur-pos offset-bytes)))))
         (push (list headword offset size) entries)
         (setq pos (+ cur-pos offset-bytes size-bytes))))
     (vconcat (nreverse entries))))
@@ -242,7 +226,7 @@ Returns a list of (SYNONYM-WORD OFFSET SIZE) triples."
           (let* ((str-result (johnson-stardict--read-null-terminated-string data pos))
                  (synonym (car str-result))
                  (cur-pos (cdr str-result))
-                 (idx (johnson-stardict--u32be-from-string data cur-pos)))
+                 (idx (johnson-binary-u32be data cur-pos)))
             (when (< idx (length idx-entries))
               (let ((main-entry (aref idx-entries idx)))
                 (push (list synonym (nth 1 main-entry) (nth 2 main-entry))
@@ -475,7 +459,7 @@ Returns a list of (TYPE-CHAR . DATA-BYTES) cons cells."
                 (push (cons type-char (substring raw-data pos end)) fields)
                 (setq pos (1+ end)))  ; skip null byte
             ;; Uppercase: 4-byte size prefix.
-            (let ((size (johnson-stardict--u32be-from-string raw-data pos)))
+            (let ((size (johnson-binary-u32be raw-data pos)))
               (push (cons type-char (substring raw-data (+ pos 4) (+ pos 4 size)))
                     fields)
               (setq pos (+ pos 4 size)))))))
@@ -502,7 +486,7 @@ Returns a list of (TYPE-CHAR . DATA-BYTES) cons cells."
               (push (cons type-char (substring raw-data pos end)) fields)
               (setq pos (1+ end)))
           ;; Uppercase: 4-byte size prefix.
-          (let ((size (johnson-stardict--u32be-from-string raw-data pos)))
+          (let ((size (johnson-binary-u32be raw-data pos)))
             (push (cons type-char (substring raw-data (+ pos 4) (+ pos 4 size)))
                   fields)
             (setq pos (+ pos 4 size))))))
