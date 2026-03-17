@@ -42,10 +42,12 @@ before calling `johnson-html-render-region'.")
 ;;;; Color mapping
 
 (defun johnson-html--classify-color-rgb (r g b)
-  "Classify 16-bit RGB values R, G, B to a johnson color face."
+  "Classify 16-bit RGB values R, G, B to a johnson color face.
+Thresholds are based on the 16-bit color range (0–65535)."
   (let ((mx (max r g b))
         (mn (min r g b)))
     (cond
+     ;; Near-black (<10%), near-white (>90%), or low saturation (<~14%)
      ((or (< mx 6554) (> mn 58982) (< (- mx mn) (/ mx 7)))
       'johnson-color-gray-face)
      ((= mx r)

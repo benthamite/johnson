@@ -1110,6 +1110,13 @@ but restricted to a single dictionary."
                 (when matches (list (cons dict matches))))))
         (error nil)))))
 
+(defun johnson--history-push (word)
+  "Add WORD to `johnson-history', capping at `johnson-history-max'."
+  (unless (equal word (car johnson-history))
+    (push word johnson-history)
+    (when (> (length johnson-history) johnson-history-max)
+      (setcdr (nthcdr (1- johnson-history-max) johnson-history) nil))))
+
 ;;;; Lookup
 
 ;;;###autoload
@@ -1152,10 +1159,7 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
         (setq word (completing-read
                     (format "Wildcard matches (%d): " (length matches))
                     matches nil t)))))
-  (unless (equal word (car johnson-history))
-    (push word johnson-history)
-    (when (> (length johnson-history) johnson-history-max)
-      (setcdr (nthcdr (1- johnson-history-max) johnson-history) nil)))
+  (johnson--history-push word)
   (let ((results (johnson--query-all-exact word)))
     (johnson--history-log-push word (length results))
     (johnson--display-results word results)))
@@ -1409,7 +1413,9 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
       (message "No previous section"))))
 
 (defun johnson-prev-section-header ()
-  "Move to the previous dictionary section header."
+  "Move to the previous dictionary section header.
+Alias for `johnson-prev-section', bound to \"P\" for symmetry with
+`johnson-next-section-header'."
   (interactive)
   (johnson-prev-section))
 
@@ -1530,10 +1536,7 @@ dictionary whose section contains the link."
               (let ((results (johnson--query-dict-exact dict-name word)))
                 (if results
                     (progn
-                      (unless (equal word (car johnson-history))
-                        (push word johnson-history)
-                        (when (> (length johnson-history) johnson-history-max)
-                          (setcdr (nthcdr (1- johnson-history-max) johnson-history) nil)))
+                      (johnson--history-push word)
                       (johnson--history-log-push word (length results))
                       (johnson--display-results word results))
                   ;; Fallback to full lookup if no match in same dict.
@@ -1557,10 +1560,13 @@ dictionary whose section contains the link."
 ;;;; Navigation history
 
 (defun johnson--nav-push (word)
-  "Push WORD onto the navigation history."
+  "Push WORD onto the navigation history.
+Uses browser-like semantics: navigating to a new word from
+mid-history discards all forward entries."
   (when (and johnson--nav-history
              (>= johnson--nav-position 0)
              (< johnson--nav-position (1- (length johnson--nav-history))))
+    ;; Discard forward history beyond the current position.
     (setq johnson--nav-history
           (seq-take johnson--nav-history (1+ johnson--nav-position))))
   (unless (and johnson--nav-history
@@ -2227,6 +2233,7 @@ Returns plain text suitable for FTS indexing or eldoc display."
     (with-temp-buffer
       (insert raw-text)
     (goto-char (point-min))
+    ;; Phase 1: strip format-specific markup.
     (pcase format-name
       ("dsl"
        ;; Strip [tag]...[/tag], <<refs>>, {{media}}.
@@ -2256,7 +2263,7 @@ Returns plain text suitable for FTS indexing or eldoc display."
        ;; Strip HTML tags for stardict, mdict, bgl, dict-protocol.
        (while (re-search-forward "<[^>]+>" nil t)
          (replace-match ""))))
-    ;; Decode common HTML entities.
+    ;; Phase 2: decode common HTML entities.
     (goto-char (point-min))
     (while (re-search-forward "&amp;" nil t) (replace-match "&" t t))
     (goto-char (point-min))
@@ -2270,7 +2277,7 @@ Returns plain text suitable for FTS indexing or eldoc display."
     (goto-char (point-min))
     (while (re-search-forward "&#\\([0-9]+\\);" nil t)
       (replace-match (string (string-to-number (match-string 1))) t t))
-    ;; Collapse whitespace and trim.
+    ;; Phase 3: collapse whitespace and trim.
     (goto-char (point-min))
     (while (re-search-forward "[ \t\n\r]+" nil t)
       (replace-match " "))
@@ -2373,7 +2380,7 @@ CALLBACK is called with the definition string."
                                                       johnson-eldoc-max-length)
                                            "...")
                                         plain)))
-                      ;; LRU cache: cap at 50 entries.
+                      ;; Bounded cache: flush all entries when count exceeds 50.
                       (when (> (hash-table-count johnson--eldoc-cache) 50)
                         (clrhash johnson--eldoc-cache))
                       (puthash word truncated johnson--eldoc-cache)
@@ -2411,6 +2418,7 @@ Uses posframe if available, otherwise tooltip, otherwise echo area."
           (run-with-timer johnson-scan-popup-duration nil
                           (lambda () (tooltip-hide)))))
    (t
+    ;; Echo area: truncate to ~60 chars to fit a single line.
     (message "%s: %s" word
              (truncate-string-to-width definition 60 nil nil "...")))))
 
@@ -2436,6 +2444,7 @@ Uses posframe if available, otherwise tooltip, otherwise echo area."
                                      path (nth 1 match) (nth 2 match)))
                        (plain (johnson--entry-to-plain-text
                                raw (plist-get dict :format-name)))
+                       ;; Popup: allow more text than the echo area.
                        (truncated (truncate-string-to-width
                                    plain 200 nil nil "...")))
                   (johnson-scan--show-popup word truncated))))))
@@ -2449,6 +2458,7 @@ Uses posframe if available, otherwise tooltip, otherwise echo area."
     (let ((text (string-trim
                  (buffer-substring-no-properties
                   (region-beginning) (region-end)))))
+      ;; Ignore selections longer than 50 chars (likely accidental drags).
       (when (and (> (length text) 0) (<= (length text) 50))
         (johnson-scan--lookup-word text)))))
 
@@ -2650,6 +2660,8 @@ When enabled, looking up words via selection or idle timer."
   (johnson--load-history-log)
   (push (list :word word :timestamp (float-time) :dict-count dict-count)
         johnson--history-log)
+  ;; The persistent log keeps 10x the completing-read history size,
+  ;; since it stores timestamps and is only displayed in the history list.
   (let ((max-len (* 10 johnson-history-max)))
     (when (> (length johnson--history-log) max-len)
       (setcdr (nthcdr (1- max-len) johnson--history-log) nil)))
