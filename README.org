@@ -2078,8 +2078,12 @@ under the mouse cursor and passes it to ~johnson-lookup~:
   format electronic dictionaries.
 - [X] B-tree search index traversal for headword extraction.
 - [X] JIS X 0208 (EUC-JP) and ISO 8859-1 character encoding support.
+- [X] Fullwidth-to-ASCII normalization for readable output.
 - [X] Text rendering with bold, italic, emphasis, references,
   sub/superscript, indentation, and newlines.
+- [X] =johnson-ebzip.el= module for EBZIP decompression (compressed
+  =.ebz= files).
+- [X] Cross-reference buttons navigating via =johnson-lookup=.
 
 ** Future features
 :PROPERTIES:
@@ -2090,8 +2094,7 @@ under the mouse cursor and passes it to ~johnson-lookup~:
 The following features are planned but not yet scheduled for a specific
 version:
 
-- [ ] EPWING gaiji (custom character) rendering.
-- [ ] EBZIP decompression for compressed EPWING books.
+- [ ] EPWING gaiji (custom character) rendering with Unicode mapping.
 
 * Indices
 :PROPERTIES:

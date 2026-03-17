@@ -491,10 +491,16 @@ B-tree search index traversal for headword extraction. @*
 @item
 Text formatting: bold, italic, emphasis, references, sub/superscript, @*
 indentation, and newlines. @*
+@item
+EBZIP decompression for compressed EPWING books (@file{.ebz} files). @*
+@item
+Fullwidth-to-ASCII normalization for readable output. @*
+@item
+Cross-reference buttons that navigate via @code{johnson-lookup}. @*
 @end itemize
 
-Gaiji (custom character bitmaps) are not yet rendered; they appear as @*
-gaps in the text.  EBZIP-compressed books are not yet supported. @*
+Gaiji (custom character bitmaps) are not yet rendered; they may appear @*
+as gaps or placeholder characters in the text. @*
 
 @node Images
 @section Images
@@ -1842,8 +1848,15 @@ B-tree search index traversal for headword extraction. @*
 @item
 JIS X 0208 (EUC-JP) and ISO 8859-1 character encoding support. @*
 @item
+Fullwidth-to-ASCII normalization for readable rendered output. @*
+@item
 Text rendering with bold, italic, emphasis, references, @*
 sub/superscript, indentation, and newlines. @*
+@item
+@samp{johnson-ebzip.el} module for EBZIP decompression, enabling @*
+compressed EPWING books (@file{.ebz} files). @*
+@item
+Cross-reference buttons that navigate via @code{johnson-lookup}. @*
 @end itemize
 
 @node Future features
@@ -1854,9 +1867,7 @@ version: @*
 
 @itemize
 @item
-EPWING gaiji (custom character) rendering. @*
-@item
-EBZIP decompression for compressed EPWING books. @*
+EPWING gaiji (custom character) rendering with Unicode mapping. @*
 @end itemize
 
 @node Indices

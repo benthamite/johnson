@@ -11,8 +11,8 @@
 ;; This module provides the EPWING (JIS X 4081) format backend for the
 ;; johnson dictionary package.  It handles parsing of EPWING and EB
 ;; format electronic dictionaries, including CATALOGS/CATALOG parsing,
-;; B-tree index traversal, and text rendering with escape sequence
-;; processing.
+;; B-tree index traversal, text rendering with escape sequence
+;; processing, and EBZIP decompression (via johnson-ebzip.el).
 ;;
 ;; EPWING dictionaries use a directory-based structure with a CATALOGS
 ;; file at the top level and HONMON data files in subbook directories.
@@ -21,6 +21,7 @@
 ;; Character encoding: EPWING books use either JIS X 0208 (raw 2-byte
 ;; characters with bytes in 0x21-0x7E) or ISO 8859-1.  JIS bytes are
 ;; converted to EUC-JP (by adding 0x80 to each byte) before decoding.
+;; Fullwidth Latin characters are normalized to ASCII for readability.
 
 ;;; Code:
 
@@ -28,6 +29,8 @@
 
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
+(declare-function johnson-ebzip-read "johnson-ebzip")
+(declare-function johnson-ebzip-uncompressed-size "johnson-ebzip")
 (defvar johnson-dictionary-directories)
 
 ;;;; Constants
@@ -84,12 +87,19 @@
 
 ;;;; File I/O
 
+(defun johnson-epwing--ebzip-p (path)
+  "Return non-nil if PATH is an EBZIP-compressed file."
+  (string-suffix-p ".ebz" path t))
+
 (defun johnson-epwing--read-bytes (path start length)
-  "Read LENGTH bytes from file PATH starting at byte position START."
-  (with-temp-buffer
-    (set-buffer-multibyte nil)
-    (insert-file-contents-literally path nil start (+ start length))
-    (buffer-string)))
+  "Read LENGTH bytes from file PATH starting at byte position START.
+Transparently handles EBZIP-compressed files."
+  (if (johnson-epwing--ebzip-p path)
+      (johnson-ebzip-read path start length)
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert-file-contents-literally path nil start (+ start length))
+      (buffer-string))))
 
 (defun johnson-epwing--read-page (path page-number)
   "Read page PAGE-NUMBER (1-based) from HONMON file at PATH."
@@ -249,9 +259,10 @@ decoding."
          (euc (if (johnson-epwing--has-jis-p trimmed 0 (length trimmed))
                   (johnson-epwing--jis-to-euc trimmed)
                 trimmed))
-         (decoded (string-trim-right
-                   (decode-coding-string euc 'euc-jp)
-                   "[\x00\s\u3000]+")))
+         (decoded (johnson-epwing--normalize-fullwidth
+                   (string-trim-right
+                    (decode-coding-string euc 'euc-jp)
+                    "[\x00\s\u3000]+"))))
     (if (string-empty-p decoded) "Unknown" decoded)))
 
 (defun johnson-epwing--trim-null-bytes (data)
@@ -264,13 +275,17 @@ decoding."
 ;;;; HONMON file location
 
 (defun johnson-epwing--find-honmon (book-dir sub-dir-name)
-  "Find the HONMON data file for subbook SUB-DIR-NAME under BOOK-DIR."
+  "Find the HONMON data file for subbook SUB-DIR-NAME under BOOK-DIR.
+Searches for both uncompressed and EBZIP-compressed variants."
   (when-let* ((sub-dir (johnson-epwing--find-child book-dir sub-dir-name)))
     (let ((data-dir (johnson-epwing--find-child sub-dir "DATA")))
       (if data-dir
           (or (johnson-epwing--find-child data-dir "HONMON")
-              (johnson-epwing--find-child data-dir "HONMON2"))
-        (johnson-epwing--find-child sub-dir "START")))))
+              (johnson-epwing--find-child data-dir "HONMON.EBZ")
+              (johnson-epwing--find-child data-dir "HONMON2")
+              (johnson-epwing--find-child data-dir "HONMON2.EBZ"))
+        (or (johnson-epwing--find-child sub-dir "START")
+            (johnson-epwing--find-child sub-dir "START.EBZ"))))))
 
 ;;;; Index management page
 
@@ -389,31 +404,32 @@ Normalizes fullwidth Latin characters to ASCII."
         (error "")))))
 
 (defun johnson-epwing--normalize-fullwidth (str)
-  "Convert fullwidth Latin characters in STR to ASCII equivalents."
+  "Convert fullwidth characters in STR to ASCII equivalents.
+Maps U+FF01-U+FF5E to U+0021-U+007E and U+3000 to space."
   (let ((result (copy-sequence str)))
     (dotimes (i (length result))
       (let ((ch (aref result i)))
         (cond
-         ((<= #xFF21 ch #xFF3A)
-          (aset result i (- ch (- #xFF21 ?A))))
-         ((<= #xFF41 ch #xFF5A)
-          (aset result i (- ch (- #xFF41 ?a))))
-         ((<= #xFF10 ch #xFF19)
-          (aset result i (- ch (- #xFF10 ?0))))
+         ((<= #xFF01 ch #xFF5E)
+          (aset result i (- ch #xFEE0)))
          ((= ch #x3000)
-          (aset result i ?\s))
-         ((= ch #xFF0E)
-          (aset result i ?.))
-         ((= ch #xFF0C)
-          (aset result i ?,)))))
+          (aset result i ?\s)))))
     result))
 
 ;;;; Text reading
 
+(defun johnson-epwing--uncompressed-size (path)
+  "Return the uncompressed data size for PATH.
+For EBZIP files, reads the size from the header.  For plain
+files, returns the file size."
+  (if (johnson-epwing--ebzip-p path)
+      (johnson-ebzip-uncompressed-size path)
+    (file-attribute-size (file-attributes path))))
+
 (defun johnson-epwing--read-text-raw (path offset)
   "Read raw text bytes from HONMON at PATH starting at OFFSET.
 Reads until the stop code (0x1F 0x03) or end of file."
-  (let* ((file-size (file-attribute-size (file-attributes path)))
+  (let* ((file-size (johnson-epwing--uncompressed-size path))
          (chunk-size (* 16 johnson-epwing--page-size))
          (result nil)
          (pos offset)
@@ -421,7 +437,7 @@ Reads until the stop code (0x1F 0x03) or end of file."
     (while (and (not done) (< pos file-size))
       (let* ((read-len (min chunk-size (- file-size pos)))
              (chunk (johnson-epwing--read-bytes path pos read-len))
-             (stop (johnson-epwing--find-stop-code chunk)))
+             (stop (johnson-epwing--find-entry-end chunk)))
         (if stop
             (progn
               (push (substring chunk 0 stop) result)
@@ -430,14 +446,20 @@ Reads until the stop code (0x1F 0x03) or end of file."
           (cl-incf pos read-len))))
     (apply #'concat (nreverse result))))
 
-(defun johnson-epwing--find-stop-code (data)
-  "Find the position of stop code 0x1F 0x03 in unibyte DATA.
-Returns the byte position or nil."
-  (let ((limit (1- (length data))))
+(defun johnson-epwing--find-entry-end (data)
+  "Find the end of the current entry in unibyte DATA.
+Stops at 0x1F 0x03 (end text body) or the second occurrence of
+0x1F 0x41 (next keyword marker, i.e. next entry).  Returns the
+byte position or nil."
+  (let ((limit (1- (length data)))
+        (keyword-count 0))
     (cl-loop for i from 0 below limit
-             when (and (= (aref data i) #x1F)
-                       (= (aref data (1+ i)) #x03))
-             return i)))
+             when (= (aref data i) #x1F)
+             do (let ((cmd (aref data (1+ i))))
+                  (when (= cmd #x03) (cl-return i))
+                  (when (= cmd #x41)
+                    (cl-incf keyword-count)
+                    (when (>= keyword-count 2) (cl-return i)))))))
 
 ;;;; Entry decoding
 
@@ -445,7 +467,7 @@ Returns the byte position or nil."
   "Decode RAW unibyte EPWING text using character encoding CODING.
 CODING is `jis', `euc-jp', or `iso-8859-1'.  Escape sequences
 are preserved as character-code sequences starting with character
-31.  Character data between escapes is decoded appropriately."
+31.  Character data between escapes is decoded using CODING."
   (let ((segments nil)
         (text-start 0)
         (pos 0)
@@ -487,11 +509,16 @@ Each byte becomes a character in the returned multibyte string."
 
 ;;;; Format detection
 
+(defconst johnson-epwing--honmon-names
+  '("HONMON" "HONMON2" "START"
+    "HONMON.EBZ" "HONMON2.EBZ" "START.EBZ")
+  "Valid HONMON file names (uppercase) for EPWING detection.")
+
 (defun johnson-epwing-detect (path)
   "Return non-nil if PATH is a valid EPWING HONMON file."
   (and (file-regular-p path)
-       (let ((name (upcase (file-name-nondirectory path))))
-         (member name '("HONMON" "HONMON2" "START")))
+       (member (upcase (file-name-nondirectory path))
+               johnson-epwing--honmon-names)
        (johnson-epwing--find-catalogs path)
        t))
 
@@ -574,12 +601,18 @@ BYTE-LENGTH is always 0 (entries are delimited by stop codes)."
 
 ;;;; Entry retrieval
 
+(defvar johnson-epwing--current-honmon-path nil
+  "HONMON file path of the entry currently being rendered.
+Set by `johnson-epwing-retrieve-entry', read by ref button
+actions.")
+
 (defun johnson-epwing-retrieve-entry (path byte-offset _byte-length)
   "Retrieve an entry from the EPWING dictionary at PATH.
 BYTE-OFFSET is the absolute file position.  _BYTE-LENGTH is
 ignored (entries are read until the stop code).  Returns a
 decoded string with escape sequences preserved as character-31
 markers."
+  (setq johnson-epwing--current-honmon-path path)
   (let ((raw (johnson-epwing--read-text-raw path byte-offset))
         (coding (johnson-epwing--detect-charcode path)))
     (johnson-epwing--decode-entry raw coding)))
@@ -590,6 +623,7 @@ markers."
   "Render EPWING entry DATA into the current buffer.
 DATA is a decoded string with escape sequences preserved as
 character-31 markers."
+  (setq data (johnson-epwing--normalize-fullwidth data))
   (let ((pos 0)
         (len (length data))
         (bold-start nil)
@@ -699,31 +733,27 @@ Uses character codes (not byte values) to determine the command."
 
 (defun johnson-epwing--insert-ref-button (text ref-page ref-off)
   "Insert a cross-reference button with TEXT linking to REF-PAGE:REF-OFF."
-  (insert-text-button
-   text
-   'face 'johnson-ref-face
-   'action (lambda (btn)
-             (let* ((path (button-get btn 'johnson-epwing-path))
-                    (offset (johnson-epwing--page-pos
-                             (button-get btn 'johnson-epwing-page)
-                             (button-get btn 'johnson-epwing-offset)))
-                    (coding (johnson-epwing--detect-charcode path))
-                    (raw (johnson-epwing--read-text-raw path offset))
-                    (decoded (johnson-epwing--decode-entry raw coding)))
-               (ignore decoded)
-               (message "EPWING ref: page %d offset %d"
-                        (button-get btn 'johnson-epwing-page)
-                        (button-get btn 'johnson-epwing-offset))))
-   'johnson-epwing-page ref-page
-   'johnson-epwing-offset ref-off
-   'help-echo (format "EPWING reference: page %d, offset %d"
-                       ref-page ref-off)))
+  (let ((honmon-path johnson-epwing--current-honmon-path))
+    (insert-text-button
+     text
+     'face 'johnson-ref-face
+     'action (lambda (btn)
+               (let ((word (button-get btn 'johnson-epwing-text)))
+                 (when (and word (not (string-empty-p word)))
+                   (johnson-lookup word))))
+     'johnson-epwing-path honmon-path
+     'johnson-epwing-page ref-page
+     'johnson-epwing-offset ref-off
+     'johnson-epwing-text (johnson-epwing--normalize-fullwidth text)
+     'help-echo (format "Look up: %s"
+                        (johnson-epwing--normalize-fullwidth text)))))
 
 ;;;; Cache clearing
 
 (defun johnson-epwing-clear-caches ()
   "Clear all EPWING caches."
-  (clrhash johnson-epwing--charcode-cache))
+  (clrhash johnson-epwing--charcode-cache)
+  (setq johnson-epwing--current-honmon-path nil))
 
 ;;;; Provide and register
 
