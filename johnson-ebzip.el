@@ -146,7 +146,8 @@ width per entry.  Returns a vector of (SLICE-COUNT + 1) offsets."
   (with-temp-buffer
     (set-buffer-multibyte nil)
     (insert-file-contents-literally path nil start (+ start length))
-    (zlib-decompress-region (point-min) (point-max))
+    (unless (zlib-decompress-region (point-min) (point-max))
+      (error "EBZIP: zlib decompression failed at offset %d in %s" start path))
     (buffer-string)))
 
 (defun johnson-ebzip--cache-put (key value)
@@ -169,17 +170,19 @@ width per entry.  Returns a vector of (SLICE-COUNT + 1) offsets."
          (slice-size (plist-get header :slice-size))
          (first-slice (/ start slice-size))
          (last-slice (/ (+ start length -1) slice-size))
-         (result nil))
+         (result nil)
+         (collected 0))
     (cl-loop for i from first-slice to last-slice
              for slice-data = (johnson-ebzip--decompress-slice path i)
              for slice-start = (- start (* i slice-size))
              for slice-offset = (max 0 slice-start)
-             for remaining = (- length (length (apply #'concat (nreverse result))))
+             for remaining = (- length collected)
              for available = (- (length slice-data) slice-offset)
              for take = (min remaining available)
              do (push (substring slice-data slice-offset
                                  (+ slice-offset take))
-                      result))
+                      result)
+             do (cl-incf collected take))
     (apply #'concat (nreverse result))))
 
 (defun johnson-ebzip-uncompressed-size (path)

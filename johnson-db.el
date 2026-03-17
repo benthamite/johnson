@@ -351,6 +351,12 @@ Returns a list of (HEADWORD DICT-COUNT) pairs.  LIMIT defaults to 200."
                   "INSERT INTO fts_entries (headword, definition) VALUES (?, ?)"
                   (list headword plain-text)))
 
+(defun johnson-db--fts-escape (query)
+  "Escape QUERY for FTS5 MATCH syntax.
+Wraps the entire query in double-quotes so that FTS5 operators
+like AND, OR, NOT, *, and parentheses are treated as literals."
+  (concat "\"" (replace-regexp-in-string "\"" "\"\"" query) "\""))
+
 (defun johnson-db-query-fts (db query &optional limit)
   "Query the FTS table of DB for QUERY.
 Returns a list of (HEADWORD SNIPPET) pairs.  LIMIT defaults to 50."
@@ -361,7 +367,7 @@ Returns a list of (HEADWORD SNIPPET) pairs.  LIMIT defaults to 50."
                      WHERE fts_entries MATCH ?
                      ORDER BY rank
                      LIMIT ?"
-                   (list query limit))))
+                   (list (johnson-db--fts-escape query) limit))))
 
 (defun johnson-db-fts-indexed-p (db)
   "Return non-nil if DB has been indexed for full-text search."
