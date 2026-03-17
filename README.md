@@ -14,6 +14,7 @@ Supported formats:
 - **StarDict** — `.ifo`/`.idx`/`.dict` with dictzip support and synonym files
 - **MDict** — `.mdx`/`.mdd` with HTML+CSS rendering and encrypted dictionary support
 - **BGL** (Babylon) — `.bgl` files with automatic format detection
+- **EPWING** (JIS X 4081) — Japanese electronic dictionaries with EBZIP decompression support
 - **DICT protocol** (RFC 2229) — for querying remote dictionary servers
 
 The architecture is modular: each format is handled by a separate backend that registers itself with the core via a plist-based format registry. You can use only the formats you need.
@@ -73,4 +74,4 @@ For a comprehensive description of all user options, commands, and functions, se
 - [x] **v0.2** — StarDict format, dictzip compression, audio pronunciation, table of contents, dictionary priority reordering
 - [x] **v0.3** — MDict format (including encrypted dictionaries), DSL abbreviation tables
 - [x] **v0.4** — BGL format, DICT protocol client, inline images, wildcard search, full-text search, eldoc, scan-popup mode, bookmarks, history buffer
-- [ ] EPWING format
+- [x] **v0.5** — EPWING format (JIS X 4081), EBZIP decompression, fullwidth-to-ASCII normalization, cross-reference navigation

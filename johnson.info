@@ -90,7 +90,8 @@ Roadmap
 * Version 0.1 -- DSL: Version 01 --- DSL.
 * Version 0.2 -- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL.
 * Version 0.3 -- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
-* Version 0.4 (current) -- BGL, DICT, and more: Version 04 (current).
+* Version 0.4 -- BGL, DICT, and more: Version 04.
+* Version 0.5 (current) -- EPWING: Version 05 (current).
 * Future features::
 
 Indices
@@ -115,11 +116,11 @@ dependencies, relying on Emacs 30.1's built-in sqlite support for
 efficient headword indexing.  Dictionary files are parsed natively,
 without calling external tools.
 
-   In version 0.4, the package supports the DSL (ABBYY Lingvo),
-StarDict, MDict, and BGL (Babylon) formats, including
-dictzip-compressed files (‘.dsl.dz’ and ‘.dict.dz’) and
-encrypted MDict files.  It also provides a DICT protocol client
-(RFC 2229) for querying remote dictionary servers.
+   In version 0.5, the package supports the DSL (ABBYY Lingvo),
+StarDict, MDict, BGL (Babylon), and EPWING (JIS X 4081) formats,
+including dictzip-compressed files (‘.dsl.dz’ and
+‘.dict.dz’) and encrypted MDict files.  It also provides a DICT
+protocol client (RFC 2229) for querying remote dictionary servers.
 
    The architecture is modular.  The core module (‘johnson.el’) provides
 
@@ -131,9 +132,10 @@ directory (*note Cache directory::).  Shared infrastructure
 for dictzip decompression lives in ‘johnson-dictzip.el’.  Each
 dictionary format is handled by a separate backend
 module--‘johnson-dsl.el’, ‘johnson-stardict.el’,
-‘johnson-mdict.el’, ‘johnson-bgl.el’, and
-‘johnson-dict.el’--that registers itself with the core via the
-format registry.
+‘johnson-mdict.el’, ‘johnson-bgl.el’,
+‘johnson-epwing.el’, and ‘johnson-dict.el’--that registers
+itself with the core via the format registry.  EBZIP decompression
+for compressed EPWING books lives in ‘johnson-ebzip.el’.
 
    A typical workflow consists of three steps.  First, configure
 ‘johnson-dictionary-directories’ to point at your dictionary files
@@ -196,6 +198,7 @@ File: johnson.info,  Node: User options,  Next: Commands,  Prev: Overview,  Up: 
 * Cache directory::
 * Audio playback::
 * DICT protocol::
+* EPWING::
 * Images::
 * Wildcard search::
 * Full-text search::
@@ -422,7 +425,7 @@ resource files.  This is useful if you want to reclaim disk space or
 force re-extraction.
 
 
-File: johnson.info,  Node: DICT protocol,  Next: Images,  Prev: Audio playback,  Up: User options
+File: johnson.info,  Node: DICT protocol,  Next: EPWING,  Prev: Audio playback,  Up: User options
 
 2.8 DICT protocol
 =================
@@ -451,10 +454,49 @@ Servers" group in the group selector.  The DICT backend communicates
 using the RFC 2229 protocol over a TCP connection.
 
 
-File: johnson.info,  Node: Images,  Next: Wildcard search,  Prev: DICT protocol,  Up: User options
+File: johnson.info,  Node: EPWING,  Next: Images,  Prev: DICT protocol,  Up: User options
 
-2.9 Images
+2.9 EPWING
 ==========
+
+The ‘johnson-epwing’ backend handles EPWING (JIS X 4081) and EB
+format electronic dictionaries.  These are common Japanese dictionary
+formats originally distributed on CD-ROM, characterized by a
+directory-based structure with a ‘CATALOGS’ (EPWING) or
+‘CATALOG’ (EB) file at the top level and ‘HONMON’ data files
+in subbook directories.
+
+   EPWING dictionaries are discovered automatically: during discovery,
+johnson scans dictionary directories for ‘CATALOGS’/‘CATALOG’
+files, parses them to enumerate subbooks, and creates one dictionary
+entry per subbook.  No special configuration is required beyond adding
+the EPWING book directory to ‘johnson-dictionary-directories’.
+
+   Each EPWING book may contain multiple subbooks (dictionaries).  All
+subbooks are discovered and indexed individually.  Dictionaries
+appear under the "EPWING" group in the group selector.
+
+   The backend supports:
+
+   • Both EPWING (‘CATALOGS’) and EB (‘CATALOG’) catalog formats.
+   • JIS X 0208 (EUC-JP) and ISO 8859-1 character encodings.
+   • B-tree search index traversal for headword extraction.
+   • Text formatting: bold, italic, emphasis, references,
+     sub/superscript,
+     indentation, and newlines.
+   • EBZIP decompression for compressed EPWING books (‘.ebz’ files).
+   • Fullwidth-to-ASCII normalization for readable output.
+   • Cross-reference buttons that navigate via ‘johnson-lookup’.
+
+   Gaiji (custom character bitmaps) are not yet rendered; they may
+appear
+as gaps or placeholder characters in the text.
+
+
+File: johnson.info,  Node: Images,  Next: Wildcard search,  Prev: EPWING,  Up: User options
+
+2.10 Images
+===========
 
 The user option ‘johnson-display-images’ controls whether inline
 images are rendered in dictionary entries.  When ‘t’ (the default),
@@ -473,7 +515,7 @@ BGL entries.
 
 File: johnson.info,  Node: Wildcard search,  Next: Full-text search,  Prev: Images,  Up: User options
 
-2.10 Wildcard search
+2.11 Wildcard search
 ====================
 
 The user option ‘johnson-wildcard-max-results’ limits the number
@@ -493,7 +535,7 @@ selection rather than performing a direct lookup.
 
 File: johnson.info,  Node: Full-text search,  Next: Eldoc integration,  Prev: Wildcard search,  Up: User options
 
-2.11 Full-text search
+2.12 Full-text search
 =====================
 
 The user option ‘johnson-fts-enabled’ controls whether full-text
@@ -512,7 +554,7 @@ becomes available for searching within definitions.
 
 File: johnson.info,  Node: Eldoc integration,  Next: Scan-popup mode,  Prev: Full-text search,  Up: User options
 
-2.12 Eldoc integration
+2.13 Eldoc integration
 ======================
 
 The user option ‘johnson-eldoc-max-length’ sets the maximum
@@ -528,7 +570,7 @@ the desired buffer (*note Eldoc integration commands::).
 
 File: johnson.info,  Node: Scan-popup mode,  Next: Bookmarks,  Prev: Eldoc integration,  Up: User options
 
-2.13 Scan-popup mode
+2.14 Scan-popup mode
 ====================
 
 The user option ‘johnson-scan-trigger’ controls what action
@@ -562,7 +604,7 @@ to tooltip, and finally to the echo area.
 
 File: johnson.info,  Node: Bookmarks,  Next: History buffer,  Prev: Scan-popup mode,  Up: User options
 
-2.14 Bookmarks
+2.15 Bookmarks
 ==============
 
 The user option ‘johnson-bookmarks-file’ specifies the file where
@@ -579,7 +621,7 @@ list bookmarks.
 
 File: johnson.info,  Node: History buffer,  Prev: Bookmarks,  Up: User options
 
-2.15 History buffer
+2.16 History buffer
 ===================
 
 The user option ‘johnson-history-file’ specifies the file where
@@ -1723,7 +1765,8 @@ File: johnson.info,  Node: Roadmap,  Next: Indices,  Prev: Faces,  Up: Top
 * Version 0.1 -- DSL: Version 01 --- DSL.
 * Version 0.2 -- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL.
 * Version 0.3 -- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
-* Version 0.4 (current) -- BGL, DICT, and more: Version 04 (current).
+* Version 0.4 -- BGL, DICT, and more: Version 04.
+* Version 0.5 (current) -- EPWING: Version 05 (current).
 * Future features::
 
 
@@ -1774,7 +1817,7 @@ File: johnson.info,  Node: Version 02 --- StarDict and compressed DSL,  Next: Ve
    • Provide basic media support (audio pronunciation).
 
 
-File: johnson.info,  Node: Version 03 --- MDict and DSL abbreviations,  Next: Version 04 (current),  Prev: Version 02 --- StarDict and compressed DSL,  Up: Roadmap
+File: johnson.info,  Node: Version 03 --- MDict and DSL abbreviations,  Next: Version 04,  Prev: Version 02 --- StarDict and compressed DSL,  Up: Roadmap
 
 6.3 Version 0.3 -- MDict and DSL abbreviations
 ==============================================
@@ -1785,10 +1828,10 @@ File: johnson.info,  Node: Version 03 --- MDict and DSL abbreviations,  Next: Ve
      (‘[p]’ tag expansion).
 
 
-File: johnson.info,  Node: Version 04 (current),  Next: Future features,  Prev: Version 03 --- MDict and DSL abbreviations,  Up: Roadmap
+File: johnson.info,  Node: Version 04,  Next: Version 05 (current),  Prev: Version 03 --- MDict and DSL abbreviations,  Up: Roadmap
 
-6.4 Version 0.4 (current) -- BGL, DICT, and more
-================================================
+6.4 Version 0.4 -- BGL, DICT, and more
+======================================
 
    • ‘johnson-bgl.el’ backend for ‘.bgl’ files, with automatic
      detection via file extension and magic bytes (‘0x12 0x34’).
@@ -1812,15 +1855,33 @@ File: johnson.info,  Node: Version 04 (current),  Next: Future features,  Prev: 
      (incomplete dictionary distribution).
 
 
-File: johnson.info,  Node: Future features,  Prev: Version 04 (current),  Up: Roadmap
+File: johnson.info,  Node: Version 05 (current),  Next: Future features,  Prev: Version 04,  Up: Roadmap
 
-6.5 Future features
+6.5 Version 0.5 (current) -- EPWING
+===================================
+
+   • ‘johnson-epwing.el’ backend for EPWING (JIS X 4081) and EB
+     format electronic dictionaries, with automatic discovery via
+     ‘CATALOGS’/‘CATALOG’ files.
+   • B-tree search index traversal for headword extraction.
+   • JIS X 0208 (EUC-JP) and ISO 8859-1 character encoding support.
+   • Fullwidth-to-ASCII normalization for readable rendered output.
+   • Text rendering with bold, italic, emphasis, references,
+     sub/superscript, indentation, and newlines.
+   • ‘johnson-ebzip.el’ module for EBZIP decompression, enabling
+     compressed EPWING books (‘.ebz’ files).
+   • Cross-reference buttons that navigate via ‘johnson-lookup’.
+
+
+File: johnson.info,  Node: Future features,  Prev: Version 05 (current),  Up: Roadmap
+
+6.6 Future features
 ===================
 
 The following features are planned but not yet scheduled for a specific
 version:
 
-   • EPWING format.
+   • EPWING gaiji (custom character) rendering with Unicode mapping.
 
 
 File: johnson.info,  Node: Indices,  Prev: Roadmap,  Up: Top
@@ -1971,70 +2032,72 @@ File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
 
 Tag Table:
 Node: Top215
-Node: Overview2062
-Node: User options5798
-Node: Dictionary discovery6229
-Node: Search scope and groups7201
-Node: Cross-reference scope8876
-Node: Display ordering9587
-Node: Lookup history11241
-Node: Cache directory12035
-Node: Audio playback12981
-Node: DICT protocol15194
-Node: Images16268
-Node: Wildcard search16947
-Node: Full-text search17764
-Node: Eldoc integration18489
-Node: Scan-popup mode19049
-Node: Bookmarks20241
-Node: History buffer20847
-Node: Commands21653
-Node: Transient menu22203
-Node: Looking up words25477
-Node: Indexing dictionaries27787
-Node: Managing groups and scope29466
-Node: Navigating the results buffer30556
-Node: Following cross-references32149
-Node: Navigation history33059
-Node: Copying entries34469
-Node: Browsing dictionary directory35737
-Node: Dictionary list36238
-Node: Cache management37667
-Node: Toggling images38594
-Node: Searching definitions39101
-Node: Eldoc integration commands39833
-Node: Scan-popup mode commands40518
-Node: Managing bookmarks41277
-Node: Browsing history42311
-Node: Functions43155
-Node: Format registration43586
-Node: Completion at point45347
-Node: Database lifecycle46250
-Node: Metadata storage47150
-Node: Headword normalization48324
-Node: Entry insertion49162
-Node: Querying entries50175
-Node: Staleness detection and reset51485
-Node: DSL format detection52494
-Node: DSL metadata parsing53470
-Node: DSL index building54483
-Node: DSL entry retrieval56514
-Node: DSL entry rendering57420
-Node: Faces59526
-Node: Text styling faces60068
-Node: Content type faces60773
-Node: Link faces61609
-Node: Section header face62269
-Node: Color faces62858
-Node: Roadmap64245
-Node: Version 01 --- DSL64666
-Node: Version 02 --- StarDict and compressed DSL65666
-Node: Version 03 --- MDict and DSL abbreviations66959
-Node: Version 04 (current)67445
-Node: Future features68803
-Node: Indices69038
-Node: Function index69171
-Node: Variable index74581
+Node: Overview2099
+Node: User options5963
+Node: Dictionary discovery6405
+Node: Search scope and groups7377
+Node: Cross-reference scope9052
+Node: Display ordering9763
+Node: Lookup history11417
+Node: Cache directory12211
+Node: Audio playback13157
+Node: DICT protocol15370
+Node: EPWING16444
+Node: Images18124
+Node: Wildcard search18798
+Node: Full-text search19615
+Node: Eldoc integration20340
+Node: Scan-popup mode20900
+Node: Bookmarks22092
+Node: History buffer22698
+Node: Commands23504
+Node: Transient menu24054
+Node: Looking up words27328
+Node: Indexing dictionaries29638
+Node: Managing groups and scope31317
+Node: Navigating the results buffer32407
+Node: Following cross-references34000
+Node: Navigation history34910
+Node: Copying entries36320
+Node: Browsing dictionary directory37588
+Node: Dictionary list38089
+Node: Cache management39518
+Node: Toggling images40445
+Node: Searching definitions40952
+Node: Eldoc integration commands41684
+Node: Scan-popup mode commands42369
+Node: Managing bookmarks43128
+Node: Browsing history44162
+Node: Functions45006
+Node: Format registration45437
+Node: Completion at point47198
+Node: Database lifecycle48101
+Node: Metadata storage49001
+Node: Headword normalization50175
+Node: Entry insertion51013
+Node: Querying entries52026
+Node: Staleness detection and reset53336
+Node: DSL format detection54345
+Node: DSL metadata parsing55321
+Node: DSL index building56334
+Node: DSL entry retrieval58365
+Node: DSL entry rendering59271
+Node: Faces61377
+Node: Text styling faces61919
+Node: Content type faces62624
+Node: Link faces63460
+Node: Section header face64120
+Node: Color faces64709
+Node: Roadmap66096
+Node: Version 01 --- DSL66554
+Node: Version 02 --- StarDict and compressed DSL67554
+Node: Version 03 --- MDict and DSL abbreviations68847
+Node: Version 0469323
+Node: Version 05 (current)70656
+Node: Future features71520
+Node: Indices71804
+Node: Function index71937
+Node: Variable index77347
 
 End Tag Table
 

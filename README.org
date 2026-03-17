@@ -36,8 +36,9 @@ plist-based format registry ([[#h:format-registration][Format registration]]).
 The sqlite index management is delegated to =johnson-db.el=, which
 maintains one database per dictionary file in a configurable cache
 directory ([[#h:cache-directory][Cache directory]]).  Shared infrastructure
-for dictzip decompression lives in =johnson-dictzip.el=.  Each
-dictionary format is handled by a separate backend
+for dictzip decompression lives in =johnson-dictzip.el=, and EBZIP
+decompression for compressed EPWING books in =johnson-ebzip.el=.
+Each dictionary format is handled by a separate backend
 module---=johnson-dsl.el=, =johnson-stardict.el=,
 =johnson-mdict.el=, =johnson-bgl.el=, =johnson-epwing.el=, and
 =johnson-dict.el=---that registers itself with the core via the
@@ -348,6 +349,42 @@ You can add additional servers:
 Dictionaries discovered from DICT servers appear under the "DICT
 Servers" group in the group selector.  The DICT backend communicates
 using the RFC 2229 protocol over a TCP connection.
+
+** EPWING
+:PROPERTIES:
+:CUSTOM_ID: h:epwing
+:END:
+
+The =johnson-epwing= backend handles EPWING (JIS X 4081) and EB
+format electronic dictionaries.  These are common Japanese dictionary
+formats originally distributed on CD-ROM, characterized by a
+directory-based structure with a =CATALOGS= (EPWING) or =CATALOG=
+(EB) file at the top level and =HONMON= data files in subbook
+directories.
+
+EPWING dictionaries are discovered automatically: during discovery,
+johnson scans dictionary directories for =CATALOGS=/=CATALOG= files,
+parses them to enumerate subbooks, and creates one dictionary entry
+per subbook.  No special configuration is required beyond adding the
+EPWING book directory to ~johnson-dictionary-directories~.
+
+Each EPWING book may contain multiple subbooks (dictionaries).  All
+subbooks are discovered and indexed individually.  Dictionaries
+appear under the "EPWING" group in the group selector.
+
+The backend supports:
+
+- Both EPWING (=CATALOGS=) and EB (=CATALOG=) catalog formats.
+- JIS X 0208 (EUC-JP) and ISO 8859-1 character encodings.
+- B-tree search index traversal for headword extraction.
+- Text formatting: bold, italic, emphasis, references, sub/superscript,
+  indentation, and newlines.
+- EBZIP decompression for compressed EPWING books (=.ebz= files).
+- Fullwidth-to-ASCII normalization for readable output.
+- Cross-reference buttons that navigate via ~johnson-lookup~.
+
+Gaiji (custom character bitmaps) are not yet rendered; they may appear
+as gaps or placeholder characters in the text.
 
 ** Images
 :PROPERTIES:

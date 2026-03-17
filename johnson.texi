@@ -101,7 +101,8 @@ Roadmap
 * Version 0.1 --- DSL: Version 01 --- DSL.
 * Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL.
 * Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
-* Version 0.4 (current) --- BGL, DICT, and more: Version 04 (current).
+* Version 0.4 --- BGL, DICT, and more: Version 04.
+* Version 0.5 (current) --- EPWING: Version 05 (current).
 * Future features::
 
 Indices
@@ -142,7 +143,8 @@ dictionary format is handled by a separate backend @*
 module---@samp{johnson-dsl.el}, @samp{johnson-stardict.el}, @*
 @samp{johnson-mdict.el}, @samp{johnson-bgl.el}, @*
 @samp{johnson-epwing.el}, and @samp{johnson-dict.el}---that registers @*
-itself with the core via the format registry. @*
+itself with the core via the format registry.  EBZIP decompression @*
+for compressed EPWING books lives in @samp{johnson-ebzip.el}. @*
 
 A typical workflow consists of three steps.  First, configure @*
 @code{johnson-dictionary-directories} to point at your dictionary files @*
