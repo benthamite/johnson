@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026 Pablo Stafforini
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
-;; Version: 0.5.0
+;; Version: 0.6.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: dictionaries, i18n
 
