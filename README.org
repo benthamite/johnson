@@ -24,9 +24,9 @@ dependencies, relying on Emacs 30.1's built-in sqlite support for
 efficient headword indexing.  Dictionary files are parsed natively,
 without calling external tools.
 
-In version 0.4, the package supports the DSL (ABBYY Lingvo),
-StarDict, MDict, and BGL (Babylon) formats, including
-dictzip-compressed files (=.dsl.dz= and =.dict.dz=) and
+In version 0.5, the package supports the DSL (ABBYY Lingvo),
+StarDict, MDict, BGL (Babylon), and EPWING (JIS X 4081) formats,
+including dictzip-compressed files (=.dsl.dz= and =.dict.dz=) and
 encrypted MDict files.  It also provides a DICT protocol client
 (RFC 2229) for querying remote dictionary servers.
 
@@ -39,7 +39,7 @@ directory ([[#h:cache-directory][Cache directory]]).  Shared infrastructure
 for dictzip decompression lives in =johnson-dictzip.el=.  Each
 dictionary format is handled by a separate backend
 module---=johnson-dsl.el=, =johnson-stardict.el=,
-=johnson-mdict.el=, =johnson-bgl.el=, and
+=johnson-mdict.el=, =johnson-bgl.el=, =johnson-epwing.el=, and
 =johnson-dict.el=---that registers itself with the core via the
 format registry.
 
@@ -2045,7 +2045,7 @@ under the mouse cursor and passes it to ~johnson-lookup~:
 - [X] =_abrv.dsl= abbreviation table support for DSL dictionaries
   (=[p]= tag expansion).
 
-** Version 0.4 (current) --- BGL, DICT, and more
+** Version 0.4 --- BGL, DICT, and more
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-v04
 :ID:       D4E5F6A7-B8C9-0123-DEFA-234567890123
@@ -2072,6 +2072,15 @@ under the mouse cursor and passes it to ~johnson-lookup~:
 - [X] Clearer error message when a StarDict =.idx= file is missing
   (incomplete dictionary distribution).
 
+** Version 0.5 (current) --- EPWING
+
+- [X] =johnson-epwing.el= backend for EPWING (JIS X 4081) and EB
+  format electronic dictionaries.
+- [X] B-tree search index traversal for headword extraction.
+- [X] JIS X 0208 (EUC-JP) and ISO 8859-1 character encoding support.
+- [X] Text rendering with bold, italic, emphasis, references,
+  sub/superscript, indentation, and newlines.
+
 ** Future features
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-future
@@ -2081,7 +2090,8 @@ under the mouse cursor and passes it to ~johnson-lookup~:
 The following features are planned but not yet scheduled for a specific
 version:
 
-- [ ] EPWING format.
+- [ ] EPWING gaiji (custom character) rendering.
+- [ ] EBZIP decompression for compressed EPWING books.
 
 * Indices
 :PROPERTIES:

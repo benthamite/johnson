@@ -2155,6 +2155,16 @@ Returns plain text suitable for FTS indexing or eldoc display."
        (goto-char (point-min))
        (while (re-search-forward "\\\\\\([][()<>{}~@\\\\ ]\\)" nil t)
          (replace-match "\\1" t)))
+      ("epwing"
+       ;; Strip escape sequences: char 31 followed by command + args.
+       (when (boundp 'johnson-epwing--escape-lengths)
+         (while (re-search-forward "\x1F." nil t)
+           (let* ((cmd (aref (match-string 0) 1))
+                  (total (or (gethash cmd johnson-epwing--escape-lengths) 2))
+                  (extra (- total 2)))
+             (replace-match "")
+             (when (> extra 0)
+               (delete-char (min extra (- (point-max) (point)))))))))
       (_
        ;; Strip HTML tags for stardict, mdict, bgl, dict-protocol.
        (while (re-search-forward "<[^>]+>" nil t)
@@ -2623,6 +2633,7 @@ When enabled, looking up words via selection or idle timer."
 (require 'johnson-mdict nil t)
 (require 'johnson-bgl nil t)
 (require 'johnson-dict nil t)
+(require 'johnson-epwing nil t)
 (require 'johnson-transient nil t)
 
 (provide 'johnson)

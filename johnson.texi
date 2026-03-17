@@ -125,11 +125,11 @@ dependencies, relying on Emacs 30.1's built-in sqlite support for @*
 efficient headword indexing.  Dictionary files are parsed natively, @*
 without calling external tools. @*
 
-In version 0.4, the package supports the DSL (ABBYY Lingvo), @*
-StarDict, MDict, and BGL (Babylon) formats, including @*
-dictzip-compressed files (@samp{.dsl.dz} and @samp{.dict.dz}) and @*
-encrypted MDict files.  It also provides a DICT protocol client @*
-(RFC 2229) for querying remote dictionary servers. @*
+In version 0.5, the package supports the DSL (ABBYY Lingvo), @*
+StarDict, MDict, BGL (Babylon), and EPWING (JIS X 4081) formats, @*
+including dictzip-compressed files (@samp{.dsl.dz} and @*
+@samp{.dict.dz}) and encrypted MDict files.  It also provides a DICT @*
+protocol client (RFC 2229) for querying remote dictionary servers. @*
 
 The architecture is modular.  The core module (@samp{johnson.el}) provides @*
 the lookup engine, results buffer, navigation, history, and a @*
@@ -140,9 +140,9 @@ directory (@ref{Cache directory}).  Shared infrastructure @*
 for dictzip decompression lives in @samp{johnson-dictzip.el}.  Each @*
 dictionary format is handled by a separate backend @*
 module---@samp{johnson-dsl.el}, @samp{johnson-stardict.el}, @*
-@samp{johnson-mdict.el}, @samp{johnson-bgl.el}, and @*
-@samp{johnson-dict.el}---that registers itself with the core via the @*
-format registry. @*
+@samp{johnson-mdict.el}, @samp{johnson-bgl.el}, @*
+@samp{johnson-epwing.el}, and @samp{johnson-dict.el}---that registers @*
+itself with the core via the format registry. @*
 
 A typical workflow consists of three steps.  First, configure @*
 @code{johnson-dictionary-directories} to point at your dictionary files @*
@@ -201,6 +201,7 @@ their indexing status and entry counts @*
 * Cache directory::
 * Audio playback::
 * DICT protocol::
+* EPWING::
 * Images::
 * Wildcard search::
 * Full-text search::
@@ -457,6 +458,43 @@ You can add additional servers: @*
 Dictionaries discovered from DICT servers appear under the ``DICT @*
 Servers'' group in the group selector.  The DICT backend communicates @*
 using the RFC 2229 protocol over a TCP connection. @*
+
+@node EPWING
+@section EPWING
+
+The @samp{johnson-epwing} backend handles EPWING (JIS X 4081) and EB @*
+format electronic dictionaries.  These are common Japanese dictionary @*
+formats originally distributed on CD-ROM, characterized by a @*
+directory-based structure with a @file{CATALOGS} (EPWING) or @*
+@file{CATALOG} (EB) file at the top level and @file{HONMON} data files @*
+in subbook directories. @*
+
+EPWING dictionaries are discovered automatically: during discovery, @*
+johnson scans dictionary directories for @file{CATALOGS}/@file{CATALOG} @*
+files, parses them to enumerate subbooks, and creates one dictionary @*
+entry per subbook.  No special configuration is required beyond adding @*
+the EPWING book directory to @code{johnson-dictionary-directories}. @*
+
+Each EPWING book may contain multiple subbooks (dictionaries).  All @*
+subbooks are discovered and indexed individually.  Dictionaries @*
+appear under the ``EPWING'' group in the group selector. @*
+
+The backend supports: @*
+
+@itemize
+@item
+Both EPWING (@file{CATALOGS}) and EB (@file{CATALOG}) catalog formats. @*
+@item
+JIS X 0208 (EUC-JP) and ISO 8859-1 character encodings. @*
+@item
+B-tree search index traversal for headword extraction. @*
+@item
+Text formatting: bold, italic, emphasis, references, sub/superscript, @*
+indentation, and newlines. @*
+@end itemize
+
+Gaiji (custom character bitmaps) are not yet rendered; they appear as @*
+gaps in the text.  EBZIP-compressed books are not yet supported. @*
 
 @node Images
 @section Images
@@ -1676,7 +1714,8 @@ Any unrecognized color name falls back to @code{johnson-color-default-face}. @*
 * Version 0.1 --- DSL: Version 01 --- DSL.
 * Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL.
 * Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
-* Version 0.4 (current) --- BGL, DICT, and more: Version 04 (current).
+* Version 0.4 --- BGL, DICT, and more: Version 04.
+* Version 0.5 (current) --- EPWING: Version 05 (current).
 * Future features::
 @end menu
 
@@ -1753,8 +1792,8 @@ Support for MDict's HTML+CSS content. @*
 (@samp{[p]} tag expansion). @*
 @end itemize
 
-@node Version 04 (current)
-@section Version 0.4 (current) --- BGL, DICT, and more
+@node Version 04
+@section Version 0.4 --- BGL, DICT, and more
 
 @itemize
 @item
@@ -1790,6 +1829,23 @@ Clearer error message when a StarDict @samp{.idx} file is missing @*
 (incomplete dictionary distribution). @*
 @end itemize
 
+@node Version 05 (current)
+@section Version 0.5 (current) --- EPWING
+
+@itemize
+@item
+@samp{johnson-epwing.el} backend for EPWING (JIS X 4081) and EB @*
+format electronic dictionaries, with automatic discovery via @*
+@file{CATALOGS}/@file{CATALOG} files. @*
+@item
+B-tree search index traversal for headword extraction. @*
+@item
+JIS X 0208 (EUC-JP) and ISO 8859-1 character encoding support. @*
+@item
+Text rendering with bold, italic, emphasis, references, @*
+sub/superscript, indentation, and newlines. @*
+@end itemize
+
 @node Future features
 @section Future features
 
@@ -1798,7 +1854,9 @@ version: @*
 
 @itemize
 @item
-EPWING format. @*
+EPWING gaiji (custom character) rendering. @*
+@item
+EBZIP decompression for compressed EPWING books. @*
 @end itemize
 
 @node Indices
