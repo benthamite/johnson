@@ -15,6 +15,8 @@
 
 (require 'cl-lib)
 
+(autoload 'url-unhex-string "url-util")
+
 (declare-function johnson-lookup "johnson")
 (declare-function johnson-insert-audio-button "johnson")
 (declare-function johnson--image-file-p "johnson")
@@ -195,8 +197,9 @@ ATTRS is the raw attribute string from the opening tag."
      (cond
       ;; sound:// links -> audio button
       ((string-match "href\\s-*=\\s-*[\"']sound://\\([^\"']+\\)[\"']" attrs)
-       (let ((filename (subst-char-in-string
-                        ?\\ ?/ (match-string 1 attrs))))
+       (let ((filename (url-unhex-string
+                        (subst-char-in-string
+                         ?\\ ?/ (match-string 1 attrs)))))
          (if (and (not (string-empty-p filename))
                   johnson-html--current-dict-dir)
              (let ((audio-path (expand-file-name
@@ -209,7 +212,7 @@ ATTRS is the raw attribute string from the opening tag."
            (add-face-text-property region-start region-end 'johnson-ref-face))))
       ;; bword:// and entry:// links -> cross-reference button
       ((string-match "href\\s-*=\\s-*[\"']\\(?:bword://\\|entry://\\)?\\([^\"']+\\)[\"']" attrs)
-       (let ((target (match-string 1 attrs)))
+       (let ((target (url-unhex-string (match-string 1 attrs))))
          (make-text-button region-start region-end
                            'face 'johnson-ref-face
                            'johnson-ref-word target
@@ -266,6 +269,7 @@ Returns the new end position."
   "Process HTML tags in the region from START to END.
 Replaces tags with text properties."
   (save-excursion
+    (let ((case-fold-search t))
     ;; Strip carriage returns (common in some MDict/StarDict entries).
     (goto-char start)
     (while (search-forward "\r" end t)
@@ -295,7 +299,7 @@ Replaces tags with text properties."
             (goto-char script-start)))))
     ;; Strip <link> tags (CSS references, not useful in Emacs).
     (goto-char start)
-    (while (re-search-forward "<link[^>]*/?>\\|<link[^>]*>" end t)
+    (while (re-search-forward "<link[^>]*/?>" end t)
       (let ((len (- (match-end 0) (match-beginning 0))))
         (replace-match "")
         (setq end (- end len))))
@@ -411,7 +415,7 @@ Replaces tags with text properties."
           (let ((len (- (match-end 0) (match-beginning 0))))
             (replace-match "\n\n")
             (setq new-end (- new-end len -2))))
-        new-end))))
+        new-end)))))
 
 (provide 'johnson-html)
 
