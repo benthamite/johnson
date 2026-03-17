@@ -17,6 +17,10 @@
 ;; EPWING dictionaries use a directory-based structure with a CATALOGS
 ;; file at the top level and HONMON data files in subbook directories.
 ;; Discovery scans for CATALOGS files and enumerates subbooks.
+;;
+;; Character encoding: EPWING books use either JIS X 0208 (raw 2-byte
+;; characters with bytes in 0x21-0x7E) or ISO 8859-1.  JIS bytes are
+;; converted to EUC-JP (by adding 0x80 to each byte) before decoding.
 
 ;;; Code:
 
@@ -126,6 +130,70 @@ Returns the full path or nil."
        (string-equal-ignore-case (file-name-nondirectory f) name))
      (directory-files dir t "[^.]"))))
 
+;;;; JIS/EUC-JP conversion
+
+(defun johnson-epwing--jis-to-euc (data &optional start end)
+  "Convert raw JIS bytes in DATA to EUC-JP by adding 0x80 to each byte.
+Operates on the range from START to END (defaults to full string)."
+  (let* ((s (or start 0))
+         (e (or end (length data)))
+         (result (make-string (- e s) 0)))
+    (dotimes (i (- e s))
+      (aset result i (+ (aref data (+ s i)) #x80)))
+    result))
+
+;;;; Character encoding detection
+
+(defvar johnson-epwing--charcode-cache (make-hash-table :test #'equal)
+  "Cache mapping HONMON path to its character encoding.
+Values are `jis', `euc-jp', or `iso-8859-1'.")
+
+(defun johnson-epwing--detect-charcode (honmon-path)
+  "Detect the character encoding for the EPWING book at HONMON-PATH.
+Returns `jis', `euc-jp', or `iso-8859-1'."
+  (or (gethash honmon-path johnson-epwing--charcode-cache)
+      (let* ((catalogs (johnson-epwing--find-catalogs honmon-path))
+             (coding (if catalogs
+                        (johnson-epwing--charcode-from-catalog catalogs)
+                      'jis)))
+        (puthash honmon-path coding johnson-epwing--charcode-cache)
+        coding)))
+
+(defun johnson-epwing--charcode-from-catalog (catalogs-path)
+  "Detect the character encoding from the catalog at CATALOGS-PATH.
+Examines the first subbook title bytes to distinguish JIS X 0208
+\(0x21-0x7E byte pairs), EUC-JP (0xA1-0xFE byte pairs), and
+ISO 8859-1."
+  (let* ((data (johnson-epwing--read-file-unibyte catalogs-path))
+         (title-start 18)
+         (title-end (min (+ title-start 80) (length data))))
+    (cond
+     ((johnson-epwing--has-jis-p data title-start title-end) 'jis)
+     ((johnson-epwing--has-euc-jp-p data title-start title-end) 'euc-jp)
+     (t 'iso-8859-1))))
+
+(defun johnson-epwing--has-jis-p (data start end)
+  "Return non-nil if DATA between START and END contains JIS byte pairs.
+JIS X 0208 characters have both bytes in the 0x21-0x7E range."
+  (cl-loop for i from start below (1- end) by 2
+           thereis (and (>= (aref data i) #x21)
+                        (<= (aref data i) #x7E)
+                        (>= (aref data (1+ i)) #x21)
+                        (<= (aref data (1+ i)) #x7E)
+                        ;; Exclude pure ASCII pairs (both bytes > 0x40
+                        ;; could be ASCII text like "Te")
+                        (or (< (aref data i) #x30)
+                            (and (>= (aref data i) #x21)
+                                 (<= (aref data i) #x29))))))
+
+(defun johnson-epwing--has-euc-jp-p (data start end)
+  "Return non-nil if DATA between START and END contains EUC-JP pairs."
+  (cl-loop for i from start below (1- end) by 2
+           thereis (and (>= (aref data i) #xA1)
+                        (<= (aref data i) #xFE)
+                        (>= (aref data (1+ i)) #xA1)
+                        (<= (aref data (1+ i)) #xFE))))
+
 ;;;; CATALOGS parsing
 
 (defun johnson-epwing--find-catalogs (honmon-path)
@@ -174,46 +242,24 @@ Returns a list of subbook plists with keys :title, :directory,
 
 (defun johnson-epwing--decode-catalog-title (raw)
   "Decode a catalog title from RAW unibyte bytes.
-Titles are JIS X 0208 encoded (EUC-JP)."
-  (let ((decoded (string-trim-right
-                  (decode-coding-string raw 'euc-jp)
-                  "[\x00\s\u3000]+")))
+Titles may be in JIS X 0208 (bytes 0x21-0x7E), EUC-JP (bytes
+0xA1-0xFE), or ASCII.  JIS bytes are converted to EUC-JP before
+decoding."
+  (let* ((trimmed (johnson-epwing--trim-null-bytes raw))
+         (euc (if (johnson-epwing--has-jis-p trimmed 0 (length trimmed))
+                  (johnson-epwing--jis-to-euc trimmed)
+                trimmed))
+         (decoded (string-trim-right
+                   (decode-coding-string euc 'euc-jp)
+                   "[\x00\s\u3000]+")))
     (if (string-empty-p decoded) "Unknown" decoded)))
 
-;;;; Character encoding detection
-
-(defvar johnson-epwing--charcode-cache (make-hash-table :test #'equal)
-  "Cache mapping HONMON path to its character encoding.")
-
-(defun johnson-epwing--detect-charcode (honmon-path)
-  "Detect the character encoding for the EPWING book at HONMON-PATH.
-Returns `euc-jp' or `iso-8859-1'."
-  (or (gethash honmon-path johnson-epwing--charcode-cache)
-      (let* ((catalogs (johnson-epwing--find-catalogs honmon-path))
-             (coding (if catalogs
-                        (johnson-epwing--charcode-from-catalog catalogs)
-                      'euc-jp)))
-        (puthash honmon-path coding johnson-epwing--charcode-cache)
-        coding)))
-
-(defun johnson-epwing--charcode-from-catalog (catalogs-path)
-  "Detect the character encoding from the catalog at CATALOGS-PATH.
-Checks the first subbook title for EUC-JP byte patterns."
-  (let* ((data (johnson-epwing--read-file-unibyte catalogs-path))
-         (title-start (if (johnson-epwing--epwing-catalog-p catalogs-path)
-                          18 18))
-         (title-end (min (+ title-start 80) (length data))))
-    (if (johnson-epwing--has-euc-jp-p data title-start title-end)
-        'euc-jp
-      'iso-8859-1)))
-
-(defun johnson-epwing--has-euc-jp-p (data start end)
-  "Return non-nil if DATA between START and END contains EUC-JP pairs."
-  (cl-loop for i from start below (1- end) by 2
-           thereis (and (>= (aref data i) #xA1)
-                        (<= (aref data i) #xFE)
-                        (>= (aref data (1+ i)) #xA1)
-                        (<= (aref data (1+ i)) #xFE))))
+(defun johnson-epwing--trim-null-bytes (data)
+  "Remove trailing null bytes from unibyte string DATA."
+  (let ((end (length data)))
+    (while (and (> end 0) (zerop (aref data (1- end))))
+      (cl-decf end))
+    (substring data 0 end)))
 
 ;;;; HONMON file location
 
@@ -242,12 +288,13 @@ entry plists with keys :id, :start-page, :page-count, :flags."
                            :page-count (johnson-epwing--u32be data (+ off 6))
                            :flags (aref data (+ off 10))))))
 
-(defun johnson-epwing--find-word-index (index-table)
-  "Find the best word-search index entry from INDEX-TABLE.
-Prefers as-is (0x71), then kana (0x70), then alpha (0x72)."
-  (or (cl-find #x71 index-table :key (lambda (e) (plist-get e :id)))
-      (cl-find #x70 index-table :key (lambda (e) (plist-get e :id)))
-      (cl-find #x72 index-table :key (lambda (e) (plist-get e :id)))))
+(defun johnson-epwing--find-search-index (index-table)
+  "Find the best search index entry from INDEX-TABLE.
+Tries word search (0x70-0x72), then endword search (0x90-0x92).
+Returns the index entry plist or nil."
+  (cl-loop for id in '(#x71 #x70 #x72 #x91 #x90 #x92)
+           thereis (cl-find id index-table
+                            :key (lambda (e) (plist-get e :id)))))
 
 ;;;; B-tree traversal
 
@@ -277,7 +324,8 @@ pages already processed."
       (johnson-epwing--process-internal-entries
        data entry-len count path coding callback visited))))
 
-(defun johnson-epwing--process-leaf-entries (data entry-len count coding callback)
+(defun johnson-epwing--process-leaf-entries (data entry-len count coding
+                                                  callback)
   "Process leaf node entries in page DATA, calling CALLBACK for each.
 ENTRY-LEN is the fixed key length (0 for variable).  COUNT is
 the number of entries.  CODING is the character encoding."
@@ -294,7 +342,6 @@ the number of entries.  CODING is the character encoding."
         (setq pos key-end)
         (let* ((text-page (johnson-epwing--u32be data pos))
                (text-off (johnson-epwing--u16be data (+ pos 4)))
-               (_ (+ pos 6))
                (text-pos (johnson-epwing--page-pos text-page text-off)))
           (cl-incf pos 12)
           (when (and (> text-page 0)
@@ -322,15 +369,44 @@ character encoding.  CALLBACK and VISITED are forwarded."
              path child-page coding callback visited)))))))
 
 (defun johnson-epwing--decode-search-key (raw coding)
-  "Decode search key RAW using CODING, trimming trailing nulls."
-  (let ((end (length raw)))
-    (while (and (> end 0) (zerop (aref raw (1- end))))
-      (cl-decf end))
-    (if (zerop end)
+  "Decode search key RAW using CODING, trimming trailing nulls.
+For JIS encoding, converts to EUC-JP before decoding.
+Normalizes fullwidth Latin characters to ASCII."
+  (let* ((trimmed (johnson-epwing--trim-null-bytes raw))
+         (len (length trimmed)))
+    (if (zerop len)
         ""
       (condition-case nil
-          (string-trim (decode-coding-string (substring raw 0 end) coding))
+          (let* ((bytes (if (eq coding 'jis)
+                            (johnson-epwing--jis-to-euc trimmed)
+                          trimmed))
+                 (decoded (decode-coding-string
+                           bytes
+                           (if (eq coding 'jis) 'euc-jp coding))))
+            (let ((trim-re "[.\u3002\uff0e\s]+"))
+              (string-trim (johnson-epwing--normalize-fullwidth decoded)
+                           trim-re trim-re)))
         (error "")))))
+
+(defun johnson-epwing--normalize-fullwidth (str)
+  "Convert fullwidth Latin characters in STR to ASCII equivalents."
+  (let ((result (copy-sequence str)))
+    (dotimes (i (length result))
+      (let ((ch (aref result i)))
+        (cond
+         ((<= #xFF21 ch #xFF3A)
+          (aset result i (- ch (- #xFF21 ?A))))
+         ((<= #xFF41 ch #xFF5A)
+          (aset result i (- ch (- #xFF41 ?a))))
+         ((<= #xFF10 ch #xFF19)
+          (aset result i (- ch (- #xFF10 ?0))))
+         ((= ch #x3000)
+          (aset result i ?\s))
+         ((= ch #xFF0E)
+          (aset result i ?.))
+         ((= ch #xFF0C)
+          (aset result i ?,)))))
+    result))
 
 ;;;; Text reading
 
@@ -367,9 +443,9 @@ Returns the byte position or nil."
 
 (defun johnson-epwing--decode-entry (raw coding)
   "Decode RAW unibyte EPWING text using character encoding CODING.
-Escape sequences are preserved as character-code sequences
-starting with character 31.  Character data between escapes is
-decoded using CODING."
+CODING is `jis', `euc-jp', or `iso-8859-1'.  Escape sequences
+are preserved as character-code sequences starting with character
+31.  Character data between escapes is decoded appropriately."
   (let ((segments nil)
         (text-start 0)
         (pos 0)
@@ -391,9 +467,14 @@ decoded using CODING."
     (apply #'concat (nreverse segments))))
 
 (defun johnson-epwing--decode-text-segment (raw start end coding)
-  "Decode the text segment of RAW between START and END using CODING."
+  "Decode the text segment of RAW between START and END using CODING.
+For JIS encoding, converts bytes to EUC-JP before decoding."
   (condition-case nil
-      (decode-coding-string (substring raw start end) coding)
+      (let ((bytes (if (eq coding 'jis)
+                       (johnson-epwing--jis-to-euc raw start end)
+                     (substring raw start end))))
+        (decode-coding-string bytes
+                              (if (eq coding 'jis) 'euc-jp coding)))
     (error (substring raw start end))))
 
 (defun johnson-epwing--escape-to-string (raw pos len)
@@ -484,12 +565,12 @@ BYTE-LENGTH is always 0 (entries are delimited by stop codes)."
          (sub (johnson-epwing--subbook-for-honmon catalogs path subbooks))
          (index-page (plist-get sub :index-page))
          (index-table (johnson-epwing--read-index-table path index-page))
-         (word-idx (johnson-epwing--find-word-index index-table))
+         (search-idx (johnson-epwing--find-search-index index-table))
          (coding (johnson-epwing--detect-charcode path)))
-    (unless word-idx
-      (error "No word search index found in %s" path))
+    (unless search-idx
+      (error "No search index found in %s" path))
     (johnson-epwing--traverse-index
-     path (plist-get word-idx :start-page) coding callback)))
+     path (plist-get search-idx :start-page) coding callback)))
 
 ;;;; Entry retrieval
 
