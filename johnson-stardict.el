@@ -183,6 +183,34 @@ EXPECTED-COUNT (if non-nil), or nil on mismatch/error."
           result))
     (args-out-of-range nil)))
 
+(defun johnson-stardict--idx-values-padded-p (entries)
+  "Return non-nil if ENTRIES look like 32-bit values padded to 64-bit.
+Some non-standard dictionaries store 4-byte offset and size values each
+padded to 8 bytes (4 data bytes + 4 zero bytes), resulting in values
+shifted left by 32 bits when read as u64.  Detected by checking that all
+offset and size values have zero in their lower 32 bits, with at least
+one non-zero value present."
+  (let ((all-zero-low t)
+        (has-nonzero nil))
+    (cl-loop for entry across entries
+             while all-zero-low
+             do (let ((offset (nth 1 entry))
+                      (size (nth 2 entry)))
+                  (when (or (/= offset 0) (/= size 0))
+                    (setq has-nonzero t))
+                  (when (or (/= (logand offset #xFFFFFFFF) 0)
+                            (/= (logand size #xFFFFFFFF) 0))
+                    (setq all-zero-low nil))))
+    (and all-zero-low has-nonzero)))
+
+(defun johnson-stardict--fix-padded-idx (entries)
+  "Right-shift offset and size values in ENTRIES by 32 bits.
+Modifies ENTRIES in place and returns it."
+  (cl-loop for entry across entries
+           do (setf (nth 1 entry) (ash (nth 1 entry) -32))
+              (setf (nth 2 entry) (ash (nth 2 entry) -32)))
+  entries)
+
 (defun johnson-stardict--parse-idx (ifo-path)
   "Parse the .idx file for the dictionary at IFO-PATH.
 Returns a vector of (HEADWORD OFFSET SIZE) triples, in file order.
@@ -192,7 +220,7 @@ When the .ifo declares idxoffsetbits=64, uses 8-byte offsets and
 4-byte sizes (standard StarDict 3.0).  Otherwise, tries 4+4 (the
 default), then 8+4, then 8+8 (for non-standard dictionaries whose
 .ifo omits the idxoffsetbits key), validating against the declared
-wordcount."
+wordcount.  Detects and corrects 32-bit values padded to 8 bytes."
   (let* ((ifo (johnson-stardict--parse-ifo ifo-path))
          (wordcount (let ((v (johnson-stardict--ifo-get ifo "wordcount")))
                       (and v (string-to-number v))))
@@ -205,7 +233,13 @@ wordcount."
       ;; Auto-detect: try 32-bit first, fall back to 64-bit variants.
       (or (johnson-stardict--try-parse-idx data 4 4 wordcount)
           (johnson-stardict--try-parse-idx data 8 4 wordcount)
-          (johnson-stardict--try-parse-idx data 8 8 wordcount)
+          (let ((result (johnson-stardict--try-parse-idx data 8 8 wordcount)))
+            (when result
+              ;; Some dictionaries store 32-bit values padded to 8 bytes;
+              ;; detect and correct by right-shifting by 32.
+              (when (johnson-stardict--idx-values-padded-p result)
+                (johnson-stardict--fix-padded-idx result))
+              result))
           (error "Failed to parse StarDict .idx for %s" ifo-path)))))
 
 ;;;; .syn parsing

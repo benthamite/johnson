@@ -666,6 +666,42 @@
           (let ((text (buffer-substring-no-properties (point-min) (point-max))))
             (should (string-match-p "round fruit" text))))))))
 
+(ert-deftest johnson-stardict-test-parse-idx-padded ()
+  "Parses .idx file with 32-bit values padded to 8 bytes each."
+  (johnson-stardict-test--cleanup)
+  (let ((entries (johnson-stardict--parse-idx
+                  (johnson-stardict-test--fixture "test-stardict-padded.ifo"))))
+    ;; Should detect the padded format, correct the values, and return 3 entries.
+    (should (= (length entries) 3))
+    (should (equal (nth 0 (aref entries 0)) "apple"))
+    (should (= (nth 1 (aref entries 0)) 0))
+    (should (= (nth 2 (aref entries 0)) 60))
+    (should (equal (nth 0 (aref entries 1)) "cat"))
+    (should (= (nth 1 (aref entries 1)) 60))
+    (should (= (nth 2 (aref entries 1)) 35))
+    (should (equal (nth 0 (aref entries 2)) "hello"))
+    (should (= (nth 1 (aref entries 2)) 95))
+    (should (= (nth 2 (aref entries 2)) 37))))
+
+(ert-deftest johnson-stardict-test-full-integration-padded ()
+  "Full round-trip with padded 32-bit .idx format."
+  (johnson-stardict-test--cleanup)
+  (let* ((ifo-path (johnson-stardict-test--fixture "test-stardict-padded.ifo"))
+         (entries nil))
+    (johnson-stardict-build-index ifo-path
+                                  (lambda (hw offset size)
+                                    (push (list hw offset size) entries)))
+    (should (= (length entries) 3))
+    ;; Retrieve and render "apple".
+    (let* ((apple-entry (cl-find "apple" entries :key #'car :test #'equal)))
+      (should apple-entry)
+      (let ((raw (johnson-stardict-retrieve-entry
+                  ifo-path (nth 1 apple-entry) (nth 2 apple-entry))))
+        (with-temp-buffer
+          (johnson-stardict-render-entry raw)
+          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+            (should (string-match-p "round fruit" text))))))))
+
 (ert-deftest johnson-stardict-test-missing-idx-error ()
   "Signals a clear error when .idx file is missing."
   (johnson-stardict-test--cleanup)
