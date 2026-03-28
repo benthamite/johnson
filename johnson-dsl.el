@@ -711,7 +711,9 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
     ("u"
      (add-face-text-property region-start region-end 'johnson-underline-face))
     ("c"
-     (let ((face (johnson-dsl--color-face tag-args)))
+     (let ((face (if tag-args
+                     (johnson-dsl--color-face tag-args)
+                   'johnson-color-default-face)))
        (add-face-text-property region-start region-end face)))
     ("sup"
      (add-face-text-property region-start region-end 'johnson-bold-face)
