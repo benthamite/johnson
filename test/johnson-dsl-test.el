@@ -452,6 +452,15 @@
   (should (eq (johnson-dsl--color-face "darkolivegreen")
               'johnson-color-green-face)))
 
+(ert-deftest johnson-dsl-test-color-no-argument ()
+  "The [c] tag without a color argument uses the default face."
+  (with-temp-buffer
+    (johnson-dsl-render-entry "\t[c]{[/c]text[c]}[/c]")
+    (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+      (should (string-match-p "{" text))
+      (should (string-match-p "}" text))
+      (should-not (string-match-p "\\[c\\]" text)))))
+
 (ert-deftest johnson-dsl-test-render-transcription-tag ()
   "The [t] tag applies italic face to transcription content."
   (with-temp-buffer
