@@ -170,7 +170,7 @@ ISO 8859-1."
      (t 'iso-8859-1))))
 
 (defun johnson-epwing--has-jis-p (data start end)
-  "Return non-nil if DATA between START and END contains JIS byte pairs.
+  "Return non-nil if DATA between START and END has JIS byte pairs.
 JIS X 0208 characters have both bytes in the 0x21-0x7E range."
   (cl-loop for i from start below (1- end) by 2
            thereis (and (>= (aref data i) #x21)
@@ -184,7 +184,7 @@ JIS X 0208 characters have both bytes in the 0x21-0x7E range."
                                  (<= (aref data i) #x29))))))
 
 (defun johnson-epwing--has-euc-jp-p (data start end)
-  "Return non-nil if DATA between START and END contains EUC-JP pairs."
+  "Return non-nil if DATA between START and END has EUC-JP pairs."
   (cl-loop for i from start below (1- end) by 2
            thereis (and (>= (aref data i) #xA1)
                         (<= (aref data i) #xFE)

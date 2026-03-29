@@ -24,7 +24,7 @@ dependencies, relying on Emacs 30.1's built-in sqlite support for
 efficient headword indexing.  Dictionary files are parsed natively,
 without calling external tools.
 
-In version 0.5, the package supports the DSL (ABBYY Lingvo),
+In version 0.6, the package supports the DSL (ABBYY Lingvo),
 StarDict, MDict, BGL (Babylon), and EPWING (JIS X 4081) formats,
 including dictzip-compressed files (=.dsl.dz= and =.dict.dz=) and
 encrypted MDict files.  It also provides a DICT protocol client
@@ -719,6 +719,8 @@ lookup is automatically refreshed to reflect the new scope.
 
 #+findex: johnson-next-section
 #+findex: johnson-prev-section
+#+findex: johnson-prev-section-header
+#+findex: johnson-jump-to-section
 #+findex: johnson-toggle-section
 #+findex: johnson-toggle-all-sections
 #+findex: johnson-collapse-all
@@ -733,6 +735,15 @@ below, it displays "No more sections".  It is bound to =n= in
 The command ~johnson-prev-section~ moves point to the previous
 dictionary section header.  When there is no previous section, it
 displays "No previous section".  It is bound to =p= in ~johnson-mode~.
+
+The command ~johnson-prev-section-header~ is an alias for
+~johnson-prev-section~, bound to =P= for symmetry with navigation
+keybindings.
+
+The command ~johnson-jump-to-section~ prompts with completion for a
+dictionary section header and jumps directly to it.  This is useful
+when the results buffer contains many sections and you want to reach a
+specific dictionary without scrolling.
 
 The command ~johnson-toggle-section~ collapses or expands the dictionary
 section at point.  Collapsed sections hide their content using an
@@ -936,6 +947,7 @@ It is bound to =S= in ~johnson-mode~.
 :END:
 
 #+findex: johnson-eldoc-mode
+#+findex: johnson-eldoc-function
 The command ~johnson-eldoc-mode~ is a buffer-local minor mode
 that adds dictionary definitions to eldoc.  When enabled, moving
 point over a word displays a brief dictionary definition in the
@@ -949,6 +961,10 @@ The maximum length of the displayed definition is controlled by
 ;; Enable in text-mode buffers
 (add-hook 'text-mode-hook #'johnson-eldoc-mode)
 #+end_src
+
+Internally, the mode registers ~johnson-eldoc-function~ as an eldoc
+documentation function.  This function looks up the word at point and
+passes a brief definition string to the eldoc callback.
 
 ** Scan-popup mode commands
 :PROPERTIES:
@@ -981,6 +997,8 @@ echo area.
 #+findex: johnson-bookmark-add
 #+findex: johnson-bookmark-remove
 #+findex: johnson-bookmark-list
+#+findex: johnson-bookmark-list-goto
+#+findex: johnson-bookmark-list-delete
 The command ~johnson-bookmark-add~ bookmarks the dictionary
 entry at point for later reference.  The bookmark records the
 headword, dictionary name, and current date.  Bookmarks are
@@ -999,10 +1017,10 @@ The command ~johnson-bookmark-list~ opens a
 in a tabulated list.  The table has three columns: Headword,
 Dictionary, and Date.
 
-In the bookmarks buffer:
-
-- =RET= re-looks up the bookmarked headword.
-- =d= deletes the bookmark at point.
+In the bookmarks buffer, the command ~johnson-bookmark-list-goto~
+re-looks up the bookmarked headword.  It is bound to =RET=.  The
+command ~johnson-bookmark-list-delete~ deletes the bookmark at point
+and is bound to =d=.
 
 ** Browsing history
 :PROPERTIES:
@@ -1010,6 +1028,7 @@ In the bookmarks buffer:
 :END:
 
 #+findex: johnson-history-list
+#+findex: johnson-history-list-goto
 #+findex: johnson-history-clear
 The command ~johnson-history-list~ opens a
 =*johnson-history*= buffer displaying the full lookup history
@@ -1019,8 +1038,8 @@ matches).
 
 It is bound to =H= in ~johnson-mode~.
 
-In the history buffer, pressing =RET= re-looks up the headword
-at point.
+In the history buffer, the command ~johnson-history-list-goto~ re-looks
+up the headword at point.  It is bound to =RET=.
 
 The command ~johnson-history-clear~ clears all lookup history
 after prompting for confirmation.  This removes both the in-memory
@@ -1816,6 +1835,80 @@ argument identifies the dictionary file, which is used to locate a
 companion zip archive for on-demand audio extraction.  This function
 is called by format renderers when they encounter audio references.
 
+** EPWING backend
+:PROPERTIES:
+:CUSTOM_ID: h:epwing-backend
+:END:
+
+#+findex: johnson-epwing-detect
+#+findex: johnson-epwing-parse-metadata
+#+findex: johnson-epwing-discover
+#+findex: johnson-epwing-build-index
+#+findex: johnson-epwing-retrieve-entry
+#+findex: johnson-epwing-render-entry
+#+findex: johnson-epwing-clear-caches
+The EPWING backend (=johnson-epwing.el=) handles EPWING (JIS X 4081)
+and EB format electronic dictionaries ([[#h:epwing][EPWING]]).
+
+The function ~johnson-epwing-detect~ checks whether a file is a valid
+EPWING HONMON data file.
+
+The function ~johnson-epwing-parse-metadata~ reads metadata from a
+HONMON file and returns a plist with the dictionary name, source
+language, and target language.
+
+The function ~johnson-epwing-discover~ scans
+~johnson-dictionary-directories~ for =CATALOGS= and =CATALOG= files,
+parses each to enumerate subbooks, and returns a list of dictionary
+plists.  Unlike file-based backends, EPWING discovery is
+directory-based: each subbook within a book becomes a separate
+dictionary entry.
+
+The function ~johnson-epwing-build-index~ traverses the B-tree search
+index of a HONMON file to extract headwords.  Each entry callback
+receives an absolute file position as the byte offset; the byte length
+is always 0 because entries are delimited by stop codes rather than
+fixed lengths.
+
+The function ~johnson-epwing-retrieve-entry~ reads an entry from the
+HONMON file at the given byte offset, decoding text until the stop
+code.  Escape sequences are preserved as character-31 markers for later
+rendering.
+
+The function ~johnson-epwing-render-entry~ interprets the character-31
+escape markers to apply text formatting (bold, italic, emphasis,
+references, sub/superscript, indentation, and newlines) and inserts the
+result into the current buffer.
+
+The function ~johnson-epwing-clear-caches~ clears all EPWING-specific
+caches.
+
+** EBZIP backend
+:PROPERTIES:
+:CUSTOM_ID: h:ebzip-backend
+:END:
+
+#+findex: johnson-ebzip-read
+#+findex: johnson-ebzip-uncompressed-size
+#+findex: johnson-ebzip-clear-caches
+The EBZIP module (=johnson-ebzip.el=) provides random-access
+decompression for EBZIP-compressed EPWING files (=.ebz=).  EBZIP is a
+compression format used by some EPWING distributions, similar in concept
+to dictzip but specific to the EPWING ecosystem.  The module uses zlib
+decompression and caches decompressed slices for efficient repeated
+access.
+
+The function ~johnson-ebzip-read~ reads a specified number of
+uncompressed bytes from an EBZIP file at a given offset.  It
+decompresses only the slices that overlap the requested range,
+caching results for subsequent reads.
+
+The function ~johnson-ebzip-uncompressed-size~ returns the
+uncompressed size of an EBZIP file by reading its header.
+
+The function ~johnson-ebzip-clear-caches~ clears all cached EBZIP
+headers and decompressed slices.
+
 * Faces
 :PROPERTIES:
 :CUSTOM_ID: h:faces
@@ -2109,7 +2202,7 @@ under the mouse cursor and passes it to ~johnson-lookup~:
 - [X] Clearer error message when a StarDict =.idx= file is missing
   (incomplete dictionary distribution).
 
-** Version 0.5 (current) --- EPWING
+** Version 0.5 --- EPWING
 
 - [X] =johnson-epwing.el= backend for EPWING (JIS X 4081) and EB
   format electronic dictionaries.
@@ -2121,6 +2214,13 @@ under the mouse cursor and passes it to ~johnson-lookup~:
 - [X] =johnson-ebzip.el= module for EBZIP decompression (compressed
   =.ebz= files).
 - [X] Cross-reference buttons navigating via =johnson-lookup=.
+
+** Version 0.6 (current) --- EPWING improvements and audits
+
+- [X] EBZIP decompression improvements and caching.
+- [X] Interpretability audit: improved code readability and intent
+  transparency.
+- [X] Checkdoc and byte-compile cleanups across all backends.
 
 ** Future features
 :PROPERTIES:

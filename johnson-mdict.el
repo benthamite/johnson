@@ -561,8 +561,8 @@ Returns a plist with:
 ;;;; Record retrieval
 
 (defun johnson-mdict--locate-record (path record-offset)
-  "Find the record block and offset within it for RECORD-OFFSET.
-Returns (BLOCK-INDEX . LOCAL-OFFSET)."
+  "Find the record block in PATH for RECORD-OFFSET.
+Return (BLOCK-INDEX . LOCAL-OFFSET)."
   (let* ((rec-info (johnson-mdict--parse-record-section path))
          (blocks (plist-get rec-info :blocks))
          (num-blocks (length blocks))
