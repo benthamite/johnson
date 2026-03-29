@@ -23,31 +23,9 @@ Beyond basic lookups, `johnson` provides wildcard search (`?` and `*`), full-tex
 
 ![johnson.el screenshot](screenshot.png)
 
-## Installation
+## Quick start
 
 Requires **Emacs 30.1** or later.
-
-**package-vc** (built-in):
-
-```emacs-lisp
-(package-vc-install "https://github.com/benthamite/johnson")
-```
-
-**Elpaca**:
-
-```emacs-lisp
-(use-package johnson
-  :ensure (johnson :host github :repo "benthamite/johnson"))
-```
-
-**straight.el**:
-
-```emacs-lisp
-(straight-use-package
- '(johnson :type git :host github :repo "benthamite/johnson"))
-```
-
-## Quick start
 
 ```emacs-lisp
 (use-package johnson
@@ -55,12 +33,14 @@ Requires **Emacs 30.1** or later.
   :custom
   (johnson-dictionary-directories '("~/dictionaries/"))
   :bind
-  ("C-c d" . johnson-lookup))
+  ("C-c d" . johnson-lookup)
+  ("C-c j" . johnson-menu))
 ```
 
 1. Set `johnson-dictionary-directories` to where your dictionary files live.
 2. Run `M-x johnson-index` to scan and index all discovered dictionaries.
 3. Run `M-x johnson-lookup` (or `C-c d` with the config above) to look up a word.
+4. Run `M-x johnson-menu` (or `C-c j` with the config above) to explore the other commands and user options.
 
 Results appear in a `*johnson*` buffer. Press `n`/`p` to move between dictionary sections, `TAB` to collapse or expand a section, `RET` to follow cross-references, and `l`/`r` to navigate back and forward through lookup history.
 
