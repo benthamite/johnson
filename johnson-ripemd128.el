@@ -144,9 +144,9 @@ Returns a vector of 16 integers."
     x))
 
 (defun johnson-ripemd128--process-block (h0 h1 h2 h3 x)
-  "Process one 512-bit block X, updating hash state H0..H3.
+  "Process one 512-bit block X, updating hash state H0, H1, H2, H3.
 X is a 16-element vector of 32-bit words.
-Returns a list (h0 h1 h2 h3)."
+Return a list (H0 H1 H2 H3)."
   (let ((al h0) (bl h1) (cl h2) (dl h3)
         (ar h0) (br h1) (cr h2) (dr h3))
     ;; Left rounds.

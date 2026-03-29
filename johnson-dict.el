@@ -345,7 +345,7 @@ PATH is a dict:// URL.  Return results as a list of
 and index as \"WORD:INDEX\" for deterministic cache retrieval."
   (let ((parsed (johnson-dict--parse-path path)))
     (unless parsed
-      (error "johnson-dict: invalid DICT path: %s" path))
+      (error "Invalid DICT path: %s" path))
     (let* ((host (nth 0 parsed))
            (port (nth 1 parsed))
            (db (nth 2 parsed))
@@ -370,16 +370,16 @@ and index as \"WORD:INDEX\" for deterministic cache retrieval."
 OFFSET is a string \"WORD:INDEX\" as produced by `johnson-dict-query-exact'.
 The definition must have been previously cached."
   (unless (string-match "\\`\\(.*\\):\\([0-9]+\\)\\'" offset)
-    (error "johnson-dict: malformed offset %S" offset))
+    (error "Malformed offset %S" offset))
   (let* ((word (match-string 1 offset))
          (idx (string-to-number (match-string 2 offset)))
          (cache-key (format "%s:%s" path word))
          (defs (gethash cache-key johnson-dict--result-cache)))
     (unless defs
-      (error "johnson-dict: no cached definitions for %s word %s"
+      (error "No cached definitions for %s word %s"
              path word))
     (unless (< idx (length defs))
-      (error "johnson-dict: index %d out of range for %s word %s"
+      (error "Index %d out of range for %s word %s"
              idx path word))
     (nth idx defs)))
 

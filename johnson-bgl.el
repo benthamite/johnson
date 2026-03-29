@@ -388,7 +388,7 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
 (defun johnson-bgl-build-index (path callback)
   "Parse the BGL dictionary at PATH, calling CALLBACK for each entry.
 CALLBACK is called as (funcall CALLBACK headword byte-offset byte-length)
-where byte-offset and byte-length reference positions in the decompressed
+where byte-offset and `byte-length' reference positions in the decompressed
 stream (cached in a unibyte buffer)."
   (let* ((buf (johnson-bgl--get-buffer path))
          (data (with-current-buffer buf (buffer-string)))

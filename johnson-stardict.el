@@ -319,7 +319,7 @@ for use by the renderer."
   (insert (decode-coding-string data 'utf-8)))
 
 (defun johnson-stardict--render-type-t (data)
-  "Render type `t' (phonetic transcription) DATA into the current buffer."
+  "Render phonetic transcription type DATA into the current buffer."
   (let ((text (decode-coding-string data 'utf-8))
         (start (point)))
     (insert "[" text "]")

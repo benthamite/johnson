@@ -145,7 +145,7 @@ width per entry.  Returns a vector of (SLICE-COUNT + 1) offsets."
     (buffer-string)))
 
 (defun johnson-ebzip--cache-put (key value)
-  "Store KEY-VALUE in the slice cache, evicting if full."
+  "Store VALUE in the slice cache under KEY, evicting if full."
   (when (>= (hash-table-count johnson-ebzip--slice-cache)
             johnson-ebzip--cache-max)
     (let ((first-key nil))
