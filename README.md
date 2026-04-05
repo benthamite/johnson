@@ -23,9 +23,32 @@ Beyond basic lookups, `johnson` provides wildcard search (`?` and `*`), full-tex
 
 ![johnson.el screenshot](screenshot.png)
 
-## Quick start
+## Installation
 
-Requires **Emacs 30.1** or later.
+Requires Emacs 30.1 or later.
+
+### package-vc (built-in since Emacs 30)
+
+```emacs-lisp
+(use-package johnson
+  :vc (:url "https://github.com/benthamite/johnson"))
+```
+
+### Elpaca
+
+```emacs-lisp
+(use-package johnson
+  :ensure (:host github :repo "benthamite/johnson"))
+```
+
+### straight.el
+
+```emacs-lisp
+(use-package johnson
+  :straight (:host github :repo "benthamite/johnson"))
+```
+
+## Quick start
 
 ```emacs-lisp
 (use-package johnson
