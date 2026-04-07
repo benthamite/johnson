@@ -2234,6 +2234,18 @@ version:
 
 - [ ] EPWING gaiji (custom character) rendering with Unicode mapping.
 
+* Contributing
+:PROPERTIES:
+:CUSTOM_ID: h:contributing
+:END:
+
+=johnson= is distributed as part of [[https://elpa.gnu.org/][GNU ELPA]].
+Copyright is assigned to the Free Software Foundation.  All
+contributions must be covered by an FSF copyright assignment; see
+[[https://www.fsf.org/licensing/contributor-faq][Contributor FAQ]] for details.
+
+Bug reports and patches can be sent to the [[https://github.com/benthamite/johnson/issues][issue tracker]].
+
 * Indices
 :PROPERTIES:
 :CUSTOM_ID: h:indices

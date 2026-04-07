@@ -1,6 +1,6 @@
 ;;; johnson-transient.el --- Transient menu for johnson -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Pablo Stafforini
+;; Copyright (C) 2026 Free Software Foundation, Inc.
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
 

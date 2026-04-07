@@ -1,8 +1,10 @@
 ;;; johnson.el --- Multi-format dictionary UI for Emacs -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Pablo Stafforini
+;; Copyright (C) 2026 Free Software Foundation, Inc.
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
+;; Maintainer: Pablo Stafforini <pablostafforini@gmail.com>
+;; URL: https://github.com/benthamite/johnson
 ;; Version: 0.6.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; Keywords: dictionaries, i18n
