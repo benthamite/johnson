@@ -140,8 +140,9 @@ search only within the currently active dictionary group.
 #+end_src
 
 You can switch between these modes interactively via
-~johnson-select-group~ ([[#h:managing-groups][Managing groups and scope]]), which
-also lets you choose the active group.
+~johnson-select-group~ ([[#h:managing-groups][Managing groups and scope]]), or
+by setting the source and target language from the transient menu
+([[#h:transient-menu][Transient menu]]).
 
 The user option ~johnson-dictionary-groups~ lets you define custom
 dictionary groups.  When this option is ~nil~ (the default), groups are
@@ -1140,7 +1141,7 @@ access to all johnson commands and toggleable options.  It requires the
 
 The menu is organized into the following groups:
 
-- *Lookup* --- ~johnson-lookup~, ~johnson-search~, ~johnson-select-group~.
+- *Lookup* --- ~johnson-lookup~, ~johnson-search~.
 - *Navigate* --- section movement, ace-link, follow reference.
 - *History* --- back, forward, history list, clear history.
 - *Bookmarks* --- add, remove, list bookmarks.
@@ -1155,9 +1156,10 @@ The menu also exposes toggleable options as transient infixes:
 - =-i= --- toggle ~johnson-display-images~.
 - =-f= --- toggle ~johnson-fts-enabled~.
 - =-e= --- toggle ~johnson-eldoc-mode~.
-- =-s= --- toggle ~johnson-scan-mode~.
+- =-n= --- toggle ~johnson-scan-mode~.
 - =-p= --- toggle ~johnson-history-persist~.
-- =-c= --- cycle ~johnson-default-search-scope~ (=all= / =group=).
+- =-s= --- select source language.
+- =-t= --- select target language.
 - =-r= --- cycle ~johnson-ref-scope~ (=all= / =same=).
 - =-d= --- edit ~johnson-dictionary-directories~.
 

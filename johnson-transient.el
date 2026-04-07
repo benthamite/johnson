@@ -34,14 +34,16 @@
 (defvar johnson-display-images)
 (defvar johnson-fts-enabled)
 (defvar johnson-history-persist)
-(defvar johnson-default-search-scope)
 (defvar johnson-ref-scope)
 (defvar johnson--current-word)
+(defvar johnson--current-source-lang)
+(defvar johnson--current-target-lang)
 
 ;; Commands used as suffixes (defined in johnson.el)
 (declare-function johnson-lookup "johnson")
 (declare-function johnson-search "johnson")
-(declare-function johnson-select-group "johnson")
+(declare-function johnson--available-source-langs "johnson")
+(declare-function johnson--available-target-langs "johnson")
 (declare-function johnson-next-section "johnson")
 (declare-function johnson-prev-section "johnson")
 (declare-function johnson-ace-link "johnson")
@@ -126,6 +128,50 @@
   "Enable or disable `johnson-scan-mode' based on VAL."
   (johnson-scan-mode (if val 1 -1)))
 
+(defun johnson-transient--set-source-lang (_var val)
+  "Set source language to VAL and refresh the results buffer."
+  (setq johnson--current-source-lang val)
+  (when (and (bound-and-true-p johnson--current-word)
+             (derived-mode-p 'johnson-mode))
+    (johnson-refresh)))
+
+(defun johnson-transient--set-target-lang (_var val)
+  "Set target language to VAL and refresh the results buffer."
+  (setq johnson--current-target-lang val)
+  (when (and (bound-and-true-p johnson--current-word)
+             (derived-mode-p 'johnson-mode))
+    (johnson-refresh)))
+
+;;;; Language infix class
+
+(defclass johnson-transient-lang (transient-lisp-variable)
+  ((always-read :initform t)
+   (lang-type :initarg :lang-type :initform 'source))
+  "An infix for selecting a source or target language.")
+
+(cl-defmethod transient-infix-read ((obj johnson-transient-lang))
+  "Prompt for a language with `completing-read'.
+OBJ determines whether source or target languages are offered."
+  (let* ((type (oref obj lang-type))
+         (langs (if (eq type 'source)
+                    (johnson--available-source-langs)
+                  (johnson--available-target-langs
+                   johnson--current-source-lang)))
+         (choices (cons "<all>" langs))
+         (selection (completing-read
+                     (format "%s language: "
+                             (capitalize (symbol-name type)))
+                     choices nil t)))
+    (if (equal selection "<all>") nil selection)))
+
+(cl-defmethod transient-format-value ((obj johnson-transient-lang))
+  "Format OBJ value as the language name or <all>."
+  (let ((val (oref obj value)))
+    (propertize (or val "<all>")
+                'face (if val
+                          'transient-value
+                        'transient-inactive-value))))
+
 ;;;; Option infixes
 
 (transient-define-infix johnson-transient:images ()
@@ -156,11 +202,19 @@
   :variable 'johnson-history-persist
   :description "Persist history")
 
-(transient-define-infix johnson-transient:search-scope ()
-  :class 'johnson-transient-cycle
-  :variable 'johnson-default-search-scope
-  :choices '(all group)
-  :description "Search scope")
+(transient-define-infix johnson-transient:source-lang ()
+  :class 'johnson-transient-lang
+  :variable 'johnson--current-source-lang
+  :lang-type 'source
+  :set-value #'johnson-transient--set-source-lang
+  :description "Source language")
+
+(transient-define-infix johnson-transient:target-lang ()
+  :class 'johnson-transient-lang
+  :variable 'johnson--current-target-lang
+  :lang-type 'target
+  :set-value #'johnson-transient--set-target-lang
+  :description "Target language")
 
 (transient-define-infix johnson-transient:ref-scope ()
   :class 'johnson-transient-cycle
@@ -210,8 +264,7 @@
   :info-manual "(johnson)"
   [["Lookup"
     ("l" "Look up word" johnson-lookup)
-    ("s" "Full-text search" johnson-search)
-    ("G" "Select group" johnson-select-group)]
+    ("s" "Full-text search" johnson-search)]
    ["Navigate"
     ("n" "Next section" johnson-next-section)
     ("p" "Previous section" johnson-prev-section)
@@ -250,9 +303,10 @@
     ("-i" johnson-transient:images)
     ("-f" johnson-transient:fts)
     ("-e" johnson-transient:eldoc)
-    ("-s" johnson-transient:scan)
+    ("-n" johnson-transient:scan)
     ("-p" johnson-transient:persist-history)
-    ("-c" johnson-transient:search-scope)
+    ("-s" johnson-transient:source-lang)
+    ("-t" johnson-transient:target-lang)
     ("-r" johnson-transient:ref-scope)
     ("-d" johnson-transient:dict-dirs)]])
 
