@@ -1143,19 +1143,13 @@ The menu is organized into three columns of related groups:
 
 - *Search* / *Bookmarks* / *Dictionaries* --- finding and organizing.
 - *Navigate* / *Copy & media* / *Index* --- moving and acting.
-- *History* / *Sections* / *Options* --- state and settings.
+- *History* / *Sections* / *Modes* --- state and settings.
 
-The menu also exposes toggleable options as transient infixes:
-
-- =-i= --- toggle ~johnson-display-images~.
-- =-f= --- toggle ~johnson-fts-enabled~.
-- =-e= --- toggle ~johnson-eldoc-mode~.
-- =-n= --- toggle ~johnson-scan-mode~.
-- =-p= --- toggle ~johnson-history-persist~.
-- =-s= --- select source language.
-- =-t= --- select target language.
-- =-r= --- cycle ~johnson-ref-scope~ (=all= / =same=).
-- =-d= --- edit ~johnson-dictionary-directories~.
+Toggleable options are placed within the group they relate to rather
+than in a separate section.  For example, source and target language
+(=-s=, =-t=) and full-text search (=-f=) appear under Search; image
+display (=-i=) appears under Copy & media; and global behavior
+toggles (=-e= eldoc, =-n= scan, =-r= ref scope) appear under Modes.
 
 The transient menu is defined in =johnson-transient.el=.
 
