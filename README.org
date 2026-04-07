@@ -1139,17 +1139,15 @@ The command ~johnson-menu~ opens a transient popup menu providing quick
 access to all johnson commands and toggleable options.  It requires the
 =transient= package (bundled with Emacs 29+).
 
-The menu is organized into three columns of related groups:
+The menu uses a three-column layout with aligned columns.
+Toggleable options are placed within the group they relate to:
 
-- *Search* / *Bookmarks* / *Dictionaries* --- finding and organizing.
-- *Navigate* / *Copy & media* / *Index* --- moving and acting.
-- *History* / *Sections* / *Modes* --- state and settings.
-
-Toggleable options are placed within the group they relate to rather
-than in a separate section.  For example, source and target language
-(=-s=, =-t=) and full-text search (=-f=) appear under Search; image
-display (=-i=) appears under Copy & media; and global behavior
-toggles (=-e= eldoc, =-n= scan, =-r= ref scope) appear under Modes.
+- Column 1: *Search* (with source/target language, FTS, and ref scope
+  options), *Navigate sections*, *Display sections*.
+- Column 2: *History* (with persist option), *Bookmarks*, *Copy*,
+  *Media* (with images option).
+- Column 3: *Dictionaries* (with directories option), *Index*, *Modes*
+  (eldoc, scan).
 
 The transient menu is defined in =johnson-transient.el=.
 
