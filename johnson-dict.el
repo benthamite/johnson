@@ -4,7 +4,7 @@
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
 ;; Version: 0.4.0
-;; Package-Requires: ((emacs "30.1"))
+;; Package-Requires: ((emacs "29.1"))
 
 ;; This file is NOT part of GNU Emacs.
 

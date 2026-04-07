@@ -21,7 +21,7 @@ allowing you to look up words across multiple dictionaries simultaneously
 and view formatted definitions in a dedicated Emacs buffer.
 
 The package is implemented entirely in Emacs Lisp with no external
-dependencies, relying on Emacs 30.1's built-in sqlite support for
+dependencies, relying on Emacs 29.1's built-in sqlite support for
 efficient headword indexing.  Dictionary files are parsed natively,
 without calling external tools.
 
