@@ -263,55 +263,66 @@ OBJ determines whether source or target languages are offered."
 (transient-define-prefix johnson-menu ()
   "Main transient menu for johnson."
   :info-manual "(johnson)"
-  [["Search"
-    ("/" "Look up word" johnson-lookup)
-    ("S" "Full-text search" johnson-search)
-    ("-s" johnson-transient:source-lang)
-    ("-t" johnson-transient:target-lang)
-    ("-f" johnson-transient:fts)]
-   ["Bookmarks"
-    ("b" "Add bookmark" johnson-bookmark-add)
-    ("M" "Remove bookmark" johnson-bookmark-remove)
-    ("B" "Bookmark list" johnson-bookmark-list)
-    ("-p" johnson-transient:persist-history)]
-   ["Dictionaries"
-    ("d" "List dictionaries" johnson-list-dictionaries)
-    ("r" "Reorder" johnson-reorder-dictionaries)
-    ("I" "Import GoldenDict order" johnson-import-goldendict-order)
-    ("D" "Browse directory" johnson-browse-dictionary)
-    ("-d" johnson-transient:dict-dirs)]]
-  [["Navigate"
-    ("n" "Next section" johnson-next-section)
-    ("p" "Previous section" johnson-prev-section)
-    ("j" "Jump to section" johnson-jump-to-section)
-    ("o" "Ace link" johnson-ace-link)
-    ("RET" "Follow reference" johnson-follow-ref)]
-   ["Copy & media"
-    ("w" "Copy entry" johnson-copy-entry)
-    ("W" "Copy dictionary name" johnson-copy-dictionary-name)
-    ("a" "Play audio" johnson-play-audio-at-point)
-    ("g" "Refresh" johnson-refresh)
-    ("-i" johnson-transient:images)]
-   ["Index"
-    ("i" "Index/re-index" johnson-index)
-    ("k" "Stop indexing" johnson-stop-indexing)
-    ("X" "Clear index" johnson-clear-index)
-    ("R" "Clear resource cache" johnson-clear-resource-cache)
-    ("Q" "Close caches" johnson-close-caches)]]
-  [["History"
-    ("l" "Back" johnson-history-back)
-    ("r" "Forward" johnson-history-forward)
-    ("H" "History list" johnson-history-list)
-    ("C" "Clear history" johnson-history-clear)]
-   ["Sections"
-    ("TAB" "Toggle section" johnson-toggle-section)
-    ("<backtab>" "Toggle all" johnson-toggle-all-sections)
-    ("e" "Expand all" johnson-expand-all)
-    ("c" "Collapse all" johnson-collapse-all)]
-   ["Modes"
-    ("-e" johnson-transient:eldoc)
-    ("-n" johnson-transient:scan)
-    ("-r" johnson-transient:ref-scope)]])
+  [:class transient-columns
+	  [:class transient-column
+		  "Search"
+		  ("/" "Look up word" johnson-lookup)
+		  ("S" "Full-text search" johnson-search)
+		  ("-s" johnson-transient:source-lang)
+		  ("-t" johnson-transient:target-lang)
+		  ("-f" johnson-transient:fts)
+		  ("-r" johnson-transient:ref-scope)
+		  ""
+		  "Navigate sections"
+		  ("n" "Next section" johnson-next-section)
+		  ("p" "Previous section" johnson-prev-section)
+		  ("j" "Jump to section" johnson-jump-to-section)
+		  ("o" "Follow link" johnson-ace-link)
+		  ("RET" "Follow reference" johnson-follow-ref)
+		  ""
+		  "Display sections"
+		  ("TAB" "Toggle section" johnson-toggle-section)
+		  ("<backtab>" "Toggle all" johnson-toggle-all-sections)
+		  ("e" "Expand all" johnson-expand-all)
+		  ("c" "Collapse all" johnson-collapse-all)]
+	  [:class transient-column
+		  "History"
+		  ("l" "Back" johnson-history-back)
+		  ("r" "Forward" johnson-history-forward)
+		  ("H" "History list" johnson-history-list)
+		  ("C" "Clear history" johnson-history-clear)
+		  ("-h" johnson-transient:persist-history)
+		  """"
+		  "Bookmarks"
+		  ("b" "Add bookmark" johnson-bookmark-add)
+		  ("M" "Remove bookmark" johnson-bookmark-remove)
+		  ("B" "Bookmark list" johnson-bookmark-list)
+		  ""
+		  "Copy"
+		  ("w" "Copy entry" johnson-copy-entry)
+		  ("W" "Copy dictionary name" johnson-copy-dictionary-name)
+		  ""
+		  "Media"
+		  ("a" "Play audio" johnson-play-audio-at-point)
+		  ("-i" johnson-transient:images)]
+	  [:class transient-column
+		  "Dictionaries"
+		  ("d" "List dictionaries" johnson-list-dictionaries)
+		  ("r" "Reorder" johnson-reorder-dictionaries)
+		  ("I" "Import GoldenDict order" johnson-import-goldendict-order)
+		  ("D" "Browse directory" johnson-browse-dictionary)
+		  ("-d" johnson-transient:dict-dirs)
+		  """"
+		  "Index"
+		  ("i" "Index/re-index" johnson-index)
+		  ("k" "Stop indexing" johnson-stop-indexing)
+		  ("X" "Clear index" johnson-clear-index)
+		  ("R" "Clear resource cache" johnson-clear-resource-cache)
+		  ("Q" "Close caches" johnson-close-caches)
+		  """"""
+		  "Modes"
+		  ("-e" johnson-transient:eldoc)
+		  ("-n" johnson-transient:scan)]])
 
 (provide 'johnson-transient)
 ;;; johnson-transient.el ends here
