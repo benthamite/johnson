@@ -6,7 +6,7 @@
 ;; Maintainer: Pablo Stafforini <pablostafforini@gmail.com>
 ;; URL: https://github.com/benthamite/johnson
 ;; Version: 0.6.0
-;; Package-Requires: ((emacs "30.1"))
+;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: dictionaries, i18n
 
 ;; This file is NOT part of GNU Emacs.
