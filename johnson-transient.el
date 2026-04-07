@@ -265,16 +265,21 @@ OBJ determines whether source or target languages are offered."
   :info-manual "(johnson)"
   [["Search"
     ("/" "Look up word" johnson-lookup)
-    ("S" "Full-text search" johnson-search)]
+    ("S" "Full-text search" johnson-search)
+    ("-s" johnson-transient:source-lang)
+    ("-t" johnson-transient:target-lang)
+    ("-f" johnson-transient:fts)]
    ["Bookmarks"
     ("b" "Add bookmark" johnson-bookmark-add)
     ("M" "Remove bookmark" johnson-bookmark-remove)
-    ("B" "Bookmark list" johnson-bookmark-list)]
+    ("B" "Bookmark list" johnson-bookmark-list)
+    ("-p" johnson-transient:persist-history)]
    ["Dictionaries"
     ("d" "List dictionaries" johnson-list-dictionaries)
     ("r" "Reorder" johnson-reorder-dictionaries)
     ("I" "Import GoldenDict order" johnson-import-goldendict-order)
-    ("D" "Browse directory" johnson-browse-dictionary)]]
+    ("D" "Browse directory" johnson-browse-dictionary)
+    ("-d" johnson-transient:dict-dirs)]]
   [["Navigate"
     ("n" "Next section" johnson-next-section)
     ("p" "Previous section" johnson-prev-section)
@@ -285,7 +290,8 @@ OBJ determines whether source or target languages are offered."
     ("w" "Copy entry" johnson-copy-entry)
     ("W" "Copy dictionary name" johnson-copy-dictionary-name)
     ("a" "Play audio" johnson-play-audio-at-point)
-    ("g" "Refresh" johnson-refresh)]
+    ("g" "Refresh" johnson-refresh)
+    ("-i" johnson-transient:images)]
    ["Index"
     ("i" "Index/re-index" johnson-index)
     ("k" "Stop indexing" johnson-stop-indexing)
@@ -302,16 +308,10 @@ OBJ determines whether source or target languages are offered."
     ("<backtab>" "Toggle all" johnson-toggle-all-sections)
     ("e" "Expand all" johnson-expand-all)
     ("c" "Collapse all" johnson-collapse-all)]
-   ["Options"
-    ("-i" johnson-transient:images)
-    ("-f" johnson-transient:fts)
+   ["Modes"
     ("-e" johnson-transient:eldoc)
     ("-n" johnson-transient:scan)
-    ("-p" johnson-transient:persist-history)
-    ("-s" johnson-transient:source-lang)
-    ("-t" johnson-transient:target-lang)
-    ("-r" johnson-transient:ref-scope)
-    ("-d" johnson-transient:dict-dirs)]])
+    ("-r" johnson-transient:ref-scope)]])
 
 (provide 'johnson-transient)
 ;;; johnson-transient.el ends here
