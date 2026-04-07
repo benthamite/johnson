@@ -44,6 +44,7 @@
 (declare-function johnson-search "johnson")
 (declare-function johnson--available-source-langs "johnson")
 (declare-function johnson--available-target-langs "johnson")
+(declare-function johnson-jump-to-section "johnson")
 (declare-function johnson-next-section "johnson")
 (declare-function johnson-prev-section "johnson")
 (declare-function johnson-ace-link "johnson")
@@ -262,43 +263,45 @@ OBJ determines whether source or target languages are offered."
 (transient-define-prefix johnson-menu ()
   "Main transient menu for johnson."
   :info-manual "(johnson)"
-  [["Lookup"
-    ("l" "Look up word" johnson-lookup)
-    ("s" "Full-text search" johnson-search)]
-   ["Navigate"
-    ("n" "Next section" johnson-next-section)
-    ("p" "Previous section" johnson-prev-section)
-    ("o" "Ace link" johnson-ace-link)
-    ("RET" "Follow reference" johnson-follow-ref)]
-   ["History"
-    ("<" "Back" johnson-history-back)
-    (">" "Forward" johnson-history-forward)
-    ("H" "History list" johnson-history-list)
-    ("C" "Clear history" johnson-history-clear)]]
-  [["Bookmarks"
-    ("m" "Add bookmark" johnson-bookmark-add)
+  [["Search"
+    ("/" "Look up word" johnson-lookup)
+    ("S" "Full-text search" johnson-search)]
+   ["Bookmarks"
+    ("b" "Add bookmark" johnson-bookmark-add)
     ("M" "Remove bookmark" johnson-bookmark-remove)
     ("B" "Bookmark list" johnson-bookmark-list)]
-   ["Actions"
-    ("g" "Refresh" johnson-refresh)
+   ["Dictionaries"
+    ("d" "List dictionaries" johnson-list-dictionaries)
+    ("r" "Reorder" johnson-reorder-dictionaries)
+    ("I" "Import GoldenDict order" johnson-import-goldendict-order)
+    ("D" "Browse directory" johnson-browse-dictionary)]]
+  [["Navigate"
+    ("n" "Next section" johnson-next-section)
+    ("p" "Previous section" johnson-prev-section)
+    ("j" "Jump to section" johnson-jump-to-section)
+    ("o" "Ace link" johnson-ace-link)
+    ("RET" "Follow reference" johnson-follow-ref)]
+   ["Copy & media"
     ("w" "Copy entry" johnson-copy-entry)
     ("W" "Copy dictionary name" johnson-copy-dictionary-name)
     ("a" "Play audio" johnson-play-audio-at-point)
-    ("D" "Browse dictionary dir" johnson-browse-dictionary)]
-   ["Sections"
-    ("TAB" "Toggle section" johnson-toggle-section)
-    ("<backtab>" "Toggle all sections" johnson-toggle-all-sections)
-    ("e" "Expand all" johnson-expand-all)
-    ("c" "Collapse all" johnson-collapse-all)]]
-  [["Manage"
-    ("d" "List dictionaries" johnson-list-dictionaries)
-    ("r" "Reorder dictionaries" johnson-reorder-dictionaries)
-    ("I" "Import GoldenDict order" johnson-import-goldendict-order)
+    ("g" "Refresh" johnson-refresh)]
+   ["Index"
     ("i" "Index/re-index" johnson-index)
     ("k" "Stop indexing" johnson-stop-indexing)
     ("X" "Clear index" johnson-clear-index)
     ("R" "Clear resource cache" johnson-clear-resource-cache)
-    ("Q" "Close caches" johnson-close-caches)]
+    ("Q" "Close caches" johnson-close-caches)]]
+  [["History"
+    ("l" "Back" johnson-history-back)
+    ("r" "Forward" johnson-history-forward)
+    ("H" "History list" johnson-history-list)
+    ("C" "Clear history" johnson-history-clear)]
+   ["Sections"
+    ("TAB" "Toggle section" johnson-toggle-section)
+    ("<backtab>" "Toggle all" johnson-toggle-all-sections)
+    ("e" "Expand all" johnson-expand-all)
+    ("c" "Collapse all" johnson-collapse-all)]
    ["Options"
     ("-i" johnson-transient:images)
     ("-f" johnson-transient:fts)

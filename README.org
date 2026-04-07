@@ -1139,17 +1139,11 @@ The command ~johnson-menu~ opens a transient popup menu providing quick
 access to all johnson commands and toggleable options.  It requires the
 =transient= package (bundled with Emacs 29+).
 
-The menu is organized into the following groups:
+The menu is organized into three columns of related groups:
 
-- *Lookup* --- ~johnson-lookup~, ~johnson-search~.
-- *Navigate* --- section movement, ace-link, follow reference.
-- *History* --- back, forward, history list, clear history.
-- *Bookmarks* --- add, remove, list bookmarks.
-- *Actions* --- refresh, copy entry, copy dictionary name, play audio,
-  browse dictionary directory.
-- *Sections* --- toggle, toggle all, expand all, collapse all.
-- *Manage* --- list dictionaries, reorder, import GoldenDict order,
-  index, stop indexing, clear index, clear resource cache, close caches.
+- *Search* / *Bookmarks* / *Dictionaries* --- finding and organizing.
+- *Navigate* / *Copy & media* / *Index* --- moving and acting.
+- *History* / *Sections* / *Options* --- state and settings.
 
 The menu also exposes toggleable options as transient infixes:
 
