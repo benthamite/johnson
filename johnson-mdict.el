@@ -39,6 +39,7 @@
 (declare-function johnson-db-open "johnson-db")
 (declare-function johnson-db-close "johnson-db")
 (declare-function johnson-db-query-exact "johnson-db")
+(declare-function zlib-decompress-region "decompress.c" (start end &optional allow-partial))
 
 (defvar johnson-cache-directory)
 

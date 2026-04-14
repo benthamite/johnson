@@ -39,6 +39,7 @@
 (declare-function johnson-register-format "johnson")
 (declare-function johnson-lookup "johnson")
 (declare-function johnson-insert-audio-button "johnson")
+(declare-function zlib-decompress-region "decompress.c" (start end &optional allow-partial))
 
 ;;;; Internal variables
 
