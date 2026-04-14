@@ -2234,6 +2234,13 @@ contributions must be covered by an FSF copyright assignment; see
 
 Bug reports and patches can be sent to the [[https://github.com/benthamite/johnson/issues][issue tracker]].
 
+** Running the test suite
+
+#+begin_src sh
+make test     # run the full ERT suite
+make compile  # byte-compile with warnings-as-errors
+#+end_src
+
 * Indices
 :PROPERTIES:
 :CUSTOM_ID: h:indices

@@ -59,13 +59,13 @@
 
 (ert-deftest johnson-epwing-test-u16be ()
   "Reads 16-bit big-endian integers correctly."
-  (should (= (johnson-epwing--u16be (unibyte-string #x00 #x05) 0) 5))
-  (should (= (johnson-epwing--u16be (unibyte-string #x01 #x00) 0) 256)))
+  (should (= (johnson-binary-u16be (unibyte-string #x00 #x05) 0) 5))
+  (should (= (johnson-binary-u16be (unibyte-string #x01 #x00) 0) 256)))
 
 (ert-deftest johnson-epwing-test-u32be ()
   "Reads 32-bit big-endian integers correctly."
-  (should (= (johnson-epwing--u32be (unibyte-string 0 0 0 1) 0) 1))
-  (should (= (johnson-epwing--u32be (unibyte-string 0 1 0 0) 0) 65536)))
+  (should (= (johnson-binary-u32be (unibyte-string 0 0 0 1) 0) 1))
+  (should (= (johnson-binary-u32be (unibyte-string 0 1 0 0) 0) 65536)))
 
 ;;;; Page addressing
 

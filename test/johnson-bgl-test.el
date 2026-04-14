@@ -52,16 +52,16 @@
 (ert-deftest johnson-bgl-test-u16be ()
   "Reads 16-bit big-endian integers correctly."
   (let ((data (string #x00 #x05)))
-    (should (= (johnson-bgl--u16be data 0) 5)))
+    (should (= (johnson-binary-u16be data 0) 5)))
   (let ((data (string #x01 #x00)))
-    (should (= (johnson-bgl--u16be data 0) 256))))
+    (should (= (johnson-binary-u16be data 0) 256))))
 
 (ert-deftest johnson-bgl-test-u32be ()
   "Reads 32-bit big-endian integers correctly."
   (let ((data (string #x00 #x00 #x00 #x01)))
-    (should (= (johnson-bgl--u32be data 0) 1)))
+    (should (= (johnson-binary-u32be data 0) 1)))
   (let ((data (string #x00 #x01 #x00 #x00)))
-    (should (= (johnson-bgl--u32be data 0) 65536))))
+    (should (= (johnson-binary-u32be data 0) 65536))))
 
 ;;;; Block header parsing
 
