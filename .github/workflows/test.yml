@@ -19,7 +19,7 @@ jobs:
         with:
           version: ${{ matrix.emacs-version }}
       - name: Check zlib support
-        run: emacs -Q --batch --eval '(message "zlib: %s" (fboundp (quote zlib-decompress-region)))'
+        run: emacs -Q --batch --eval "(message \"zlib: %s\" (fboundp 'zlib-decompress-region))"
       - name: Byte-compile
         run: make compile
       - name: Run tests
