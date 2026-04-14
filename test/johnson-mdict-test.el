@@ -350,21 +350,21 @@
 (ert-deftest johnson-mdict-test-u32be ()
   "Reads 32-bit big-endian integers correctly."
   (let ((data (string #x00 #x00 #x00 #x01)))
-    (should (= (johnson-mdict--u32be data 0) 1)))
+    (should (= (johnson-binary-u32be data 0) 1)))
   (let ((data (string #x00 #x01 #x00 #x00)))
-    (should (= (johnson-mdict--u32be data 0) 65536))))
+    (should (= (johnson-binary-u32be data 0) 65536))))
 
 (ert-deftest johnson-mdict-test-u64be ()
   "Reads 64-bit big-endian integers correctly."
   (let ((data (string #x00 #x00 #x00 #x00 #x00 #x00 #x00 #x03)))
-    (should (= (johnson-mdict--u64be data 0) 3))))
+    (should (= (johnson-binary-u64be data 0) 3))))
 
 (ert-deftest johnson-mdict-test-u16be ()
   "Reads 16-bit big-endian integers correctly."
   (let ((data (string #x00 #x05)))
-    (should (= (johnson-mdict--u16be data 0) 5)))
+    (should (= (johnson-binary-u16be data 0) 5)))
   (let ((data (string #x01 #x00)))
-    (should (= (johnson-mdict--u16be data 0) 256))))
+    (should (= (johnson-binary-u16be data 0) 256))))
 
 (provide 'johnson-mdict-test)
 ;;; johnson-mdict-test.el ends here
