@@ -34,6 +34,8 @@
 (require 'cl-lib)
 (require 'johnson-binary)
 
+(declare-function zlib-decompress-region "decompress.c" (start end &optional allow-partial))
+
 ;;;; Constants
 
 (defconst johnson-ebzip--header-size 22

@@ -31,6 +31,8 @@
 
 (require 'cl-lib)
 
+(declare-function zlib-decompress-region "decompress.c" (start end &optional allow-partial))
+
 ;;;; Binary integer helpers
 
 (defsubst johnson-dictzip--u16le (pos)
