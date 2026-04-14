@@ -2241,6 +2241,9 @@ make test     # run the full ERT suite
 make compile  # byte-compile with warnings-as-errors
 #+end_src
 
+Tests that require zlib (dictzip, mdict decompression) are automatically
+skipped when Emacs is compiled without zlib support.
+
 * Indices
 :PROPERTIES:
 :CUSTOM_ID: h:indices

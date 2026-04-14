@@ -99,6 +99,7 @@
 
 (ert-deftest johnson-mdict-test-decompress-zlib ()
   "Decompresses a zlib-compressed block."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (let* ((original (encode-coding-string "Hello, world!" 'utf-8))
          ;; Pre-computed zlib.compress(b"Hello, world!").
          (compressed (string #x78 #x9c #xf3 #x48 #xcd #xc9 #xc9 #xd7
@@ -131,6 +132,7 @@
 
 (ert-deftest johnson-mdict-test-parse-keywords ()
   "Parses keyword section from unencrypted fixture."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let ((keywords (johnson-mdict--parse-keyword-section
                    (johnson-mdict-test--fixture "test-mdict.mdx"))))
@@ -142,6 +144,7 @@
 
 (ert-deftest johnson-mdict-test-parse-keywords-offsets ()
   "Keyword entries have correct record offsets."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((keywords (johnson-mdict--parse-keyword-section
                     (johnson-mdict-test--fixture "test-mdict.mdx")))
@@ -157,6 +160,7 @@
 
 (ert-deftest johnson-mdict-test-parse-keywords-encrypted ()
   "Parses keyword section from encrypted fixture."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let ((keywords (johnson-mdict--parse-keyword-section
                    (johnson-mdict-test--fixture "test-mdict-encrypted.mdx"))))
@@ -170,6 +174,7 @@
 
 (ert-deftest johnson-mdict-test-next-offset ()
   "Binary search finds the next offset correctly."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path)))
@@ -187,6 +192,7 @@
 
 (ert-deftest johnson-mdict-test-retrieve-entry ()
   "Retrieves entries from unencrypted fixture."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path))
@@ -198,6 +204,7 @@
 
 (ert-deftest johnson-mdict-test-retrieve-all-entries ()
   "Retrieves all entries and verifies content."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path)))
@@ -210,6 +217,7 @@
 
 (ert-deftest johnson-mdict-test-retrieve-encrypted ()
   "Retrieves entries from encrypted fixture."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict-encrypted.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path))
@@ -221,6 +229,7 @@
 
 (ert-deftest johnson-mdict-test-render-html ()
   "Renders HTML entry with text properties."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path))
@@ -240,6 +249,7 @@
 
 (ert-deftest johnson-mdict-test-render-removes-tags ()
   "All HTML tags are removed from rendered output."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (keywords (johnson-mdict--parse-keyword-section path))
@@ -255,6 +265,7 @@
 
 (ert-deftest johnson-mdict-test-build-index ()
   "Builds index from MDict fixture."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let ((entries nil))
     (johnson-mdict-build-index
@@ -271,6 +282,7 @@
 
 (ert-deftest johnson-mdict-test-build-index-populates-offset-cache ()
   "build-index populates the offset cache."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let ((path (johnson-mdict-test--fixture "test-mdict.mdx")))
     (johnson-mdict-build-index path (lambda (_hw _off _sz)))
@@ -281,6 +293,7 @@
 
 (ert-deftest johnson-mdict-test-full-integration ()
   "Full round-trip: detect, parse metadata, build index, retrieve, render."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx")))
     ;; 1. Detect.
@@ -307,6 +320,7 @@
 
 (ert-deftest johnson-mdict-test-full-integration-encrypted ()
   "Full round-trip with encrypted MDict fixture."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict-encrypted.mdx"))
          (entries nil))
@@ -326,6 +340,7 @@
 
 (ert-deftest johnson-mdict-test-full-integration-all-entries ()
   "Full round-trip: all entries from unencrypted fixture."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-mdict-test--cleanup)
   (let* ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
          (entries nil))

@@ -95,6 +95,7 @@
 
 (ert-deftest johnson-dictzip-test-read-beginning ()
   "Reads from the start of the file."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-dictzip-test--with-clean-cache
     (let ((data (johnson-dictzip-read
                  (johnson-dictzip-test--fixture "test.dict.dz")
@@ -103,6 +104,7 @@
 
 (ert-deftest johnson-dictzip-test-read-within-chunk ()
   "Reads a range within a single chunk."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-dictzip-test--with-clean-cache
     (let ((data (johnson-dictzip-read
                  (johnson-dictzip-test--fixture "test.dict.dz")
@@ -111,6 +113,7 @@
 
 (ert-deftest johnson-dictzip-test-read-across-chunks ()
   "Reads a range spanning chunk boundaries."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-dictzip-test--with-clean-cache
     ;; chunk_size=50, so chunk 0=[0,49], chunk 1=[50,99]
     ;; Read across boundary: bytes 45-55 (11 bytes)
@@ -122,6 +125,7 @@
 
 (ert-deftest johnson-dictzip-test-read-second-chunk ()
   "Reads from the second chunk."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-dictzip-test--with-clean-cache
     ;; "Second" starts at byte 41
     (let ((data (johnson-dictzip-read
@@ -131,6 +135,7 @@
 
 (ert-deftest johnson-dictzip-test-read-last-chunk ()
   "Reads from the last chunk."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-dictzip-test--with-clean-cache
     ;; "boundaries" appears near the end
     (let* ((full (johnson-dictzip-read-full
@@ -146,6 +151,7 @@
 
 (ert-deftest johnson-dictzip-test-read-full ()
   "Reads the entire uncompressed content."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-dictzip-test--with-clean-cache
     (let ((data (johnson-dictzip-read-full
                  (johnson-dictzip-test--fixture "test.dict.dz"))))
@@ -155,6 +161,7 @@
 
 (ert-deftest johnson-dictzip-test-read-full-matches-read ()
   "Full read matches concatenation of individual reads."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-dictzip-test--with-clean-cache
     (let* ((path (johnson-dictzip-test--fixture "test.dict.dz"))
            (full (johnson-dictzip-read-full path))
