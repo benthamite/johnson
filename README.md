@@ -69,7 +69,7 @@ Results appear in a `*johnson*` buffer. Press `n`/`p` to move between dictionary
 
 ## Documentation
 
-For a comprehensive description of all user options, commands, and functions, see the [manual](README.org).
+For a comprehensive description of all user options, commands, and functions, see the [manual](https://stafforini.com/notes/johnson/).
 
 ## Roadmap
 
