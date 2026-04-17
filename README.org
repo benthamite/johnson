@@ -90,6 +90,8 @@ johnson-list-dictionaries=, showing all discovered dictionaries with
 their indexing status and entry counts
 ([[#h:dictionary-list][Dictionary list]]).
 
+The development repository is on [[https://github.com/benthamite/johnson][GitHub]].
+
 * User options
 :PROPERTIES:
 :CUSTOM_ID: h:user-options
