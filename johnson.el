@@ -88,12 +88,23 @@ queries against the full headword index."
   :type 'natnum
   :group 'johnson)
 
-(defcustom johnson-render-batch-size 5
-  "Number of dictionary results to render per batch.
-The first batch is rendered synchronously when results are
-displayed; remaining results are rendered in the background
-during idle time."
+(defcustom johnson-render-batch-size 1
+  "Number of dictionary results to render per background batch.
+After the first result is rendered synchronously, remaining
+results are rendered in batches of this size via an idle timer.
+A small value keeps Emacs responsive to user input between
+batches; a larger value makes all results available sooner but
+can cause perceptible pauses when individual entries are slow
+to render (e.g., uncached BGL or MDict files)."
   :type '(integer 1 100)
+  :group 'johnson)
+
+(defcustom johnson-render-idle-delay 0.05
+  "Seconds of idle time before the next deferred render batch fires.
+Rendering is scheduled via `run-with-idle-timer', so batches only
+run when Emacs is idle.  Increase this value to prioritize user
+input responsiveness over rendering speed."
+  :type 'number
   :group 'johnson)
 
 (defcustom johnson-history-max 100
@@ -1216,7 +1227,7 @@ at point.  Caller must bind `inhibit-read-only'."
 
 (defun johnson--render-next-batch ()
   "Render the next batch of deferred results.
-Called by a timer scheduled from `johnson--display-results'."
+Called by an idle timer scheduled from `johnson--display-results'."
   (when-let* ((buf (get-buffer "*johnson*")))
     (when (and (buffer-live-p buf)
                (buffer-local-value 'johnson--pending-results buf))
@@ -1227,10 +1238,8 @@ Called by a timer scheduled from `johnson--display-results'."
                                   johnson-render-batch-size))
                  (remaining (seq-drop johnson--pending-results
                                       johnson-render-batch-size)))
-            ;; Delete the "Loading..." line
             (goto-char johnson--render-marker)
             (delete-region johnson--render-marker (point-max))
-            ;; Render this batch
             (dolist (result batch)
               (condition-case err
                   (johnson--render-one-result result)
@@ -1240,7 +1249,6 @@ Called by a timer scheduled from `johnson--display-results'."
                                   (plist-get (car result) :name)
                                   (error-message-string err))
                           'face 'error)))))
-            ;; Update state
             (setq johnson--pending-results remaining)
             (if remaining
                 (progn
@@ -1250,9 +1258,9 @@ Called by a timer scheduled from `johnson--display-results'."
                                    (length remaining))
                            'face 'shadow))
                   (setq johnson--render-timer
-                        (run-with-timer 0 nil
-                                        #'johnson--render-next-batch)))
-              ;; All done — clean up
+                        (run-with-idle-timer
+                         johnson-render-idle-delay nil
+                         #'johnson--render-next-batch)))
               (set-marker johnson--render-marker nil)
               (setq johnson--render-marker nil)
               (setq johnson--render-timer nil))))))))
@@ -1312,22 +1320,19 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
           (johnson--nav-push word))
         (if (null results)
             (insert (format "No results found for \"%s\".\n" word))
-          ;; Insert TOC with all result names upfront.
           (johnson--insert-toc results)
-          (let ((immediate (seq-take results johnson-render-batch-size))
-                (deferred (seq-drop results johnson-render-batch-size)))
-            (dolist (result immediate)
-              (johnson--render-one-result result))
-            (when deferred
-              (setq johnson--pending-results deferred)
-              (setq johnson--render-marker (point-marker))
-              (insert (propertize
-                       (format "Loading %d more results...\n"
-                               (length deferred))
-                       'face 'shadow))
-              (setq johnson--render-timer
-                    (run-with-timer 0 nil
-                                    #'johnson--render-next-batch)))))
+          (johnson--render-one-result (car results))
+          (when-let* ((deferred (cdr results)))
+            (setq johnson--pending-results deferred)
+            (setq johnson--render-marker (point-marker))
+            (insert (propertize
+                     (format "Loading %d more results...\n"
+                             (length deferred))
+                     'face 'shadow))
+            (setq johnson--render-timer
+                  (run-with-idle-timer
+                   johnson-render-idle-delay nil
+                   #'johnson--render-next-batch))))
         (setq mode-line-buffer-identification
               (format "johnson: %s" word))
         (goto-char (point-min))))

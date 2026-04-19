@@ -586,19 +586,26 @@ raise it if completion feels sluggish with very large indexes:
 :END:
 
 #+vindex: johnson-render-batch-size
-The user option ~johnson-render-batch-size~ controls how many
-dictionary results are rendered per batch.  The first batch is rendered
-synchronously when results are displayed; remaining results are rendered
-in the background during idle time.  This batched approach keeps the
-results buffer responsive even when a lookup matches many dictionaries.
+#+vindex: johnson-render-idle-delay
+The first dictionary result is rendered synchronously when the
+~*johnson*~ buffer is displayed, so the buffer appears immediately
+even when a lookup matches many dictionaries.  Remaining results are
+rendered in the background via an idle timer, which yields to user
+input between batches.
 
-The default value is ~5~ (type: ~(integer 1 100)~).  Increase this
-value if you want more results visible immediately; decrease it if
-rendering large entries causes a noticeable pause:
+The user option ~johnson-render-batch-size~ (default ~1~) controls
+how many results are rendered per background batch.  A value of ~1~
+keeps Emacs fully responsive between entries, at the cost of slightly
+longer wall-clock time until every result is visible.  Increase it
+to render more results per batch:
 
 #+begin_src emacs-lisp
-(setopt johnson-render-batch-size 10)
+(setopt johnson-render-batch-size 5)
 #+end_src
+
+The user option ~johnson-render-idle-delay~ (default ~0.05~) sets
+the idle time that must elapse before the next batch fires.  Raise
+this value to prioritize input responsiveness further.
 
 * Commands
 :PROPERTIES:
