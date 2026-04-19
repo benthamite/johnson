@@ -1778,6 +1778,7 @@ headers and decompressed chunks.
 :END:
 
 #+findex: johnson-html-color-to-face
+#+findex: johnson-html-decode-entities-string
 #+findex: johnson-html-render-region
 The HTML rendering module (=johnson-html.el=) provides shared
 infrastructure for rendering HTML content from StarDict, MDict, and BGL
@@ -1789,7 +1790,15 @@ buffer region, replacing them with appropriate text properties.  It
 handles common tags: =<b>=, =<i>=, =<u>=, =<font>=, =<span>=,
 =<div>=, =<br>=, =<p>=, =<img>=, =<a>=, and others.  CSS =color= and
 =font-weight= style attributes are parsed and applied as face
-properties.
+properties.  It also decodes HTML entities such as =&amp;=, =&lt;=,
+=&gt;=, =&nbsp;=, =&quot;=, =&apos;=, and numeric entities like
+=&#123;= and =&#xAB;=.
+
+The function ~johnson-html-decode-entities-string~ decodes the same
+set of HTML entities in a bare string and returns the result.  Format
+backends use it for metadata fields that come from raw headers rather
+than entry bodies — for example, the MDict backend decodes entities
+in the =Title= header before storing it as the dictionary name.
 
 The function ~johnson-html-color-to-face~ maps an HTML color name or
 hex code to a johnson face.  It supports CSS named colors and falls

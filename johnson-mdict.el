@@ -672,7 +672,7 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
                       (string-match-p "\\`[ \t\n]*<[!a-zA-Z]" title)
                       (string-match-p "\\`[ \t\n]*&lt;" title))
                    (file-name-base path)
-                 title)))
+                 (johnson-html-decode-entities-string title))))
     (list :name name
           :source-lang ""
           :target-lang "")))

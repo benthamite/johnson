@@ -280,6 +280,15 @@ Returns the new end position."
       (prog1 (marker-position end-marker)
         (set-marker end-marker nil)))))
 
+(defun johnson-html-decode-entities-string (str)
+  "Return STR with HTML entities decoded.
+Handles named entities (`&amp;', `&lt;', `&gt;', `&nbsp;',
+`&quot;', `&apos;') and numeric entities (`&#123;', `&#xAB;')."
+  (with-temp-buffer
+    (insert str)
+    (johnson-html--decode-entities (point-min) (point-max))
+    (buffer-string)))
+
 ;;;; Region rendering
 
 (defun johnson-html-render-region (start end)
