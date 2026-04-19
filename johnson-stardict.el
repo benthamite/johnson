@@ -332,7 +332,9 @@ for use by the renderer."
 
 (defun johnson-stardict--render-type-m (data)
   "Render type `m' (plain text) DATA into the current buffer."
-  (insert (decode-coding-string data 'utf-8)))
+  (let ((start (point)))
+    (insert (decode-coding-string data 'utf-8))
+    (johnson-html--decode-entities start (point))))
 
 (defun johnson-stardict--render-type-t (data)
   "Render phonetic transcription type DATA into the current buffer."
@@ -396,10 +398,10 @@ Handles XDXF tags like <kref>, <gr>, <ex>, <abbr>, <dtrn>."
                  (t
                   (push (list tag-name (copy-marker (point)) tag-attrs)
                         stack))))))
-          ;; Clean up any remaining markers on the stack.
           (dolist (entry stack)
             (when (markerp (nth 1 entry))
               (set-marker (nth 1 entry) nil))))
+        (johnson-html--decode-entities start (marker-position end-marker))
         (set-marker end-marker nil)))))
 
 (defun johnson-stardict--apply-xdxf-tag (tag-name region-start region-end)
