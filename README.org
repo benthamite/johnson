@@ -1589,7 +1589,8 @@ The supported tags include:
 - =[ref]=: cross-reference buttons ([[#h:link-faces][Link faces]])
 - =[url]=: external URL buttons
 - =[lang id=N]=: language identifier (stored as text property)
-- =[trn]=, =[!trn]=: translation blocks (blank line separation)
+- =[trn]=, =[!trn]=: translation blocks (blank line separation);
+  =[trn]= remains inline after a phrase/example translation arrow
 - =[com]=: comments
 - =[m]= and =[m0]=-=[m9]=: indentation levels via ~line-prefix~ and
   ~wrap-prefix~ display properties

@@ -763,7 +763,8 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
                           'johnson-lang (match-string 1 tag-args))))
     ("trn"
      ;; Ensure blank line before and after.
-     (johnson-dsl--ensure-block-separation region-start region-end))
+     (unless (johnson-dsl--inline-translation-p region-start)
+       (johnson-dsl--ensure-block-separation region-start region-end)))
     ("!trn"
      (johnson-dsl--ensure-block-separation region-start region-end))
     ("com"
@@ -782,6 +783,15 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
      (add-face-text-property region-start region-end 'johnson-stress-face))
     ("t"
      (add-face-text-property region-start region-end 'johnson-italic-face))))
+
+(defun johnson-dsl--inline-translation-p (region-start)
+  "Return non-nil when REGION-START follows an inline translation arrow."
+  (save-excursion
+    (goto-char region-start)
+    (let ((line-start (line-beginning-position)))
+      (skip-chars-backward " \t" line-start)
+      (and (> (point) line-start)
+           (eq (char-before) ?▶)))))
 
 (defun johnson-dsl--ensure-block-separation (region-start region-end)
   "Ensure blank line separation around the region from REGION-START to REGION-END."

@@ -495,5 +495,16 @@
                                                            (eq val prop))))))
       (should bracket-pos))))
 
+(ert-deftest johnson-dsl-test-render-inline-translation ()
+  "Inline phrase translations after an arrow stay on the same line."
+  (with-temp-buffer
+    (johnson-dsl-render-entry
+     "\t[m3][*][lang id=1033][c blue]besotted with drink[/c][/lang] ▶ [trn]embrutecido por la bebida[/trn][/*][/m]")
+    (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+      (should (string-match-p
+               "besotted with drink ▶ embrutecido por la bebida"
+               text))
+      (should-not (string-match-p "▶[ \t]*\n" text)))))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here

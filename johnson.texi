@@ -1707,7 +1707,8 @@ The supported tags include:
 @item
 @samp{[lang id=N]}: language identifier (stored as text property)
 @item
-@samp{[trn]}, @samp{[!trn]}: translation blocks (blank line separation)
+@samp{[trn]}, @samp{[!trn]}: translation blocks (blank line separation);
+@samp{[trn]} remains inline after a phrase/example translation arrow
 @item
 @samp{[com]}: comments
 @item

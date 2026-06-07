@@ -1645,7 +1645,8 @@ The supported tags include:
    • ‘[ref]’: cross-reference buttons (*note Link faces::)
    • ‘[url]’: external URL buttons
    • ‘[lang id=N]’: language identifier (stored as text property)
-   • ‘[trn]’, ‘[!trn]’: translation blocks (blank line separation)
+   • ‘[trn]’, ‘[!trn]’: translation blocks (blank line separation);
+     ‘[trn]’ remains inline after a phrase/example translation arrow
    • ‘[com]’: comments
    • ‘[m]’ and ‘[m0]’-‘[m9]’: indentation levels via ‘line-prefix’ and
      ‘wrap-prefix’ display properties
@@ -2616,38 +2617,38 @@ Node: DSL metadata parsing62127
 Node: DSL index building63138
 Node: DSL entry retrieval65166
 Node: DSL entry rendering66072
-Node: StarDict backend68201
-Node: MDict backend69928
-Node: BGL backend71525
-Node: DICT protocol backend72714
-Node: Dictzip backend74143
-Node: HTML rendering75157
-Node: RIPEMD-128 hashing76712
-Node: Audio playback functions77481
-Node: EPWING backend78307
-Node: EBZIP backend80066
-Node: Faces81012
-Node: Text styling faces81528
-Node: Content type faces82232
-Node: Link faces83493
-Node: Section header face84152
-Node: Color faces84740
-Node: UI faces86144
-Node: Tips86843
-Node: Looking up words in PDF documents86981
-Node: Roadmap88578
-Node: Version 01 --- DSL89169
-Node: Version 02 --- StarDict and compressed DSL90169
-Node: Version 03 --- MDict and DSL abbreviations91462
-Node: Version 04 --- BGL DICT and more91960
-Node: Version 05 --- EPWING93311
-Node: Version 06 (current) --- EPWING improvements and audits94113
-Node: Future features94592
-Node: Contributing94911
-Node: Running the test suite95451
-Node: Indices95811
-Node: Function index95949
-Node: Variable index107854
+Node: StarDict backend68275
+Node: MDict backend70002
+Node: BGL backend71599
+Node: DICT protocol backend72788
+Node: Dictzip backend74217
+Node: HTML rendering75231
+Node: RIPEMD-128 hashing76786
+Node: Audio playback functions77555
+Node: EPWING backend78381
+Node: EBZIP backend80140
+Node: Faces81086
+Node: Text styling faces81602
+Node: Content type faces82306
+Node: Link faces83567
+Node: Section header face84226
+Node: Color faces84814
+Node: UI faces86218
+Node: Tips86917
+Node: Looking up words in PDF documents87055
+Node: Roadmap88652
+Node: Version 01 --- DSL89243
+Node: Version 02 --- StarDict and compressed DSL90243
+Node: Version 03 --- MDict and DSL abbreviations91536
+Node: Version 04 --- BGL DICT and more92034
+Node: Version 05 --- EPWING93385
+Node: Version 06 (current) --- EPWING improvements and audits94187
+Node: Future features94666
+Node: Contributing94985
+Node: Running the test suite95525
+Node: Indices95885
+Node: Function index96023
+Node: Variable index107928
 
 End Tag Table
 
