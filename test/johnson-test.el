@@ -243,6 +243,41 @@ Cleans up afterwards."
                         (overlays-in (point-min) (point-max)))))
               (should (> (length ovs) 0)))))))))
 
+(ert-deftest johnson-test-render-next-batch-drains-fast-results ()
+  "Deferred rendering drains fast results within one idle slice."
+  (johnson-test--with-env
+    (let* ((rendered nil)
+           (johnson-render-batch-size 1)
+           (johnson-render-batch-time-budget 1.0)
+           (fmt-name "fake")
+           (dicts (cl-loop for n from 1 to 5
+                           collect (list :name (format "Fake %d" n)
+                                         :path (format "/tmp/fake-%d" n)
+                                         :format-name fmt-name)))
+           (results (mapcar (lambda (dict)
+                              (cons dict '(("house" 0 1))))
+                            dicts)))
+      (johnson-register-format
+       :name fmt-name
+       :extensions nil
+       :detect #'ignore
+       :retrieve-entry (lambda (path _offset _length)
+                         (push path rendered)
+                         "entry")
+       :render-entry (lambda (raw) (insert raw)))
+      (with-current-buffer (get-buffer-create "*johnson*")
+        (let ((inhibit-read-only t))
+          (johnson-mode)
+          (erase-buffer)
+          (setq johnson--pending-results results)
+          (setq johnson--render-marker (point-marker))
+          (johnson--render-next-batch)
+          (when johnson--render-timer
+            (cancel-timer johnson--render-timer)
+            (setq johnson--render-timer nil))
+          (should (= (length rendered) 5))
+          (should-not johnson--pending-results))))))
+
 ;;;; Navigation history
 
 (ert-deftest johnson-test-nav-history-push ()

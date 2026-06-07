@@ -718,6 +718,7 @@ raise it if completion feels sluggish with very large indexes:
 
 @vindex johnson-render-batch-size
 @vindex johnson-render-idle-delay
+@vindex johnson-render-batch-time-budget
 The first dictionary result is rendered synchronously when the
 @code{*johnson*} buffer is displayed, so the buffer appears immediately
 even when a lookup matches many dictionaries.  Remaining results are
@@ -725,18 +726,18 @@ rendered in the background via an idle timer, which yields to user
 input between batches.
 
 The user option @code{johnson-render-batch-size} (default @code{1}) controls
-how many results are rendered per background batch.  A value of @code{1}
-keeps Emacs fully responsive between entries, at the cost of slightly
-longer wall-clock time until every result is visible.  Increase it
-to render more results per batch:
+the minimum number of results rendered per idle slice.  After rendering
+that minimum, Johnson keeps draining fast results until
+@code{johnson-render-batch-time-budget} expires or Emacs has pending input.
+The default time budget is @code{0.05} seconds.
 
 @lisp
-(setopt johnson-render-batch-size 5)
+(setopt johnson-render-batch-time-budget 0.1)
 @end lisp
 
-The user option @code{johnson-render-idle-delay} (default @code{0.05}) sets
-the idle time that must elapse before the next batch fires.  Raise
-this value to prioritize input responsiveness further.
+The user option @code{johnson-render-idle-delay} (default @code{0.0}) sets
+the idle time that must elapse before the next slice fires.  Raise
+this value only if you want an additional pause between slices.
 
 @node Commands
 @chapter Commands

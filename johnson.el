@@ -99,11 +99,19 @@ to render (e.g., uncached BGL or MDict files)."
   :type '(integer 1 100)
   :group 'johnson)
 
-(defcustom johnson-render-idle-delay 0.05
+(defcustom johnson-render-idle-delay 0.0
   "Seconds of idle time before the next deferred render batch fires.
 Rendering is scheduled via `run-with-idle-timer', so batches only
-run when Emacs is idle.  Increase this value to prioritize user
-input responsiveness over rendering speed."
+run when Emacs is idle.  The default keeps draining fast results
+without adding artificial delay between batches."
+  :type 'number
+  :group 'johnson)
+
+(defcustom johnson-render-batch-time-budget 0.05
+  "Maximum seconds spent rendering fast deferred results per idle slice.
+Each slice renders at least `johnson-render-batch-size' results.
+It then continues rendering while entries are fast, stopping when
+this budget expires or Emacs has pending input."
   :type 'number
   :group 'johnson)
 
@@ -1233,29 +1241,31 @@ Called by an idle timer scheduled from `johnson--display-results'."
                (buffer-local-value 'johnson--pending-results buf))
       (with-current-buffer buf
         (save-excursion
-          (let* ((inhibit-read-only t)
-                 (batch (seq-take johnson--pending-results
-                                  johnson-render-batch-size))
-                 (remaining (seq-drop johnson--pending-results
-                                      johnson-render-batch-size)))
+          (let ((inhibit-read-only t)
+                (deadline (+ (float-time) johnson-render-batch-time-budget))
+                (rendered 0))
             (goto-char johnson--render-marker)
             (delete-region johnson--render-marker (point-max))
-            (dolist (result batch)
-              (condition-case err
-                  (johnson--render-one-result result)
-                (error
-                 (insert (propertize
-                          (format "[Error rendering %s: %s]\n"
-                                  (plist-get (car result) :name)
-                                  (error-message-string err))
-                          'face 'error)))))
-            (setq johnson--pending-results remaining)
-            (if remaining
+            (while (and johnson--pending-results
+                        (or (< rendered johnson-render-batch-size)
+                            (and (< (float-time) deadline)
+                                 (not (input-pending-p)))))
+              (let ((result (pop johnson--pending-results)))
+                (cl-incf rendered)
+                (condition-case err
+                    (johnson--render-one-result result)
+                  (error
+                   (insert (propertize
+                            (format "[Error rendering %s: %s]\n"
+                                    (plist-get (car result) :name)
+                                    (error-message-string err))
+                            'face 'error))))))
+            (if johnson--pending-results
                 (progn
                   (set-marker johnson--render-marker (point))
                   (insert (propertize
                            (format "Loading %d more results...\n"
-                                   (length remaining))
+                                   (length johnson--pending-results))
                            'face 'shadow))
                   (setq johnson--render-timer
                         (run-with-idle-timer
