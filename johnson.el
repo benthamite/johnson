@@ -42,6 +42,7 @@
 ;;; Code:
 
 (require 'johnson-db)
+(require 'johnson-worker)
 (require 'cl-lib)
 
 (autoload 'johnson-menu "johnson-transient" "Main transient menu for johnson." t)
