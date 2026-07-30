@@ -6,7 +6,7 @@
 
 `johnson` brings the functionality of desktop dictionary programs like GoldenDict and StarDict into Emacs. You point it at your dictionary files, index them once, and then look up words across all your dictionaries simultaneously with dynamic completion. Results appear in a dedicated buffer with collapsible sections, one per dictionary, rendered with full formatting.
 
-The package is implemented entirely in Emacs Lisp with no external dependencies. It relies on Emacs 30.1's built-in sqlite support for efficient headword indexing and parses all dictionary formats natively.
+The package is implemented entirely in Emacs Lisp with no external dependencies. It relies on Emacs 29.1's built-in sqlite support for efficient headword indexing and parses all dictionary formats natively.
 
 Supported formats:
 
@@ -25,13 +25,13 @@ Beyond basic lookups, `johnson` provides wildcard search (`?` and `*`), full-tex
 
 ## Installation
 
-Requires Emacs 30.1 or later.
+Requires Emacs 29.1 or later.
 
-### package-vc (built-in since Emacs 30)
+### package-vc (Emacs 29.1 or later)
 
 ```emacs-lisp
-(use-package johnson
-  :vc (:url "https://github.com/benthamite/johnson"))
+(package-vc-install
+ '(johnson :url "https://github.com/benthamite/johnson"))
 ```
 
 ### Elpaca
@@ -52,7 +52,6 @@ Requires Emacs 30.1 or later.
 
 ```emacs-lisp
 (use-package johnson
-  :vc (:url "https://github.com/benthamite/johnson")
   :custom
   (johnson-dictionary-directories '("~/dictionaries/"))
   :bind
