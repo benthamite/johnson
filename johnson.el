@@ -347,14 +347,39 @@ Only used when `johnson-dictionary-groups' is non-nil.")
 (defvar-local johnson--nav-position -1
   "Current position in navigation history.")
 
-(defvar-local johnson--pending-results nil
-  "List of (DICT . MATCHES) results awaiting deferred rendering.")
+(defvar johnson--lookup-counter 0
+  "Monotonically increasing counter of lookup generations.")
 
-(defvar-local johnson--render-timer nil
-  "Timer for deferred rendering of remaining results.")
+(defvar-local johnson--lookup-id nil
+  "Lookup generation displayed in the results buffer, or nil.
+Worker messages carrying a different lookup number are stale and
+dropped.")
+
+(defvar-local johnson--lookup-plan nil
+  "Ordered worker descriptor list of the current lookup.
+Each descriptor is a plist with `:kind' (`indexed' or `remote'),
+`:dict', and either `:matches' or `:word'; see `johnson--lookup-plan'.")
+
+(defvar-local johnson--render-queue nil
+  "FIFO of render unit plists awaiting insertion, oldest first.")
 
 (defvar-local johnson--render-marker nil
-  "Marker at the insertion point for the next deferred batch.")
+  "Marker at the insertion point for the next render unit.")
+
+(defvar-local johnson--loading-marker nil
+  "Marker at the start of the loading line, or nil once removed.")
+
+(defvar-local johnson--section-state nil
+  "Bookkeeping plist of the current lookup.
+Carries the plan's `:total' descriptor count, the `:done' and
+`:matched' section counts, the same-dictionary `:fallback' plist, and
+the open section's `:section-start' marker and `:section-name'.")
+
+(defvar-local johnson--history-entry nil
+  "History log object of the current lookup, or nil.")
+
+(defvar-local johnson--render-timer nil
+  "Armed ordinary timer for the next render step, or nil.")
 
 (defvar-local johnson--temp-audio-files nil
   "List of temporary audio file paths to delete when the buffer is killed.")
@@ -559,6 +584,13 @@ source language."
      johnson--dictionaries))
    ;; No filter: all dictionaries.
    (t johnson--dictionaries)))
+
+(defun johnson--dictionaries-by-priority ()
+  "Return the in-scope dictionaries sorted by display priority."
+  (sort (copy-sequence (johnson--dictionaries-in-scope))
+        (lambda (a b)
+          (< (or (plist-get a :priority) 0)
+             (or (plist-get b :priority) 0)))))
 
 (defun johnson--format-scope ()
   "Return a human-readable string for the current scope."
@@ -1195,9 +1227,27 @@ If WORD is nil, prompt with `completing-read' (defaults to word at point)."
                     (format "Wildcard matches (%d): " (length matches))
                     matches nil t)))))
   (johnson--history-push word)
-  (let ((results (johnson--query-all-exact word)))
-    (johnson--history-log-push word (length results))
-    (johnson--display-results word results)))
+  (johnson--display-lookup
+   word (johnson--lookup-plan word (johnson--dictionaries-by-priority))))
+
+(defun johnson--lookup-plan (word &optional dictionaries)
+  "Return ordered worker descriptors for WORD and DICTIONARIES."
+  (let (plan)
+    (dolist (dict (or dictionaries (johnson--dictionaries-in-scope)))
+      (let* ((format (johnson--get-format (plist-get dict :format-name)))
+             (worker-query (plist-get format :worker-query)))
+        (if worker-query
+            (push (list :kind 'remote :dict dict :word word) plan)
+          (when-let* ((matches
+                       (johnson-db-query-exact
+                        (johnson--get-db (plist-get dict :path)) word)))
+            (push (list :kind 'indexed :dict dict :matches matches)
+                  plan)))))
+    (nreverse plan)))
+
+(defun johnson--plan-local-count (plan)
+  "Return the number of indexed descriptors in PLAN."
+  (cl-count 'indexed plan :key (lambda (item) (plist-get item :kind))))
 
 ;;;; Results buffer
 
@@ -1210,33 +1260,6 @@ The button triggers a lookup of REF-TEXT when activated."
                     'action (lambda (_btn) (johnson-lookup ref-text))
                     'help-echo (format "Look up \"%s\"" ref-text)))
 
-(defun johnson--render-one-result (result)
-  "Render a single dictionary RESULT into the current buffer.
-RESULT is a cons (DICT-PLIST . MATCHES).  Inserts the section
-header, rendered entries, section overlay, and trailing newline
-at point.  Caller must bind `inhibit-read-only'."
-  (let* ((dict (car result))
-         (matches (cdr result))
-         (name (plist-get dict :name))
-         (path (plist-get dict :path))
-         (format-name (plist-get dict :format-name))
-         (fmt (johnson--get-format format-name)))
-    (johnson--insert-section-header name)
-    (insert "\n")
-    (let ((section-start (point)))
-      (dolist (match matches)
-        (let* ((byte-offset (nth 1 match))
-               (byte-length (nth 2 match))
-               (raw (funcall (plist-get fmt :retrieve-entry)
-                             path byte-offset byte-length)))
-          (funcall (plist-get fmt :render-entry) raw)
-          (unless (bolp) (insert "\n"))))
-      (let ((ov (make-overlay section-start (point))))
-        (overlay-put ov 'johnson-section name)
-        (overlay-put ov 'johnson-section-content t)
-        (overlay-put ov 'evaporate t)))
-    (insert "\n")))
-
 (defun johnson--render-entry-packet (format packet)
   "Render entry PACKET into the current buffer using FORMAT's hooks.
 FORMAT is a format plist and PACKET a plist with :raw and :context as
@@ -1247,58 +1270,6 @@ otherwise."
   (if-let* ((render (plist-get format :render-entry-with-context)))
       (funcall render (plist-get packet :raw) (plist-get packet :context))
     (funcall (plist-get format :render-entry) (plist-get packet :raw))))
-
-(defun johnson--cancel-pending-render ()
-  "Cancel any in-progress deferred rendering."
-  (when johnson--render-timer
-    (cancel-timer johnson--render-timer)
-    (setq johnson--render-timer nil))
-  (setq johnson--pending-results nil)
-  (when johnson--render-marker
-    (set-marker johnson--render-marker nil)
-    (setq johnson--render-marker nil)))
-
-(defun johnson--render-next-batch ()
-  "Render the next batch of deferred results.
-Called by an idle timer scheduled from `johnson--display-results'."
-  (when-let* ((buf (get-buffer "*johnson*")))
-    (when (and (buffer-live-p buf)
-               (buffer-local-value 'johnson--pending-results buf))
-      (with-current-buffer buf
-        (save-excursion
-          (let ((inhibit-read-only t)
-                (deadline (+ (float-time) johnson-render-batch-time-budget))
-                (rendered 0))
-            (goto-char johnson--render-marker)
-            (delete-region johnson--render-marker (point-max))
-            (while (and johnson--pending-results
-                        (or (< rendered johnson-render-batch-size)
-                            (and (< (float-time) deadline)
-                                 (not (input-pending-p)))))
-              (let ((result (pop johnson--pending-results)))
-                (cl-incf rendered)
-                (condition-case err
-                    (johnson--render-one-result result)
-                  (error
-                   (insert (propertize
-                            (format "[Error rendering %s: %s]\n"
-                                    (plist-get (car result) :name)
-                                    (error-message-string err))
-                            'face 'error))))))
-            (if johnson--pending-results
-                (progn
-                  (set-marker johnson--render-marker (point))
-                  (insert (propertize
-                           (format "Loading %d more results...\n"
-                                   (length johnson--pending-results))
-                           'face 'shadow))
-                  (setq johnson--render-timer
-                        (run-with-idle-timer
-                         johnson-render-idle-delay nil
-                         #'johnson--render-next-batch)))
-              (set-marker johnson--render-marker nil)
-              (setq johnson--render-marker nil)
-              (setq johnson--render-timer nil))))))))
 
 (defun johnson--jump-to-section (name)
   "Jump to the section header for dictionary NAME."
@@ -1314,14 +1285,101 @@ Called by an idle timer scheduled from `johnson--display-results'."
     (unless found
       (message "Section \"%s\" not yet loaded" name))))
 
-(defun johnson--insert-toc (results)
-  "Insert a table of contents at point for RESULTS.
-RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
-  (when (> (length results) 1)
+(defun johnson--display-lookup (word plan &optional context)
+  "Display the results shell for WORD, then dispatch PLAN to the worker.
+PLAN is the ordered descriptor list built by `johnson--lookup-plan'.
+CONTEXT is a plist controlling the lookup's identity: `:no-history'
+suppresses the persistent history log, `:history-entry' reuses an
+existing history log object instead of pushing a new one,
+`:lookup-id' reuses a lookup generation, and `:fallback' marks a
+restricted same-dictionary lookup that restarts once with the full
+plan when nothing matches."
+  (let ((entry (johnson--display-lookup-history word plan context)))
+    (if (and (null plan) (plist-get context :fallback))
+        (johnson--fallback-to-full-plan word entry nil)
+      (johnson--display-lookup-shell word plan context entry)
+      (when plan
+        (with-current-buffer "*johnson*"
+          (johnson--dispatch-plan word plan))))))
+
+(defun johnson--display-lookup-history (word plan context)
+  "Return the history log object for WORD looked up through PLAN.
+CONTEXT is the display context; see `johnson--display-lookup'.  Push a
+new entry carrying PLAN's known local match count unless CONTEXT
+suppresses the history log or supplies an existing object."
+  (cond ((plist-get context :no-history) nil)
+        ((plist-get context :history-entry))
+        (t (johnson--history-log-push
+            word (johnson--plan-local-count plan)))))
+
+(defun johnson--fallback-to-full-plan (word entry lookup-id)
+  "Restart the lookup of WORD over the full plan, keeping history ENTRY.
+Called exactly once when a restricted same-dictionary lookup ends with
+no matching section.  LOOKUP-ID is the generation to keep, or nil to
+allocate a new one.  Replace ENTRY's count with the full plan's local
+match count and suppress new history and navigation pushes."
+  (let ((plan (johnson--lookup-plan word (johnson--dictionaries-by-priority))))
+    (when entry
+      (johnson--history-log-set-count entry (johnson--plan-local-count plan)))
+    ;; No navigation suppression is needed: `johnson--nav-push' ignores
+    ;; a word equal to the last navigation entry, so the restricted
+    ;; lookup's entry is never duplicated, while a fallback that never
+    ;; built the restricted shell still records the word once.
+    (johnson--display-lookup word plan
+                             (list :history-entry entry
+                                   :no-history (null entry)
+                                   :lookup-id lookup-id))))
+
+(defun johnson--display-lookup-shell (word plan context entry)
+  "Create and display the results shell for WORD and PLAN.
+CONTEXT is the display context and ENTRY the history log object; see
+`johnson--display-lookup'."
+  (let ((buf (get-buffer-create "*johnson*")))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t)
+            (nav-hist johnson--nav-history)
+            (nav-pos johnson--nav-position))
+        (unless (derived-mode-p 'johnson-mode)
+          (johnson-mode))
+        (johnson--reset-render-state)
+        (erase-buffer)
+        (setq johnson--nav-history nav-hist)
+        (setq johnson--nav-position nav-pos)
+        (setq johnson--current-word word)
+        (setq johnson--lookup-id (or (plist-get context :lookup-id)
+                                     (cl-incf johnson--lookup-counter)))
+        (setq johnson--lookup-plan plan)
+        (setq johnson--history-entry entry)
+        (setq johnson--section-state
+              (list :total (length plan) :done 0 :matched 0
+                    :fallback (and (plist-get context :fallback)
+                                   (list :word word))
+                    :section-start nil :section-name nil))
+        (unless johnson--navigating-history
+          (johnson--nav-push word))
+        (johnson--insert-plan-toc plan)
+        (setq johnson--render-marker (point-marker))
+        (if (null plan)
+            (insert (format "No results found for \"%s\".\n" word))
+          (let ((loading-start (point)))
+            (insert (propertize (format "Looking up \"%s\"...\n" word)
+                                'face 'shadow))
+            ;; The marker advances on insertions at its position, so it
+            ;; keeps pointing at the loading line as results stream in
+            ;; above it.
+            (setq johnson--loading-marker (copy-marker loading-start t))))
+        (setq mode-line-buffer-identification
+              (format "johnson: %s" word))
+        (goto-char (point-min))))
+    (pop-to-buffer buf)))
+
+(defun johnson--insert-plan-toc (plan)
+  "Insert a table of contents at point for the descriptors in PLAN."
+  (when (> (length plan) 1)
     (johnson--insert-section-header "Contents")
     (let ((toc-start (point)))
-      (dolist (result results)
-        (let ((name (plist-get (car result) :name)))
+      (dolist (item plan)
+        (let ((name (plist-get (plist-get item :dict) :name)))
           (insert "  \u2022 ")
           (let ((link-start (point)))
             (insert name)
@@ -1337,41 +1395,219 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
         (overlay-put ov 'evaporate t))
       (insert "\n"))))
 
-(defun johnson--display-results (word results)
-  "Display lookup RESULTS for WORD in the *johnson* buffer."
-  (let ((buf (get-buffer-create "*johnson*")))
+(defun johnson--dispatch-plan (word plan)
+  "Submit one worker request per descriptor of PLAN for WORD.
+Start the retrieval worker first when it is not live.  Must run in the
+results buffer, after the shell is displayed."
+  (unless (johnson-worker-live-p)
+    (johnson-worker-start #'johnson--worker-message))
+  (let ((lookup johnson--lookup-id)
+        (dseq -1))
+    (dolist (item plan)
+      (setq dseq (1+ dseq))
+      (johnson-worker-submit (johnson--plan-request word lookup dseq item)))))
+
+(defun johnson--plan-request (word lookup dictionary item)
+  "Return the worker request for descriptor ITEM of lookup LOOKUP.
+WORD is the looked-up word and DICTIONARY the descriptor's sequence
+number in the plan."
+  (let ((dict (plist-get item :dict)))
+    (list :lookup lookup
+          :dictionary dictionary
+          :format (plist-get dict :format-name)
+          :path (or (plist-get dict :path) "")
+          :name (plist-get dict :name)
+          :word word
+          :matches (mapcar (lambda (match)
+                             (list :word (nth 0 match)
+                                   :offset (nth 1 match)
+                                   :length (nth 2 match)))
+                           (plist-get item :matches)))))
+
+(defun johnson--worker-message (message)
+  "Route worker core MESSAGE to the live results buffer.
+Worker failures always reach the buffer; other messages are dropped
+unless they carry the buffer's current lookup generation."
+  (when-let* ((buf (get-buffer "*johnson*")))
     (with-current-buffer buf
-      (let ((inhibit-read-only t)
-            (nav-hist johnson--nav-history)
-            (nav-pos johnson--nav-position))
-        (unless (derived-mode-p 'johnson-mode)
-          (johnson-mode))
-        (johnson--cancel-pending-render)
-        (erase-buffer)
-        (setq johnson--nav-history nav-hist)
-        (setq johnson--nav-position nav-pos)
-        (setq johnson--current-word word)
-        (unless johnson--navigating-history
-          (johnson--nav-push word))
-        (if (null results)
-            (insert (format "No results found for \"%s\".\n" word))
-          (johnson--insert-toc results)
-          (johnson--render-one-result (car results))
-          (when-let* ((deferred (cdr results)))
-            (setq johnson--pending-results deferred)
-            (setq johnson--render-marker (point-marker))
-            (insert (propertize
-                     (format "Loading %d more results...\n"
-                             (length deferred))
-                     'face 'shadow))
-            (setq johnson--render-timer
-                  (run-with-idle-timer
-                   johnson-render-idle-delay nil
-                   #'johnson--render-next-batch))))
-        (setq mode-line-buffer-identification
-              (format "johnson: %s" word))
-        (goto-char (point-min))))
-    (pop-to-buffer buf)))
+      (if (memq (plist-get message :type) '(worker-exit protocol-error))
+          (johnson--handle-worker-failure message)
+        (when (and johnson--section-state
+                   (equal (plist-get message :lookup) johnson--lookup-id))
+          (pcase (plist-get message :type)
+            ('dictionary-start (johnson--handle-dictionary-start message))
+            ('entry (johnson--handle-entry message))
+            ('dictionary-complete
+             (johnson--handle-dictionary-terminal message nil))
+            ('dictionary-error
+             (johnson--handle-dictionary-terminal message t))))))))
+
+(defun johnson--handle-worker-failure (message)
+  "Show worker failure MESSAGE in the results buffer."
+  (when johnson--loading-marker
+    (johnson--enqueue-render-unit
+     (list :unit 'lookup-failed
+           :message (or (plist-get message :message)
+                        (plist-get message :status)
+                        "worker exited")))))
+
+(defun johnson--handle-dictionary-start (message)
+  "Record and enqueue the matching section announced by MESSAGE."
+  (let* ((state johnson--section-state)
+         (item (nth (plist-get message :dictionary) johnson--lookup-plan)))
+    (plist-put state :matched (1+ (plist-get state :matched)))
+    (when (and johnson--history-entry
+               (eq (plist-get item :kind) 'remote))
+      (johnson--history-log-increment johnson--history-entry))
+    (johnson--enqueue-render-unit
+     (list :unit 'section-start :name (plist-get message :name)))))
+
+(defun johnson--handle-entry (message)
+  "Enqueue the render unit for entry MESSAGE."
+  (let* ((item (nth (plist-get message :dictionary) johnson--lookup-plan))
+         (dict (plist-get item :dict)))
+    (johnson--enqueue-render-unit
+     (list :unit 'entry
+           :format-name (plist-get dict :format-name)
+           :raw (plist-get message :raw)
+           :context (plist-get message :context)))))
+
+(defun johnson--handle-dictionary-terminal (message error)
+  "Record terminal dictionary MESSAGE; ERROR non-nil marks a failure.
+Enqueue the section end or error line, and close the lookup or fall
+back to the full plan once the plan is exhausted."
+  (let* ((state johnson--section-state)
+         (item (nth (plist-get message :dictionary) johnson--lookup-plan))
+         (dict (plist-get item :dict)))
+    (plist-put state :done (1+ (plist-get state :done)))
+    (cond (error
+           (johnson--enqueue-render-unit
+            (list :unit 'dictionary-error
+                  :name (plist-get dict :name)
+                  :message (plist-get message :message))))
+          ((> (plist-get message :entries) 0)
+           (johnson--enqueue-render-unit (list :unit 'section-end))))
+    (when (>= (plist-get state :done) (plist-get state :total))
+      (johnson--finish-lookup state))))
+
+(defun johnson--finish-lookup (state)
+  "Close the exhausted lookup described by STATE.
+Fall back to the full plan when this was a restricted same-dictionary
+lookup with no matching section; otherwise enqueue the terminal
+`lookup-complete' render unit."
+  (let ((fallback (plist-get state :fallback)))
+    (if (and fallback (zerop (plist-get state :matched)))
+        (johnson--fallback-to-full-plan (plist-get fallback :word)
+                                        johnson--history-entry
+                                        johnson--lookup-id)
+      (johnson--enqueue-render-unit (list :unit 'lookup-complete)))))
+
+(defun johnson--enqueue-render-unit (unit)
+  "Append render UNIT to the queue and arm the render timer."
+  (setq johnson--render-queue (nconc johnson--render-queue (list unit)))
+  (unless (timerp johnson--render-timer)
+    (setq johnson--render-timer
+          (run-at-time 0 nil #'johnson--render-step (current-buffer)))))
+
+(defun johnson--render-step (buffer)
+  "Render queued units of BUFFER within one bounded batch.
+Render at least `johnson-render-batch-size' units, keep going while
+`johnson-render-batch-time-budget' allows and no input is pending, and
+rearm an ordinary timer when units remain."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq johnson--render-timer nil)
+      (save-excursion
+        (let ((inhibit-read-only t)
+              (deadline (+ (float-time) johnson-render-batch-time-budget))
+              (rendered 0))
+          (while (and johnson--render-queue
+                      (or (< rendered johnson-render-batch-size)
+                          (and (< (float-time) deadline)
+                               (not (input-pending-p)))))
+            (cl-incf rendered)
+            (johnson--render-unit (pop johnson--render-queue)))))
+      (when (and johnson--render-queue
+                 (not (timerp johnson--render-timer)))
+        (setq johnson--render-timer
+              (run-at-time 0 nil #'johnson--render-step buffer))))))
+
+(defun johnson--render-unit (unit)
+  "Insert one render UNIT at the render marker."
+  (goto-char johnson--render-marker)
+  (pcase (plist-get unit :unit)
+    ('section-start
+     (johnson--insert-section-header (plist-get unit :name))
+     (insert "\n")
+     (plist-put johnson--section-state :section-name (plist-get unit :name))
+     (plist-put johnson--section-state :section-start (point-marker)))
+    ('entry
+     (condition-case err
+         (johnson--render-entry-packet
+          (johnson--get-format (plist-get unit :format-name))
+          (list :raw (plist-get unit :raw)
+                :context (plist-get unit :context)))
+       (error
+        (insert (propertize (format "[Error rendering entry: %s]\n"
+                                    (error-message-string err))
+                            'face 'error))))
+     (unless (bolp) (insert "\n")))
+    ('section-end
+     (let ((start (plist-get johnson--section-state :section-start))
+           (name (plist-get johnson--section-state :section-name)))
+       (when start
+         (let ((ov (make-overlay start (point))))
+           (overlay-put ov 'johnson-section name)
+           (overlay-put ov 'johnson-section-content t)
+           (overlay-put ov 'evaporate t))
+         (set-marker start nil))
+       (plist-put johnson--section-state :section-start nil))
+     (insert "\n"))
+    ('dictionary-error
+     (insert (propertize (format "[Error retrieving %s: %s]\n"
+                                 (plist-get unit :name)
+                                 (plist-get unit :message))
+                         'face 'error)))
+    ('lookup-complete
+     (johnson--remove-loading-line)
+     (when (zerop (plist-get johnson--section-state :matched))
+       (insert (format "No results found for \"%s\".\n"
+                       johnson--current-word))))
+    ('lookup-failed
+     (johnson--remove-loading-line)
+     (insert (propertize (format "[Worker failed: %s]\n"
+                                 (plist-get unit :message))
+                         'face 'error))))
+  (set-marker johnson--render-marker (point)))
+
+(defun johnson--remove-loading-line ()
+  "Delete the loading line, when present."
+  (when (and johnson--loading-marker
+             (marker-position johnson--loading-marker))
+    (save-excursion
+      (goto-char johnson--loading-marker)
+      (delete-region (point) (line-beginning-position 2))))
+  (when (markerp johnson--loading-marker)
+    (set-marker johnson--loading-marker nil))
+  (setq johnson--loading-marker nil))
+
+(defun johnson--reset-render-state ()
+  "Cancel pending rendering and clear the lookup's buffer-local state."
+  (when (timerp johnson--render-timer)
+    (cancel-timer johnson--render-timer))
+  (setq johnson--render-timer nil)
+  (setq johnson--render-queue nil)
+  (setq johnson--lookup-id nil)
+  (setq johnson--lookup-plan nil)
+  (setq johnson--history-entry nil)
+  (when-let* ((start (plist-get johnson--section-state :section-start)))
+    (set-marker start nil))
+  (setq johnson--section-state nil)
+  (dolist (marker (list johnson--render-marker johnson--loading-marker))
+    (when (markerp marker)
+      (set-marker marker nil)))
+  (setq johnson--render-marker nil)
+  (setq johnson--loading-marker nil))
 
 (defun johnson--insert-section-header (name)
   "Insert a section header for dictionary NAME."
@@ -1424,7 +1660,7 @@ RESULTS is the full list of (DICT-PLIST . MATCHES) cons cells."
 \\{johnson-mode-map}"
   (setq truncate-lines nil)
   (setq word-wrap t)
-  (add-hook 'kill-buffer-hook #'johnson--cancel-pending-render nil t)
+  (add-hook 'kill-buffer-hook #'johnson--reset-render-state nil t)
   (add-hook 'kill-buffer-hook #'johnson--cleanup-temp-audio-files nil t))
 
 ;;;; Section navigation
@@ -1575,14 +1811,22 @@ dictionary whose section contains the link."
           (let ((dict-name (johnson--section-name-at (point))))
             (if (null dict-name)
                 (johnson-lookup word)
-              (let ((results (johnson--query-dict-exact dict-name word)))
-                (if results
-                    (progn
-                      (johnson--history-push word)
-                      (johnson--history-log-push word (length results))
-                      (johnson--display-results word results))
-                  ;; Fallback to full lookup if no match in same dict.
-                  (johnson-lookup word))))))))))
+              (johnson--lookup-same-dictionary word dict-name))))))))
+
+(defun johnson--lookup-same-dictionary (word dict-name)
+  "Look up WORD restricted to the dictionary named DICT-NAME.
+When the restricted lookup ends with no matching section, restart it
+once over the full plan, keeping the same history and navigation
+identity."
+  (let ((dict (cl-find dict-name johnson--dictionaries
+                       :key (lambda (d) (plist-get d :name))
+                       :test #'equal)))
+    (if (null dict)
+        (johnson-lookup word)
+      (johnson--history-push word)
+      (johnson--display-lookup word
+                               (johnson--lookup-plan word (list dict))
+                               '(:fallback t)))))
 
 ;;;; Refresh
 
@@ -1595,9 +1839,11 @@ dictionary whose section contains the link."
   "Re-display the current word."
   (interactive)
   (when johnson--current-word
-    (let ((results (johnson--query-all-exact johnson--current-word)))
-      (let ((johnson--navigating-history t))
-        (johnson--display-results johnson--current-word results)))))
+    (let ((word johnson--current-word)
+          (johnson--navigating-history t))
+      (johnson--display-lookup
+       word (johnson--lookup-plan word (johnson--dictionaries-by-priority))
+       '(:no-history t)))))
 
 ;;;; Navigation history
 
@@ -1623,10 +1869,11 @@ mid-history discards all forward entries."
           (<= johnson--nav-position 0))
       (message "Beginning of history")
     (cl-decf johnson--nav-position)
-    (let* ((word (nth johnson--nav-position johnson--nav-history))
-           (johnson--navigating-history t)
-           (results (johnson--query-all-exact word)))
-      (johnson--display-results word results))))
+    (let ((word (nth johnson--nav-position johnson--nav-history))
+          (johnson--navigating-history t))
+      (johnson--display-lookup
+       word (johnson--lookup-plan word (johnson--dictionaries-by-priority))
+       '(:no-history t)))))
 
 (defun johnson-history-forward ()
   "Go forward in navigation history."
@@ -1635,10 +1882,11 @@ mid-history discards all forward entries."
           (>= johnson--nav-position (1- (length johnson--nav-history))))
       (message "End of history")
     (cl-incf johnson--nav-position)
-    (let* ((word (nth johnson--nav-position johnson--nav-history))
-           (johnson--navigating-history t)
-           (results (johnson--query-all-exact word)))
-      (johnson--display-results word results))))
+    (let ((word (nth johnson--nav-position johnson--nav-history))
+          (johnson--navigating-history t))
+      (johnson--display-lookup
+       word (johnson--lookup-plan word (johnson--dictionaries-by-priority))
+       '(:no-history t)))))
 
 ;;;; Copy
 
@@ -2357,7 +2605,7 @@ Requires `johnson-fts-enabled' to have been non-nil during indexing."
           (let ((inhibit-read-only t))
             (unless (derived-mode-p 'johnson-mode)
               (johnson-mode))
-            (johnson--cancel-pending-render)
+            (johnson--reset-render-state)
             (erase-buffer)
             (setq johnson--current-word (format "[FTS: %s]" query))
             (insert (propertize (format "Full-text search: \"%s\" (%d results)\n\n"
@@ -2698,16 +2946,32 @@ When enabled, looking up words via selection or idle timer."
         (prin1 johnson--history-log (current-buffer))))))
 
 (defun johnson--history-log-push (word dict-count)
-  "Push WORD with DICT-COUNT results to the timestamped history log."
+  "Push WORD with DICT-COUNT results to the timestamped history log.
+Return the newly pushed history entry plist."
   (johnson--load-history-log)
-  (push (list :word word :timestamp (float-time) :dict-count dict-count)
-        johnson--history-log)
-  ;; The persistent log keeps 10x the completing-read history size,
-  ;; since it stores timestamps and is only displayed in the history list.
-  (let ((max-len (* 10 johnson-history-max)))
-    (when (> (length johnson--history-log) max-len)
-      (setcdr (nthcdr (1- max-len) johnson--history-log) nil)))
-  (johnson--save-history-log))
+  (let ((entry (list :word word :timestamp (float-time)
+                     :dict-count dict-count)))
+    (push entry johnson--history-log)
+    ;; The persistent log keeps 10x the completing-read history size,
+    ;; since it stores timestamps and is only displayed in the history list.
+    (let ((max-len (* 10 johnson-history-max)))
+      (when (> (length johnson--history-log) max-len)
+        (setcdr (nthcdr (1- max-len) johnson--history-log) nil)))
+    (johnson--save-history-log)
+    entry))
+
+(defun johnson--history-log-set-count (entry count)
+  "Set and persist the matched-dictionary COUNT in ENTRY."
+  (when (memq entry johnson--history-log)
+    (plist-put entry :dict-count count)
+    (johnson--save-history-log)))
+
+(defun johnson--history-log-increment (entry)
+  "Increment and persist the matched-dictionary count in ENTRY."
+  (when (memq entry johnson--history-log)
+    (plist-put entry :dict-count
+               (1+ (or (plist-get entry :dict-count) 0)))
+    (johnson--save-history-log)))
 
 (defvar johnson-history-list-mode-map
   (let ((map (make-sparse-keymap)))

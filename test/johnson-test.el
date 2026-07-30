@@ -27,6 +27,11 @@
 
 (require 'ert)
 (require 'johnson)
+(require 'johnson-worker)
+(eval-and-compile
+  (add-to-list 'load-path
+               (file-name-directory (or load-file-name buffer-file-name))))
+(require 'johnson-test-support)
 
 ;;;; Helpers
 
@@ -78,7 +83,20 @@ Cleans up afterwards."
           (johnson-history nil)
           (johnson-default-search-scope 'all)
           (johnson-dictionary-groups nil)
-          (johnson-dictionary-priorities nil))
+          (johnson-dictionary-priorities nil)
+          (johnson--history-log nil)
+          (johnson--history-log-loaded t)
+          (johnson-history-persist nil)
+          (johnson-worker--process nil)
+          (johnson-worker--receive-buffer nil)
+          (johnson-worker--decode-timer nil)
+          (johnson-worker--message-function nil)
+          (johnson-worker--core-function nil)
+          (johnson-worker--state 'stopped)
+          (johnson-worker--terminating nil)
+          (johnson-worker--pending-requests nil)
+          (johnson-worker--active-request nil)
+          (johnson-worker--entry-assemblies (make-hash-table :test #'equal)))
      ;; Re-register the DSL format.
      (johnson-register-format
       :name "dsl"
@@ -90,6 +108,9 @@ Cleans up afterwards."
       :render-entry #'johnson-dsl-render-entry)
      (unwind-protect
          (progn ,@body)
+       (johnson-worker-stop)
+       (cancel-function-timers #'johnson-worker--decode-next)
+       (cancel-function-timers #'johnson--render-step)
        (johnson-test--kill-cache-buffers)
        (condition-case nil
            (progn
@@ -101,6 +122,22 @@ Cleans up afterwards."
        (when (get-buffer "*johnson*")
          (kill-buffer "*johnson*"))
        (delete-directory temp-cache t))))
+
+(defun johnson-test--wait-for-lookup ()
+  "Wait until the streamed lookup in the results buffer completes."
+  (should (johnson-test-support-wait-for
+           (lambda ()
+             (with-current-buffer "*johnson*"
+               (and (null johnson--loading-marker)
+                    (null johnson--render-queue)
+                    (not (timerp johnson--render-timer)))))
+           15)))
+
+(defun johnson-test--display-lookup-and-wait (word)
+  "Run a streamed lookup of WORD and wait for it to finish rendering."
+  (johnson--display-lookup
+   word (johnson--lookup-plan word (johnson--dictionaries-by-priority)))
+  (johnson-test--wait-for-lookup))
 
 ;;;; Format registry
 
@@ -197,18 +234,18 @@ Cleans up afterwards."
 
 ;;;; Display results
 
-(ert-deftest johnson-test-display-results-no-results ()
-  "Displays a no-results message when results are empty."
+(ert-deftest johnson-test-display-lookup-no-results ()
+  "Displays a no-results message when the lookup plan is empty."
   (johnson-test--with-env
     (save-window-excursion
-      (johnson--display-results "zzzzz" nil)
+      (johnson--display-lookup "zzzzz" nil)
       (with-current-buffer "*johnson*"
         (should (string-match-p "No results found"
                                 (buffer-substring-no-properties
                                  (point-min) (point-max))))))))
 
-(ert-deftest johnson-test-display-results-with-data ()
-  "Displays results with section headers and overlays."
+(ert-deftest johnson-test-display-lookup-with-data ()
+  "Displays streamed results with section headers and overlays."
   (johnson-test--with-env
     (johnson--discover)
     ;; Index the main test dictionary.
@@ -228,55 +265,57 @@ Cleans up afterwards."
                                                    (file-attribute-modification-time
                                                     (file-attributes path))))
       (setq johnson--indexed-p t)
-      (let ((results (johnson--query-all-exact "apple")))
-        (save-window-excursion
-          (johnson--display-results "apple" results)
-          (with-current-buffer "*johnson*"
-            ;; Should have section header.
-            (goto-char (point-min))
-            (should (equal (get-text-property (point-min)
-                                              'johnson-section-header)
-                           "Test Dictionary"))
-            ;; Should have section content overlay.
-            (let ((ovs (cl-remove-if-not
-                        (lambda (ov) (overlay-get ov 'johnson-section-content))
-                        (overlays-in (point-min) (point-max)))))
-              (should (> (length ovs) 0)))))))))
+      (setq johnson--dictionaries (list dict))
+      (save-window-excursion
+        (johnson-test--display-lookup-and-wait "apple")
+        (with-current-buffer "*johnson*"
+          ;; Should have section header.
+          (goto-char (point-min))
+          (should (equal (get-text-property (point-min)
+                                            'johnson-section-header)
+                         "Test Dictionary"))
+          ;; Should have section content overlay.
+          (let ((ovs (cl-remove-if-not
+                      (lambda (ov) (overlay-get ov 'johnson-section-content))
+                      (overlays-in (point-min) (point-max)))))
+            (should (> (length ovs) 0))))))))
 
-(ert-deftest johnson-test-render-next-batch-drains-fast-results ()
-  "Deferred rendering drains fast results within one idle slice."
+(ert-deftest johnson-test-render-step-drains-fast-units ()
+  "The ordinary-timer renderer drains fast queued units in one step."
   (johnson-test--with-env
-    (let* ((rendered nil)
-           (johnson-render-batch-size 1)
-           (johnson-render-batch-time-budget 1.0)
-           (fmt-name "fake")
-           (dicts (cl-loop for n from 1 to 5
-                           collect (list :name (format "Fake %d" n)
-                                         :path (format "/tmp/fake-%d" n)
-                                         :format-name fmt-name)))
-           (results (mapcar (lambda (dict)
-                              (cons dict '(("house" 0 1))))
-                            dicts)))
+    (let ((johnson-render-batch-size 1)
+          (johnson-render-batch-time-budget 1.0))
       (johnson-register-format
-       :name fmt-name
+       :name "fake"
        :extensions nil
        :detect #'ignore
-       :retrieve-entry (lambda (path _offset _length)
-                         (push path rendered)
-                         "entry")
        :render-entry (lambda (raw) (insert raw)))
       (with-current-buffer (get-buffer-create "*johnson*")
         (let ((inhibit-read-only t))
           (johnson-mode)
           (erase-buffer)
-          (setq johnson--pending-results results)
+          (setq johnson--current-word "house")
+          (setq johnson--section-state (list :total 1 :done 1 :matched 1
+                                             :fallback nil
+                                             :section-start nil
+                                             :section-name nil))
           (setq johnson--render-marker (point-marker))
-          (johnson--render-next-batch)
-          (when johnson--render-timer
-            (cancel-timer johnson--render-timer)
-            (setq johnson--render-timer nil))
-          (should (= (length rendered) 5))
-          (should-not johnson--pending-results))))))
+          (setq johnson--render-queue
+                (append (list (list :unit 'section-start :name "Fake"))
+                        (cl-loop for n from 1 to 5
+                                 collect (list :unit 'entry
+                                               :format-name "fake"
+                                               :raw (format "entry-%d " n)
+                                               :context nil))
+                        (list (list :unit 'section-end)
+                              (list :unit 'lookup-complete))))
+          (johnson--render-step (current-buffer))
+          (should-not johnson--render-queue)
+          (should-not (timerp johnson--render-timer))
+          (dotimes (n 5)
+            (should (string-match-p (format "entry-%d" (1+ n))
+                                    (buffer-substring-no-properties
+                                     (point-min) (point-max))))))))))
 
 ;;;; Worker format hooks
 
@@ -371,24 +410,24 @@ Cleans up afterwards."
                (lambda (hw offset len) (push (list hw offset len) entries)))
       (johnson-db-insert-entries-batch db (nreverse entries))
       (setq johnson--indexed-p t)
-      (let ((results (johnson--query-all-exact "apple")))
-        (save-window-excursion
-          (johnson--display-results "apple" results)
-          (with-current-buffer "*johnson*"
-            (goto-char (point-min))
-            ;; Find the section content overlay.
-            (let ((ovs (cl-remove-if-not
-                        (lambda (ov) (overlay-get ov 'johnson-section-content))
-                        (overlays-in (point-min) (point-max)))))
-              (should (> (length ovs) 0))
-              (let ((ov (car ovs)))
-                (should-not (overlay-get ov 'invisible))
-                ;; Toggle to collapse.
-                (johnson-toggle-section)
-                (should (overlay-get ov 'invisible))
-                ;; Toggle again to expand.
-                (johnson-toggle-section)
-                (should-not (overlay-get ov 'invisible))))))))))
+      (setq johnson--dictionaries (list dict))
+      (save-window-excursion
+        (johnson-test--display-lookup-and-wait "apple")
+        (with-current-buffer "*johnson*"
+          (goto-char (point-min))
+          ;; Find the section content overlay.
+          (let ((ovs (cl-remove-if-not
+                      (lambda (ov) (overlay-get ov 'johnson-section-content))
+                      (overlays-in (point-min) (point-max)))))
+            (should (> (length ovs) 0))
+            (let ((ov (car ovs)))
+              (should-not (overlay-get ov 'invisible))
+              ;; Toggle to collapse.
+              (johnson-toggle-section)
+              (should (overlay-get ov 'invisible))
+              ;; Toggle again to expand.
+              (johnson-toggle-section)
+              (should-not (overlay-get ov 'invisible)))))))))
 
 ;;;; Full integration: discover, index, query, display
 
@@ -412,11 +451,12 @@ Cleans up afterwards."
                                                      (file-attribute-modification-time
                                                       (file-attributes path))))))
     (setq johnson--indexed-p t)
-    ;; Query for "cat" which is in test-dict.dsl.
-    (let ((results (johnson--query-all-exact "cat")))
-      (should (> (length results) 0))
+    ;; Plan for "cat" which is in test-dict.dsl.
+    (let ((plan (johnson--lookup-plan "cat" (johnson--dictionaries-by-priority))))
+      (should (> (length plan) 0))
       (save-window-excursion
-        (johnson--display-results "cat" results)
+        (johnson--display-lookup "cat" plan)
+        (johnson-test--wait-for-lookup)
         (with-current-buffer "*johnson*"
           (should (string-match-p "gato"
                                   (buffer-substring-no-properties
