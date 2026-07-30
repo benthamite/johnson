@@ -619,6 +619,15 @@ markers."
         (coding (johnson-epwing--detect-charcode path)))
     (johnson-epwing--decode-entry raw coding)))
 
+(defun johnson-epwing-worker-prepare-entry (_dict _match raw)
+  "Return the serializable entry packet for the EPWING entry RAW.
+DICT is the dictionary plist and MATCH the database match; both are
+ignored.  Capture the HONMON path recorded at retrieval time as the
+packet's render context so reference buttons do not depend on globals
+set by the parent's last retrieval."
+  (list :raw raw
+        :context (list :honmon-path johnson-epwing--current-honmon-path)))
+
 ;;;; Entry rendering
 
 (defun johnson-epwing-render-entry (data)
@@ -712,6 +721,15 @@ character-31 markers."
           (insert ch)
           (cl-incf pos))))))
 
+(defun johnson-epwing-render-entry-with-context (raw context)
+  "Render EPWING entry RAW using the explicit render CONTEXT.
+RAW is the decoded entry string and CONTEXT a plist with :honmon-path
+as built by `johnson-epwing-worker-prepare-entry'.  Bind the HONMON
+path global from CONTEXT and call `johnson-epwing-render-entry'."
+  (let ((johnson-epwing--current-honmon-path
+         (plist-get context :honmon-path)))
+    (johnson-epwing-render-entry raw)))
+
 (defun johnson-epwing--char-u16be (str pos)
   "Read a 16-bit big-endian value from characters in STR at POS."
   (logior (ash (aref str pos) 8)
@@ -770,6 +788,8 @@ Uses character codes (not byte values) to determine the command."
    :build-index #'johnson-epwing-build-index
    :retrieve-entry #'johnson-epwing-retrieve-entry
    :render-entry #'johnson-epwing-render-entry
+   :worker-prepare-entry #'johnson-epwing-worker-prepare-entry
+   :render-entry-with-context #'johnson-epwing-render-entry-with-context
    :discover #'johnson-epwing-discover))
 
 ;;; johnson-epwing.el ends here

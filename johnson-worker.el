@@ -29,7 +29,9 @@
 ;; newline-terminated frame per ordinary timer callback, deferring to
 ;; pending user input so lookups never make Emacs unresponsive.  The
 ;; protocol-failure path is defined here; the worker startup and stop
-;; lifecycle is added separately.
+;; lifecycle is added separately.  The module also provides the default
+;; entry-preparation dispatch that turns a retrieved entry into a
+;; serializable packet using the format's `:worker-prepare-entry' hook.
 
 ;;; Code:
 
@@ -63,6 +65,18 @@
 
 (defvar johnson-worker--entry-assemblies (make-hash-table :test #'equal)
   "Incomplete entry chunk assemblies keyed by entry identity.")
+
+;;;; Entry preparation
+
+(defun johnson-worker--prepare-entry (format dict match raw)
+  "Return a serializable entry packet for FORMAT, DICT, MATCH, and RAW.
+FORMAT is the format plist, DICT the dictionary plist, MATCH the
+database match plist or nil, and RAW the retrieved entry string.  Call
+FORMAT's `:worker-prepare-entry' hook when present; otherwise return
+the default packet with a nil render context."
+  (if-let* ((prepare (plist-get format :worker-prepare-entry)))
+      (funcall prepare dict match raw)
+    (list :raw raw :context nil)))
 
 ;;;; Receiving
 

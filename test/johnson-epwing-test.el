@@ -239,6 +239,40 @@
                                   (buffer-string)))))
     (johnson-epwing-test--cleanup)))
 
+;;;; Explicit render context
+
+(ert-deftest johnson-epwing-test-render-entry-with-context ()
+  "Context rendering restores the HONMON path for reference buttons."
+  (unwind-protect
+      (let* ((honmon (johnson-epwing-test--honmon))
+             (raw (progn
+                    (johnson-epwing-retrieve-entry honmon 4096 0)
+                    (concat (string 31 #x42 0 0) "apple"
+                            (string 31 #x62 0 0 0 2 0 16))))
+             (packet (johnson-epwing-worker-prepare-entry
+                      (list :path honmon) nil raw)))
+        (should (equal (plist-get (plist-get packet :context) :honmon-path)
+                       honmon))
+        (setq johnson-epwing--current-honmon-path nil)
+        (with-temp-buffer
+          (johnson-epwing-render-entry-with-context
+           (plist-get packet :raw) (plist-get packet :context))
+          (let ((btn (next-button (point-min) t)))
+            (should btn)
+            (should (equal (button-get btn 'johnson-epwing-path) honmon)))))
+    (johnson-epwing-test--cleanup)))
+
+(ert-deftest johnson-epwing-test-worker-hooks-registered ()
+  "The EPWING format registers the worker context hooks."
+  (require 'johnson)
+  (let ((fmt (cl-find-if
+              (lambda (f) (equal (plist-get f :name) "epwing"))
+              johnson--formats)))
+    (should (eq (plist-get fmt :worker-prepare-entry)
+                #'johnson-epwing-worker-prepare-entry))
+    (should (eq (plist-get fmt :render-entry-with-context)
+                #'johnson-epwing-render-entry-with-context))))
+
 ;;;; Format registration
 
 (ert-deftest johnson-epwing-test-format-registered ()

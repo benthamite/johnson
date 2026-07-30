@@ -278,6 +278,44 @@ Cleans up afterwards."
           (should (= (length rendered) 5))
           (should-not johnson--pending-results))))))
 
+;;;; Worker format hooks
+
+(ert-deftest johnson-test-worker-format-hooks ()
+  "New worker hooks dispatch preparation and context rendering."
+  (johnson-test--with-env
+    (johnson-register-format
+     :name "worker-fake"
+     :retrieve-entry (lambda (_path _offset _length) "raw")
+     :render-entry (lambda (raw) (insert raw))
+     :worker-prepare-entry
+     (lambda (_dict _match raw)
+       (list :raw raw :context '(:label "prepared")))
+     :render-entry-with-context
+     (lambda (raw context)
+       (insert (plist-get context :label) ":" raw)))
+    (let* ((fmt (johnson--get-format "worker-fake"))
+           (packet (johnson-worker--prepare-entry
+                    fmt '(:path "/tmp/fake") nil "raw")))
+      (should (equal packet '(:raw "raw" :context (:label "prepared"))))
+      (with-temp-buffer
+        (johnson--render-entry-packet fmt packet)
+        (should (equal (buffer-string) "prepared:raw"))))))
+
+(ert-deftest johnson-test-worker-format-hooks-default ()
+  "Formats with only old hooks get the default packet and renderer."
+  (johnson-test--with-env
+    (johnson-register-format
+     :name "worker-old"
+     :retrieve-entry (lambda (_path _offset _length) "raw")
+     :render-entry (lambda (raw) (insert raw)))
+    (let* ((fmt (johnson--get-format "worker-old"))
+           (packet (johnson-worker--prepare-entry
+                    fmt '(:path "/tmp/fake") nil "raw")))
+      (should (equal packet '(:raw "raw" :context nil)))
+      (with-temp-buffer
+        (johnson--render-entry-packet fmt packet)
+        (should (equal (buffer-string) "raw"))))))
+
 ;;;; Navigation history
 
 (ert-deftest johnson-test-nav-history-push ()

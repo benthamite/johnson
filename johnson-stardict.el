@@ -328,6 +328,17 @@ for use by the renderer."
     (setq johnson-stardict--current-dict-dir (file-name-directory path))
     raw))
 
+(defun johnson-stardict-worker-prepare-entry (dict _match raw)
+  "Return the serializable entry packet for RAW retrieved from DICT.
+DICT is the dictionary plist and MATCH the database match, which is
+ignored.  Capture the sametypesequence recorded at retrieval time and
+the dictionary directory derived from DICT's path so rendering does not
+depend on globals set by the parent's last retrieval."
+  (list :raw raw
+        :context
+        (list :sametypesequence johnson-stardict--current-sametypesequence
+              :dict-dir (file-name-directory (plist-get dict :path)))))
+
 ;;;; Content type rendering
 
 (defun johnson-stardict--render-type-m (data)
@@ -571,6 +582,18 @@ to parse the data fields."
           ;; For unrecognized types, render as plain text.
           (_ (johnson-stardict--render-type-m data)))))))
 
+(defun johnson-stardict-render-entry-with-context (raw context)
+  "Render StarDict entry RAW using the explicit render CONTEXT.
+RAW is the raw entry data and CONTEXT a plist with :sametypesequence
+and :dict-dir as built by `johnson-stardict-worker-prepare-entry'.
+Bind the rendering globals from CONTEXT and call
+`johnson-stardict-render-entry'."
+  (let ((johnson-stardict--current-sametypesequence
+         (plist-get context :sametypesequence))
+        (johnson-stardict--current-dict-dir
+         (plist-get context :dict-dir)))
+    (johnson-stardict-render-entry raw)))
+
 ;;;; Format registration
 
 (provide 'johnson-stardict)
@@ -583,6 +606,8 @@ to parse the data fields."
    :parse-metadata #'johnson-stardict-parse-metadata
    :build-index #'johnson-stardict-build-index
    :retrieve-entry #'johnson-stardict-retrieve-entry
-   :render-entry #'johnson-stardict-render-entry))
+   :render-entry #'johnson-stardict-render-entry
+   :worker-prepare-entry #'johnson-stardict-worker-prepare-entry
+   :render-entry-with-context #'johnson-stardict-render-entry-with-context))
 
 ;;; johnson-stardict.el ends here

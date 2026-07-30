@@ -28,6 +28,7 @@
 (require 'ert)
 (require 'johnson-stardict)
 (require 'johnson)
+(require 'johnson-protocol)
 
 ;;;; Helpers
 
@@ -468,6 +469,40 @@
         (should (string-match-p "\\]" text))
         ;; Should contain the definition.
         (should (string-match-p "clear liquid" text))))))
+
+;;;; Explicit render context
+
+(ert-deftest johnson-stardict-test-render-entry-with-context ()
+  "Context rendering matches direct rendering after resetting globals."
+  (johnson-stardict-test--cleanup)
+  (let* ((ifo (johnson-stardict-test--fixture "test-stardict-multi.ifo"))
+         (raw (johnson-stardict-retrieve-entry ifo 0 46))
+         (direct (with-temp-buffer
+                   (johnson-stardict-render-entry raw)
+                   (buffer-string)))
+         (packet (johnson-stardict-worker-prepare-entry
+                  (list :path ifo) nil raw))
+         (frames (johnson-protocol-entry-frames
+                  '(:lookup "water" :dictionary "multi" :entry 0) packet))
+         (received (johnson-protocol-assemble-entry
+                    (mapcar #'johnson-protocol-decode frames)))
+         (context (plist-get received :context)))
+    (should (equal (plist-get context :sametypesequence) "tm"))
+    (should (equal (plist-get context :dict-dir) (file-name-directory ifo)))
+    (setq johnson-stardict--current-sametypesequence nil)
+    (setq johnson-stardict--current-dict-dir nil)
+    (with-temp-buffer
+      (johnson-stardict-render-entry-with-context
+       (plist-get received :raw) context)
+      (should (equal (buffer-string) direct)))))
+
+(ert-deftest johnson-stardict-test-worker-hooks-registered ()
+  "The StarDict format registers the worker context hooks."
+  (let ((fmt (johnson--get-format "stardict")))
+    (should (eq (plist-get fmt :worker-prepare-entry)
+                #'johnson-stardict-worker-prepare-entry))
+    (should (eq (plist-get fmt :render-entry-with-context)
+                #'johnson-stardict-render-entry-with-context))))
 
 ;;;; Field splitting
 

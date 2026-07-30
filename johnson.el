@@ -392,7 +392,20 @@ Each element is a plist (:word STRING :timestamp FLOAT :dict-count INTEGER).")
 (defun johnson-register-format (&rest props)
   "Register a dictionary format backend.
 PROPS is a plist with keys :name, :extensions, :detect,
-:parse-metadata, :build-index, :retrieve-entry, :render-entry."
+:parse-metadata, :build-index, :retrieve-entry, :render-entry.
+
+PROPS may also carry worker hooks: :worker-query, :worker-prepare-entry,
+:render-entry-with-context, :worker-config, :apply-worker-config.
+:worker-prepare-entry is called in the retrieval worker with the
+dictionary plist, the database match, and the raw entry string, and
+returns a serializable packet (:raw RAW :context CONTEXT).
+:render-entry-with-context is called in the parent with RAW and CONTEXT
+and must rely only on CONTEXT, never on globals set at retrieval time.
+:worker-query names the query function the worker runs.  :worker-config
+returns extra serializable worker configuration, which the worker
+applies via :apply-worker-config.  Formats without these hooks keep the
+old single-arg :render-entry path and get a default packet with a nil
+context."
   (let ((name (plist-get props :name)))
     (setq johnson--formats
           (cl-remove-if (lambda (fmt) (equal (plist-get fmt :name) name))
@@ -1223,6 +1236,17 @@ at point.  Caller must bind `inhibit-read-only'."
         (overlay-put ov 'johnson-section-content t)
         (overlay-put ov 'evaporate t)))
     (insert "\n")))
+
+(defun johnson--render-entry-packet (format packet)
+  "Render entry PACKET into the current buffer using FORMAT's hooks.
+FORMAT is a format plist and PACKET a plist with :raw and :context as
+returned by `johnson-worker--prepare-entry'.  Call FORMAT's
+:render-entry-with-context with the raw entry and its context when the
+hook is present, and fall back to the single-arg :render-entry
+otherwise."
+  (if-let* ((render (plist-get format :render-entry-with-context)))
+      (funcall render (plist-get packet :raw) (plist-get packet :context))
+    (funcall (plist-get format :render-entry) (plist-get packet :raw))))
 
 (defun johnson--cancel-pending-render ()
   "Cancel any in-progress deferred rendering."
