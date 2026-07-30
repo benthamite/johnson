@@ -31,13 +31,21 @@
 ;; protocol-failure path is defined here; the worker startup and stop
 ;; lifecycle is added separately.  The module also provides the default
 ;; entry-preparation dispatch that turns a retrieved entry into a
-;; serializable packet using the format's `:worker-prepare-entry' hook.
+;; serializable packet using the format's `:worker-prepare-entry' hook,
+;; and the child side: `johnson-worker-main', the persistent stdin
+;; command loop a batch Emacs runs to serve retrieval requests.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'subr-x)
 (require 'johnson-protocol)
+
+;; The child entrypoint runs after `-l johnson', which requires this
+;; file, so johnson proper cannot be required here without a cycle.
+(declare-function johnson--get-format "johnson" (name))
+(declare-function johnson-close-caches "johnson" ())
+(defvar johnson-cache-directory)
 
 ;;;; State
 
@@ -198,6 +206,158 @@ the child process, and deliver exactly one protocol-error message."
     (insert text)
     (unless (bolp)
       (insert "\n"))))
+
+;;;; Child command loop
+
+(defconst johnson-worker--source-file
+  (and load-file-name (expand-file-name load-file-name))
+  "Absolute path of the johnson-worker file that was loaded.")
+
+(defun johnson-worker-main ()
+  "Run the persistent Johnson retrieval worker.
+Emit a `ready' frame, then serve newline-terminated command frames
+from standard input until EOF or a `shutdown' command, closing the
+backend caches before returning.
+
+A `configure' command carries `:cache-directory' and `:formats', a
+list of (:name NAME :config PLIST) entries applied through each
+format's `:apply-worker-config' hook.  A `request' command carries
+`:lookup' and `:dictionary' numbers, the dictionary's `:format',
+`:path', and `:name' strings, the looked-up `:word', and `:matches', a
+list of (:word WORD :offset OFFSET :length LENGTH) plists used with
+`:retrieve-entry' when the format has no `:worker-query' hook.  Every
+command plist must start with `:type'."
+  (let ((coding-system-for-read 'binary)
+        (coding-system-for-write 'binary)
+        (configured nil)
+        done)
+    (johnson-worker--emit-ready)
+    (unwind-protect
+        (while (not done)
+          (pcase (johnson-worker--read-command)
+            (:eof (setq done t))
+            (`(:type shutdown . ,_) (setq done t))
+            ((and message `(:type configure . ,_))
+             (johnson-worker--apply-configuration message)
+             (setq configured t)
+             (johnson-worker--emit '(:type configured)))
+            ((and message `(:type request . ,_))
+             (if configured
+                 (johnson-worker--handle-request message)
+               (johnson-worker--emit
+                '(:type protocol-error :message "worker is not configured"))))
+            (_
+             (johnson-worker--emit
+              '(:type protocol-error :message "unknown worker command")))))
+      (johnson-close-caches))))
+
+(defun johnson-worker--emit-ready ()
+  "Emit the `ready' frame identifying this worker build."
+  (johnson-worker--emit
+   (list :type 'ready
+         :protocol johnson-protocol-version
+         :emacs-version emacs-version
+         :worker-file johnson-worker--source-file
+         :worker-sha256 (johnson-worker--source-sha256))))
+
+(defun johnson-worker--source-sha256 ()
+  "Return the SHA-256 of the loaded johnson-worker file."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally johnson-worker--source-file)
+    (secure-hash 'sha256 (current-buffer))))
+
+(defun johnson-worker--emit (message)
+  "Encode MESSAGE and write the frame to standard output."
+  (princ (johnson-protocol-encode message)))
+
+(defun johnson-worker--read-command ()
+  "Read and decode one command, or return `:eof'."
+  (condition-case nil
+      (johnson-protocol-decode (read-from-minibuffer ""))
+    (end-of-file :eof)))
+
+(defun johnson-worker--apply-configuration (message)
+  "Apply the `configure' command MESSAGE to this worker process.
+Assign the expanded `:cache-directory' to `johnson-cache-directory',
+then hand each `:formats' entry's `:config' to the named format's
+`:apply-worker-config' hook."
+  (setq johnson-cache-directory
+        (expand-file-name (plist-get message :cache-directory)))
+  (dolist (entry (plist-get message :formats))
+    (when-let* ((format (johnson--get-format (plist-get entry :name)))
+                (apply-config (plist-get format :apply-worker-config)))
+      (funcall apply-config (plist-get entry :config)))))
+
+(defun johnson-worker--handle-request (message)
+  "Serve the `request' command MESSAGE, emitting one dictionary reply.
+Emit `dictionary-start', the `entry-chunk' frames of every prepared
+entry packet, and `dictionary-complete'; on any error emit a terminal
+`dictionary-error' for this dictionary instead."
+  (let ((lookup (plist-get message :lookup))
+        (dictionary (plist-get message :dictionary)))
+    (condition-case err
+        (let* ((format (johnson-worker--request-format message))
+               (packets (johnson-worker--request-packets format message)))
+          (johnson-worker--emit-dictionary
+           lookup dictionary (plist-get message :name) packets))
+      (error
+       (johnson-worker--emit
+        (list :type 'dictionary-error :lookup lookup :dictionary dictionary
+              :message (error-message-string err)))))))
+
+(defun johnson-worker--request-format (message)
+  "Return the format plist named by request MESSAGE, or signal."
+  (let ((name (plist-get message :format)))
+    (or (johnson--get-format name)
+        (error "Format %s is not registered in the worker" name))))
+
+(defun johnson-worker--request-packets (format message)
+  "Return the prepared entry packets for request MESSAGE using FORMAT.
+Use FORMAT's `:worker-query' hook with the request's word when
+present, and otherwise retrieve and prepare each of the request's
+matches."
+  (let ((dict (johnson-worker--request-dict message)))
+    (if-let* ((query (plist-get format :worker-query)))
+        (funcall query dict (plist-get message :word))
+      (mapcar (lambda (match)
+                (johnson-worker--retrieve-match format dict match))
+              (plist-get message :matches)))))
+
+(defun johnson-worker--request-dict (message)
+  "Return the dictionary plist described by request MESSAGE."
+  (list :path (plist-get message :path)
+        :name (plist-get message :name)
+        :format-name (plist-get message :format)))
+
+(defun johnson-worker--retrieve-match (format dict match)
+  "Retrieve and prepare one MATCH of DICT using FORMAT."
+  (let ((raw (funcall (plist-get format :retrieve-entry)
+                      (plist-get dict :path)
+                      (plist-get match :offset)
+                      (plist-get match :length))))
+    (johnson-worker--prepare-entry format dict match raw)))
+
+(defun johnson-worker--emit-dictionary (lookup dictionary name packets)
+  "Emit the reply frames for the PACKETS of one dictionary.
+LOOKUP and DICTIONARY identify the request and NAME is the dictionary
+display name.  Emit `dictionary-start' only when PACKETS is non-empty,
+then each packet's `entry-chunk' frames, then `dictionary-complete'."
+  (when packets
+    (johnson-worker--emit
+     (list :type 'dictionary-start :lookup lookup :dictionary dictionary
+           :name name)))
+  (let ((entry -1))
+    (dolist (packet packets)
+      (setq entry (1+ entry))
+      (dolist (frame (johnson-protocol-entry-frames
+                      (list :lookup lookup :dictionary dictionary
+                            :entry entry)
+                      packet))
+        (princ frame))))
+  (johnson-worker--emit
+   (list :type 'dictionary-complete :lookup lookup :dictionary dictionary
+         :entries (length packets))))
 
 (provide 'johnson-worker)
 ;;; johnson-worker.el ends here
