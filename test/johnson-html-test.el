@@ -335,5 +335,91 @@
   (should (eq (johnson-html-color-to-face "darkmagenta") 'johnson-color-violet-face))
   (should (eq (johnson-html-color-to-face "#8B008B") 'johnson-color-violet-face)))
 
+;;;; Resource references
+
+(ert-deftest johnson-html-test-resource-references-sound ()
+  "Extracts sound:// references, unhexed and slash-normalized."
+  (should (equal (johnson-html-resource-references
+                  "<a href=\"sound://audio%20file.mp3\">play</a>")
+                 '("audio file.mp3")))
+  (should (equal (johnson-html-resource-references
+                  "<a href='sound://media\\beep.mp3'>play</a>")
+                 '("media/beep.mp3"))))
+
+(ert-deftest johnson-html-test-resource-references-sound-after-prefix ()
+  "Percent-encoded sound refs after a long prefix terminate promptly.
+Regression: `url-unhex-string' clobbered the loop's match data, so the
+scan position rewound behind the current href and re-matched forever."
+  (should (equal (johnson-html-resource-references
+                  (concat "<span>padding padding padding</span>"
+                          "<a href=\"sound://a%20b.mp3\">x</a>"))
+                 '("a b.mp3"))))
+
+(ert-deftest johnson-html-test-resource-references-img ()
+  "Extracts quoted <img src=...> references."
+  (should (equal (johnson-html-resource-references
+                  "<img src=\"pic.png\"> and <img src='other.jpg'/>")
+                 '("pic.png" "other.jpg"))))
+
+(ert-deftest johnson-html-test-resource-references-dedupes ()
+  "Repeated references are returned once."
+  (should (equal (johnson-html-resource-references
+                  (concat "<a href=\"sound://x.mp3\">p</a>"
+                          "<img src=\"x.mp3\"><img src=\"x.mp3\">"))
+                 '("x.mp3"))))
+
+(ert-deftest johnson-html-test-resource-references-none ()
+  "Returns nil when no resources are referenced."
+  (should-not (johnson-html-resource-references "<b>plain</b> text")))
+
+;;;; Prepared resource mapping
+
+(ert-deftest johnson-html-test-img-no-context-calls-resolver ()
+  "Without worker context, the legacy resource resolver runs."
+  (let ((calls nil))
+    (with-temp-buffer
+      (let ((johnson-html--current-dict-dir "/nonexistent/")
+            (johnson-html--current-dict-path "/nonexistent/dict.mdx")
+            (johnson-html--resolve-resource-fn
+             (lambda (path name) (push (cons path name) calls) nil)))
+        (insert "<img src=\"pic.png\">")
+        (johnson-html-render-region (point-min) (point-max))))
+    (should (equal calls '(("/nonexistent/dict.mdx" . "pic.png"))))))
+
+(ert-deftest johnson-html-test-img-prepared-empty-map-skips-resolver ()
+  "A prepared empty resource map never invokes the legacy resolver."
+  (with-temp-buffer
+    (let ((johnson-html--current-dict-dir "/nonexistent/")
+          (johnson-html--current-dict-path "/nonexistent/dict.mdx")
+          (johnson-html--resource-map nil)
+          (johnson-html--resolve-resource-fn
+           (lambda (&rest _args) (error "legacy resolver called"))))
+      (insert "<img src=\"pic.png\">")
+      (johnson-html-render-region (point-min) (point-max))
+      (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                     "")))))
+
+(ert-deftest johnson-html-test-img-prepared-uses-mapping ()
+  "A prepared resource map supplies resolved resource paths."
+  (with-temp-buffer
+    (let ((johnson-html--current-dict-dir "/nonexistent/")
+          (johnson-html--current-dict-path "/nonexistent/dict.mdx")
+          (johnson-html--resource-map '(("beep.mp3" . "/cache/beep.mp3"))))
+      (insert "<img src=\"beep.mp3\">")
+      (johnson-html-render-region (point-min) (point-max))
+      (should (equal (get-text-property (point-min) 'johnson-audio-file)
+                     "/cache/beep.mp3")))))
+
+(ert-deftest johnson-html-test-sound-prepared-uses-mapping ()
+  "Prepared sound links point their buttons at the mapped path."
+  (with-temp-buffer
+    (let ((johnson-html--current-dict-dir "/nonexistent/")
+          (johnson-html--current-dict-path "/nonexistent/dict.mdx")
+          (johnson-html--resource-map '(("audio.mp3" . "/cache/audio.mp3"))))
+      (insert "<a href=\"sound://audio.mp3\">play</a>")
+      (johnson-html-render-region (point-min) (point-max))
+      (should (equal (get-text-property (point-min) 'johnson-audio-file)
+                     "/cache/audio.mp3")))))
+
 (provide 'johnson-html-test)
 ;;; johnson-html-test.el ends here

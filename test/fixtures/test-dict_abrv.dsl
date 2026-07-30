@@ -10,3 +10,5 @@ m
 	masculino
 adj
 	adjetivo
+n
+	noun

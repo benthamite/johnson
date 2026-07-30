@@ -506,5 +506,106 @@
                text))
       (should-not (string-match-p "▶[ \t]*\n" text)))))
 
+;;;; Worker context
+
+(ert-deftest johnson-dsl-test-worker-prepares-abbreviations ()
+  "Prepared packets render abbreviations without parent file access."
+  (johnson-dsl-test--kill-cache-buffers)
+  (clrhash johnson-dsl--abbreviation-cache)
+  (unwind-protect
+      (let* ((dict-path (johnson-dsl-test--fixture "test-dict.dsl"))
+             (packet (johnson-dsl-worker-prepare-entry
+                      (list :path dict-path) nil "\t[p]n[/p] [p]noun[/p]"))
+             (context (plist-get packet :context)))
+        (should (eq (plist-get context :prepared) t))
+        (should (equal (plist-get context :dict-path) dict-path))
+        (should (equal (plist-get context :dict-dir)
+                       (file-name-directory dict-path)))
+        (should (plist-member context :resources))
+        (let ((abbrevs (plist-get context :abbreviations)))
+          ;; Only referenced expansions are retained.
+          (should (equal (cdr (assoc "n" abbrevs)) "noun"))
+          (should (equal (cdr (assoc "noun" abbrevs)) "sustantivo"))
+          (should-not (assoc "adj" abbrevs)))
+        (cl-letf (((symbol-function 'johnson-dsl--load-abbreviations)
+                   (lambda (_path) (error "parent abbreviation read")))
+                  ((symbol-function 'johnson--resolve-audio-file)
+                   (lambda (&rest _args) (error "parent archive read"))))
+          (with-temp-buffer
+            (johnson-dsl-render-entry-with-context
+             (plist-get packet :raw) (plist-get packet :context))
+            (should (equal (get-text-property (point-min) 'help-echo)
+                           "noun")))))
+    (johnson-dsl-test--kill-cache-buffers)
+    (clrhash johnson-dsl--abbreviation-cache)))
+
+(ert-deftest johnson-dsl-test-media-references-padded-after-prefix ()
+  "Whitespace-padded [s] refs after a long prefix terminate promptly.
+Regression: `string-trim' clobbered the loop's match data, so the scan
+position rewound behind the current tag and re-matched forever."
+  (should (equal (johnson-dsl--media-references
+                  "padding padding padding [s] a.wav[/s]")
+                 '("a.wav"))))
+
+(ert-deftest johnson-dsl-test-worker-prepares-resources ()
+  "Preparation resolves referenced media; parent renders from the map."
+  (let* ((dict-path (johnson-dsl-test--fixture "test-dict.dsl"))
+         (dict-dir (file-name-directory dict-path))
+         (resolve-calls nil))
+    (cl-letf (((symbol-function 'johnson--resolve-audio-file)
+               (lambda (path dict)
+                 (push (list path dict) resolve-calls)
+                 (when (string-suffix-p "apple.wav" path)
+                   "/cache/apple.wav"))))
+      (let* ((packet (johnson-dsl-worker-prepare-entry
+                      (list :path dict-path) nil
+                      "\t[s]apple.wav[/s] {{missing.jpg}}"))
+             (resources (plist-get (plist-get packet :context) :resources)))
+        (should (equal (cdr (assoc "apple.wav" resources))
+                       "/cache/apple.wav"))
+        (should-not (assoc "missing.jpg" resources))
+        ;; Both references were resolved at prepare time.
+        (should (cl-find (expand-file-name "apple.wav" dict-dir)
+                         resolve-calls :key #'car :test #'equal))
+        (should (cl-find (expand-file-name "missing.jpg" dict-dir)
+                         resolve-calls :key #'car :test #'equal))
+        ;; Parent rendering reads only the prepared mapping.
+        (cl-letf (((symbol-function 'johnson--resolve-audio-file)
+                   (lambda (&rest _args) (error "parent archive read"))))
+          (with-temp-buffer
+            (johnson-dsl-render-entry-with-context
+             (plist-get packet :raw) (plist-get packet :context))
+            (should (equal (get-text-property (point-min) 'johnson-audio-file)
+                           "/cache/apple.wav"))))))))
+
+(ert-deftest johnson-dsl-test-render-with-context-sibling-media ()
+  "Prepared rendering falls back to media files already on disk."
+  (let* ((dir (make-temp-file "johnson-dsl-test-" t))
+         (wav (expand-file-name "beep.wav" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-file wav (insert "RIFF"))
+          (cl-letf (((symbol-function 'johnson--resolve-audio-file)
+                     (lambda (&rest _args) (error "parent archive read"))))
+            (with-temp-buffer
+              (johnson-dsl-render-entry-with-context
+               "\t[s]beep.wav[/s]"
+               (list :prepared t
+                     :dict-path (expand-file-name "d.dsl" dir)
+                     :dict-dir (file-name-as-directory dir)
+                     :abbreviations nil
+                     :resources nil))
+              (should (equal (get-text-property (point-min) 'johnson-audio-file)
+                             wav)))))
+      (delete-directory dir t))))
+
+(ert-deftest johnson-dsl-test-worker-hooks-registered ()
+  "The DSL format registers the worker context hooks."
+  (let ((fmt (johnson--get-format "dsl")))
+    (should (eq (plist-get fmt :worker-prepare-entry)
+                #'johnson-dsl-worker-prepare-entry))
+    (should (eq (plist-get fmt :render-entry-with-context)
+                #'johnson-dsl-render-entry-with-context))))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here

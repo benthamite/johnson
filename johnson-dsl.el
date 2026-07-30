@@ -89,6 +89,22 @@ Set by `johnson-dsl-retrieve-entry' for use by the abbreviation loader.")
 Maps abbreviation file path to a hash table of abbreviation to expansion,
 or nil if no abbreviation file exists.")
 
+(defvar johnson-dsl--prepared nil
+  "Non-nil when rendering uses an explicit prepared context.
+Bound by `johnson-dsl-render-entry-with-context'.  When non-nil,
+abbreviation and media lookups read only the prepared context
+variables and never touch abbreviation files or archives.")
+
+(defvar johnson-dsl--current-abbreviations nil
+  "Alist of abbreviation to expansion for prepared rendering.
+Bound by `johnson-dsl-render-entry-with-context' from the packet
+context built by `johnson-dsl-worker-prepare-entry'.")
+
+(defvar johnson-dsl--current-resources nil
+  "Alist of media reference to resolved path for prepared rendering.
+Bound by `johnson-dsl-render-entry-with-context' from the packet
+context built by `johnson-dsl-worker-prepare-entry'.")
+
 ;;;; Dictzip helpers
 
 (defun johnson-dsl--dictzip-p (path)
@@ -542,6 +558,77 @@ positions in the decoded buffer (1-based offset)."
     (with-current-buffer buf
       (buffer-substring-no-properties char-offset (+ char-offset nchars)))))
 
+;;;; Worker entry preparation
+
+(defun johnson-dsl-worker-prepare-entry (dict _match raw)
+  "Return the serializable entry packet for RAW retrieved from DICT.
+DICT is the dictionary plist and MATCH the database match, which is
+ignored.  Load the abbreviation table and resolve referenced media in
+the retrieval worker, so the parent can render from the packet context
+without touching abbreviation files or archives."
+  (let* ((path (plist-get dict :path))
+         (dir (file-name-directory path)))
+    (list :raw raw
+          :context
+          (list :prepared t
+                :dict-path path
+                :dict-dir dir
+                :abbreviations (johnson-dsl--referenced-abbreviations path raw)
+                :resources (johnson-dsl--referenced-resources path dir raw)))))
+
+(defun johnson-dsl--referenced-abbreviations (path raw)
+  "Return an alist of the abbreviation expansions referenced by RAW.
+PATH is the dictionary file whose abbreviation table is consulted.
+Only expansions of abbreviations referenced by `[p]' tags in RAW are
+retained."
+  (when-let* ((table (johnson-dsl--load-abbreviations path)))
+    (let ((abbrevs nil))
+      (dolist (ref (johnson-dsl--abbreviation-references raw))
+        (when-let* ((expansion (gethash ref table)))
+          (push (cons ref expansion) abbrevs)))
+      (nreverse abbrevs))))
+
+(defun johnson-dsl--abbreviation-references (raw)
+  "Return the deduplicated `[p]' abbreviation texts referenced in RAW."
+  (let ((refs nil)
+        (start 0))
+    (while (string-match "\\[p\\]\\([^][]+\\)\\[/p\\]" raw start)
+      (push (match-string 1 raw) refs)
+      (setq start (match-end 0)))
+    (delete-dups (nreverse refs))))
+
+(defun johnson-dsl--referenced-resources (path dir raw)
+  "Return an alist of the resolved media resources referenced by RAW.
+PATH is the dictionary file and DIR its directory.  Each referenced
+media file is resolved through `johnson--resolve-audio-file', which
+extracts from companion archives when needed; unresolvable references
+are omitted."
+  (let ((resources nil))
+    (dolist (ref (johnson-dsl--media-references raw))
+      (when-let* ((resolved (johnson--resolve-audio-file
+                             (expand-file-name ref dir) path)))
+        (push (cons ref resolved) resources)))
+    (nreverse resources)))
+
+(defun johnson-dsl--media-references (raw)
+  "Return the deduplicated media resources referenced in RAW.
+Collects `{{RESOURCE}}' references and `[s]RESOURCE[/s]' media tags,
+normalized the way rendering normalizes them."
+  (let ((refs nil)
+        (start 0))
+    (while (string-match "{{\\(\\(?:[^}]\\|}[^}]\\)*\\)}}" raw start)
+      (push (match-string 1 raw) refs)
+      (setq start (match-end 0)))
+    (setq start 0)
+    (while (string-match "\\[s\\]\\([^][]+\\)\\[/s\\]" raw start)
+      ;; Capture positions before normalizing: `string-trim' runs
+      ;; `string-match' internally and clobbers the loop's match data.
+      (let ((name (match-string 1 raw))
+            (next (match-end 0)))
+        (push (subst-char-in-string ?\\ ?/ (string-trim name)) refs)
+        (setq start next)))
+    (delete-dups (nreverse refs))))
+
 ;;;; Entry rendering
 
 (defun johnson-dsl-render-entry (raw-text)
@@ -658,12 +745,7 @@ Inserts the rendered text at point."
                       (delete-region tag-beg s-end)
                       (when (and (not (string-empty-p filename))
                                  johnson-dsl--current-dict-dir)
-                        (let* ((path (expand-file-name
-                                      filename
-                                      johnson-dsl--current-dict-dir))
-                               (resolved
-                                (johnson--resolve-audio-file
-                                 path johnson-dsl--current-dict-path)))
+                        (let ((resolved (johnson-dsl--resolve-media filename)))
                           (when resolved
                             (if (and (fboundp 'johnson--image-file-p)
                                      (johnson--image-file-p resolved))
@@ -706,14 +788,22 @@ Inserts the rendered text at point."
               (delete-region m-beg m-end)
               (goto-char m-beg)
               (when johnson-dsl--current-dict-dir
-                (let* ((path (expand-file-name
-                              filename johnson-dsl--current-dict-dir))
-                       (resolved
-                        (johnson--resolve-audio-file
-                         path johnson-dsl--current-dict-path)))
+                (let ((resolved (johnson-dsl--resolve-media filename)))
                   (when resolved
                     (johnson--insert-image resolved)))))))
         (set-marker end nil)))))
+
+(defun johnson-dsl--resolve-media (filename)
+  "Resolve media FILENAME against the current rendering context.
+In prepared mode, consult only the prepared resource mapping and files
+already present next to the dictionary; otherwise resolve through
+`johnson--resolve-audio-file', which may extract from companion
+archives."
+  (let ((path (expand-file-name filename johnson-dsl--current-dict-dir)))
+    (if johnson-dsl--prepared
+        (or (cdr (assoc filename johnson-dsl--current-resources))
+            (and (file-exists-p path) path))
+      (johnson--resolve-audio-file path johnson-dsl--current-dict-path))))
 
 (defun johnson-dsl--apply-tag (tag-name region-start region-end tag-args)
   "Apply rendering for TAG-NAME over REGION-START to REGION-END.
@@ -771,18 +861,26 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
      (add-face-text-property region-start region-end 'johnson-comment-face))
     ("p"
      (add-face-text-property region-start region-end 'johnson-abbreviation-face)
-     (when johnson-dsl--current-dict-path
-       (let* ((abbr-table (johnson-dsl--load-abbreviations
-                           johnson-dsl--current-dict-path))
-              (text (buffer-substring-no-properties region-start region-end))
-              (expansion (and abbr-table (gethash text abbr-table))))
-         (when expansion
-           (put-text-property region-start region-end
-                              'help-echo expansion)))))
+     (let* ((text (buffer-substring-no-properties region-start region-end))
+            (expansion (johnson-dsl--abbreviation-expansion text)))
+       (when expansion
+         (put-text-property region-start region-end
+                            'help-echo expansion))))
     ("'"
      (add-face-text-property region-start region-end 'johnson-stress-face))
     ("t"
      (add-face-text-property region-start region-end 'johnson-italic-face))))
+
+(defun johnson-dsl--abbreviation-expansion (text)
+  "Return the expansion for abbreviation TEXT, or nil.
+In prepared mode, read only the prepared abbreviation alist; otherwise
+load the abbreviation table for the current dictionary."
+  (if johnson-dsl--prepared
+      (cdr (assoc text johnson-dsl--current-abbreviations))
+    (when johnson-dsl--current-dict-path
+      (when-let* ((table (johnson-dsl--load-abbreviations
+                          johnson-dsl--current-dict-path)))
+        (gethash text table)))))
 
 (defun johnson-dsl--inline-translation-p (region-start)
   "Return non-nil when REGION-START follows an inline translation arrow."
@@ -812,6 +910,20 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
                        (eq (char-after) ?\n))))
       (insert "\n"))))
 
+(defun johnson-dsl-render-entry-with-context (raw context)
+  "Render DSL entry RAW using the explicit render CONTEXT.
+RAW is the raw entry text and CONTEXT a plist with :prepared,
+:dict-path, :dict-dir, :abbreviations, and :resources as built by
+`johnson-dsl-worker-prepare-entry'.  Bind the rendering globals from
+CONTEXT and call `johnson-dsl-render-entry'; abbreviation and media
+lookups read only the prepared context plus files already on disk."
+  (let ((johnson-dsl--prepared (plist-get context :prepared))
+        (johnson-dsl--current-dict-path (plist-get context :dict-path))
+        (johnson-dsl--current-dict-dir (plist-get context :dict-dir))
+        (johnson-dsl--current-abbreviations (plist-get context :abbreviations))
+        (johnson-dsl--current-resources (plist-get context :resources)))
+    (johnson-dsl-render-entry raw)))
+
 ;;;; Format registration
 
 (provide 'johnson-dsl)
@@ -824,6 +936,8 @@ TAG-ARGS is the tag argument string (e.g., color name for [c])."
    :parse-metadata #'johnson-dsl-parse-metadata
    :build-index #'johnson-dsl-build-index
    :retrieve-entry #'johnson-dsl-retrieve-entry
-   :render-entry #'johnson-dsl-render-entry))
+   :render-entry #'johnson-dsl-render-entry
+   :worker-prepare-entry #'johnson-dsl-worker-prepare-entry
+   :render-entry-with-context #'johnson-dsl-render-entry-with-context))
 
 ;;; johnson-dsl.el ends here

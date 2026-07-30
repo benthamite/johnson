@@ -736,6 +736,37 @@ Returns the entry data as a decoded string."
           (substring decoded 0 null-pos)
         decoded))))
 
+;;;; Worker entry preparation
+
+(defun johnson-mdict-worker-prepare-entry (dict _match raw)
+  "Return the serializable entry packet for RAW retrieved from DICT.
+DICT is the dictionary plist and MATCH the database match, which is
+ignored.  Resolve `@@@LINK=' redirect chains and all referenced MDD
+resources in the retrieval worker, so the parent can render the final
+HTML from the packet context without touching the dictionary files."
+  (let* ((path (plist-get dict :path))
+         (final (if (string-prefix-p "@@@LINK=" raw)
+                    (johnson-mdict--resolve-link path (substring raw 8))
+                  raw)))
+    (list :raw final
+          :context
+          (list :prepared t
+                :dict-path path
+                :dict-dir (file-name-directory path)
+                :resources (johnson-mdict--referenced-resources path final)))))
+
+(defun johnson-mdict--referenced-resources (path html)
+  "Return an alist of the resolved resources referenced by HTML.
+PATH is the MDX file whose MDD companion supplies resources.  Each
+sound or image reference is resolved through
+`johnson-mdict--resolve-resource'; unresolvable references are
+omitted."
+  (let ((resources nil))
+    (dolist (ref (johnson-html-resource-references html))
+      (when-let* ((resolved (johnson-mdict--resolve-resource path ref)))
+        (push (cons ref resolved) resources)))
+    (nreverse resources)))
+
 ;;;; Entry rendering
 
 (defconst johnson-mdict--max-link-depth 5
@@ -788,13 +819,33 @@ and rendered instead."
     (setq data (johnson-mdict--resolve-link
                 johnson-mdict--current-dict-path
                 (substring data 8))))
-  (let ((start (point))
-        (johnson-html--current-dict-dir johnson-mdict--current-dict-dir)
+  (let ((johnson-html--current-dict-dir johnson-mdict--current-dict-dir)
         (johnson-html--current-dict-path johnson-mdict--current-dict-path)
         (johnson-html--resolve-resource-fn #'johnson-mdict--resolve-resource))
+    (johnson-mdict--render-html data)))
+
+(defun johnson-mdict-render-entry-with-context (raw context)
+  "Render MDict entry RAW using the explicit render CONTEXT.
+RAW is the final entry HTML and CONTEXT a plist with :prepared,
+:dict-path, :dict-dir, and :resources as built by
+`johnson-mdict-worker-prepare-entry'.  Signal an error for an
+unresolved `@@@LINK=' entry; link chains must be resolved at
+preparation time.  Bind only the supplied path, directory, and
+resource mapping; the MDict resolver is never consulted."
+  (when (string-prefix-p "@@@LINK=" raw)
+    (error "MDict: unresolved @@@LINK= in prepared entry"))
+  (let ((johnson-html--current-dict-dir (plist-get context :dict-dir))
+        (johnson-html--current-dict-path (plist-get context :dict-path))
+        (johnson-html--resource-map (plist-get context :resources)))
+    (johnson-mdict--render-html raw)))
+
+(defun johnson-mdict--render-html (data)
+  "Insert DATA at point and render it as HTML.
+Trims trailing whitespace-only lines (including NBSP) from the
+rendered entry."
+  (let ((start (point)))
     (insert data)
     (johnson-html-render-region start (point))
-    ;; Trim trailing whitespace-only lines (including NBSP).
     (let ((end (point)))
       (while (and (> end start)
                   (progn
@@ -943,6 +994,8 @@ MDD hit.  Returns the local file path or nil."
    :parse-metadata #'johnson-mdict-parse-metadata
    :build-index #'johnson-mdict-build-index
    :retrieve-entry #'johnson-mdict-retrieve-entry
-   :render-entry #'johnson-mdict-render-entry))
+   :render-entry #'johnson-mdict-render-entry
+   :worker-prepare-entry #'johnson-mdict-worker-prepare-entry
+   :render-entry-with-context #'johnson-mdict-render-entry-with-context))
 
 ;;; johnson-mdict.el ends here

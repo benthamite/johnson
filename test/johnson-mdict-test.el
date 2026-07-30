@@ -360,6 +360,97 @@
             ;; No HTML tags remaining.
             (should-not (string-match-p "<b>" text))))))))
 
+;;;; Worker context
+
+(ert-deftest johnson-mdict-test-worker-prepare-resolves-link ()
+  "Preparation resolves @@@LINK= redirects in the child."
+  (let ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
+        (link-calls nil))
+    (cl-letf (((symbol-function 'johnson-mdict--resolve-link)
+               (lambda (p target &optional _depth)
+                 (push (cons p target) link-calls)
+                 "<b>final</b> entry"))
+              ((symbol-function 'johnson-mdict--resolve-resource)
+               (lambda (&rest _args) (error "unexpected resource lookup"))))
+      (let* ((packet (johnson-mdict-worker-prepare-entry
+                      (list :path path) nil "@@@LINK=target"))
+             (context (plist-get packet :context)))
+        (should (equal (plist-get packet :raw) "<b>final</b> entry"))
+        (should (equal link-calls (list (cons path "target"))))
+        (should (eq (plist-get context :prepared) t))
+        (should (equal (plist-get context :dict-path) path))
+        (should (equal (plist-get context :dict-dir)
+                       (file-name-directory path)))
+        (should (plist-member context :resources))))))
+
+(ert-deftest johnson-mdict-test-worker-prepare-resolves-resources ()
+  "Preparation resolves referenced MDD resources in the child."
+  (let ((path (johnson-mdict-test--fixture "test-mdict.mdx"))
+        (resource-calls nil))
+    (cl-letf (((symbol-function 'johnson-mdict--resolve-resource)
+               (lambda (p name)
+                 (push (cons p name) resource-calls)
+                 (when (equal name "pic.png") "/cache/pic.png"))))
+      (let* ((packet (johnson-mdict-worker-prepare-entry
+                      (list :path path) nil
+                      "<img src=\"pic.png\"> <img src=\"missing.png\">"))
+             (resources (plist-get (plist-get packet :context) :resources)))
+        (should (equal (cdr (assoc "pic.png" resources)) "/cache/pic.png"))
+        (should-not (assoc "missing.png" resources))
+        (should (cl-find "missing.png" resource-calls
+                         :key #'cdr :test #'equal))
+        (should (cl-every (lambda (call) (equal (car call) path))
+                          resource-calls))))))
+
+(ert-deftest johnson-mdict-test-render-with-context-no-retrieval ()
+  "Prepared rendering never calls MDict retrieval or resolvers."
+  (cl-letf (((symbol-function 'johnson-mdict-retrieve-entry)
+             (lambda (&rest _args) (error "parent retrieval")))
+            ((symbol-function 'johnson-mdict--resolve-link)
+             (lambda (&rest _args) (error "parent link resolution")))
+            ((symbol-function 'johnson-mdict--resolve-resource)
+             (lambda (&rest _args) (error "parent resource lookup"))))
+    (with-temp-buffer
+      (johnson-mdict-render-entry-with-context
+       "<b>word</b> <img src=\"beep.mp3\">"
+       (list :prepared t
+             :dict-path "/nonexistent/dict.mdx"
+             :dict-dir "/nonexistent/"
+             :resources '(("beep.mp3" . "/cache/beep.mp3"))))
+      (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+        (should (string-match-p "word" text))
+        (should-not (string-match-p "<" text)))
+      (should (text-property-any (point-min) (point-max)
+                                 'face 'johnson-bold-face))
+      ;; The prepared mapping supplies the resolved resource path.
+      (let ((pos (if (get-text-property (point-min) 'johnson-audio-file)
+                     (point-min)
+                   (next-single-property-change (point-min)
+                                                'johnson-audio-file))))
+        (should pos)
+        (should (equal (get-text-property pos 'johnson-audio-file)
+                       "/cache/beep.mp3"))))))
+
+(ert-deftest johnson-mdict-test-render-with-context-rejects-link ()
+  "Prepared rendering rejects unresolved @@@LINK= entries."
+  (cl-letf (((symbol-function 'johnson-mdict--resolve-link)
+             (lambda (&rest _args) (error "parent link resolution"))))
+    (with-temp-buffer
+      (should-error (johnson-mdict-render-entry-with-context
+                     "@@@LINK=foo"
+                     (list :prepared t
+                           :dict-path "/nonexistent/dict.mdx"
+                           :dict-dir "/nonexistent/"
+                           :resources nil))))))
+
+(ert-deftest johnson-mdict-test-worker-hooks-registered ()
+  "The MDict format registers the worker context hooks."
+  (let ((fmt (johnson--get-format "mdict")))
+    (should (eq (plist-get fmt :worker-prepare-entry)
+                #'johnson-mdict-worker-prepare-entry))
+    (should (eq (plist-get fmt :render-entry-with-context)
+                #'johnson-mdict-render-entry-with-context))))
+
 ;;;; Binary helpers
 
 (ert-deftest johnson-mdict-test-u32be ()

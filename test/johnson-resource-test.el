@@ -25,8 +25,10 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'ert)
 (require 'johnson)
+(require 'johnson-dsl)
 
 ;;;; Helpers
 
@@ -254,6 +256,48 @@ Returns the path to the zip file."
           (should-not (file-directory-p res-dir)))
       (when (file-directory-p cache-dir)
         (delete-directory cache-dir t)))))
+
+;;;; Prepared rendering and archive extraction
+
+(ert-deftest johnson-resource-test-legacy-dsl-render-extracts-from-zip ()
+  "Legacy one-argument DSL rendering extracts media from companion zips."
+  (let* ((dir (make-temp-file "johnson-res-test-" t))
+         (cache-dir (make-temp-file "johnson-res-cache-" t))
+         (johnson-cache-directory cache-dir)
+         (paths (johnson-resource-test--make-fixture-zip dir))
+         (dsl-path (nth 0 paths)))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((johnson-dsl--current-dict-dir (file-name-directory dsl-path))
+                (johnson-dsl--current-dict-path dsl-path))
+            (johnson-dsl-render-entry "\t[s]test.mp3[/s]")
+            (let ((file (get-text-property (point-min) 'johnson-audio-file)))
+              (should file)
+              (should (string-match-p "resources/" file)))))
+      (delete-directory dir t)
+      (delete-directory cache-dir t))))
+
+(ert-deftest johnson-resource-test-prepared-dsl-render-skips-archives ()
+  "Prepared DSL rendering never extracts from companion archives."
+  (let* ((dir (make-temp-file "johnson-res-test-" t))
+         (paths (johnson-resource-test--make-fixture-zip dir))
+         (dsl-path (nth 0 paths)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'johnson--resolve-audio-file)
+                   (lambda (&rest _args) (error "parent archive read")))
+                  ((symbol-function 'johnson--extract-resource)
+                   (lambda (&rest _args) (error "parent archive extraction"))))
+          (with-temp-buffer
+            (johnson-dsl-render-entry-with-context
+             "\t[s]test.mp3[/s]"
+             (list :prepared t
+                   :dict-path dsl-path
+                   :dict-dir (file-name-directory dsl-path)
+                   :abbreviations nil
+                   :resources nil))
+            ;; test.mp3 exists only inside the zip, so nothing renders.
+            (should-not (get-text-property (point-min) 'johnson-audio-file))))
+      (delete-directory dir t))))
 
 (provide 'johnson-resource-test)
 ;;; johnson-resource-test.el ends here

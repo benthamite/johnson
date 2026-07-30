@@ -54,6 +54,15 @@ Called with (DICT-PATH RESOURCE-NAME), should return a local file
 path or nil.  Set by format backends (e.g., MDict for MDD lookup)
 before calling `johnson-html-render-region'.")
 
+(defvar johnson-html--resource-map 'johnson-html--no-context
+  "Resource-name-to-path mapping for prepared rendering.
+When bound to an alist (possibly nil) by a prepared-context renderer,
+sound and image resources are resolved only through this mapping plus
+files that already exist under `johnson-html--current-dict-dir';
+`johnson-html--resolve-resource-fn' is never consulted.  The default
+value `johnson-html--no-context' means no worker context is active, so
+the legacy resolver may run.")
+
 ;;;; Color mapping
 
 (defun johnson-html--classify-color-rgb (r g b)
@@ -219,9 +228,10 @@ ATTRS is the raw attribute string from the opening tag."
                          ?\\ ?/ (match-string 1 attrs)))))
          (if (and (not (string-empty-p filename))
                   johnson-html--current-dict-dir)
-             (let ((audio-path (expand-file-name
-                                filename
-                                johnson-html--current-dict-dir)))
+             (let ((audio-path (or (johnson-html--mapped-resource filename)
+                                   (expand-file-name
+                                    filename
+                                    johnson-html--current-dict-dir))))
                (delete-region region-start region-end)
                (goto-char region-start)
                (johnson-insert-audio-button
@@ -379,6 +389,9 @@ Replaces tags with text properties."
                    ((and johnson-html--current-dict-dir
                          (let ((f (expand-file-name src johnson-html--current-dict-dir)))
                            (when (file-exists-p f) f))))
+                   ;; Prepared context: read only the resource mapping.
+                   ((johnson-html--prepared-p)
+                    (johnson-html--mapped-resource src))
                    ;; Try resource resolver (e.g., MDD).
                    ((and johnson-html--resolve-resource-fn
                          johnson-html--current-dict-path)
@@ -442,6 +455,42 @@ Replaces tags with text properties."
             (replace-match "\n\n")
             (setq new-end (- new-end len -2))))
         new-end)))))
+
+(defun johnson-html--prepared-p ()
+  "Return non-nil when a prepared resource mapping is active."
+  (not (eq johnson-html--resource-map 'johnson-html--no-context)))
+
+(defun johnson-html--mapped-resource (name)
+  "Return the prepared-mode path for resource NAME, or nil.
+Returns nil when no prepared resource mapping is active."
+  (when (johnson-html--prepared-p)
+    (cdr (assoc name johnson-html--resource-map))))
+
+;;;; Resource references
+
+(defun johnson-html-resource-references (html)
+  "Return the resource names referenced by sound links and images in HTML.
+Extracts `sound://RESOURCE' link targets and quoted `<img src=RESOURCE>'
+references, normalized the way rendering normalizes them.  Returns a
+deduplicated list of strings with sound references first."
+  (let ((refs nil)
+        (start 0))
+    (while (string-match
+            "href\\s-*=\\s-*[\"']sound://\\([^\"']+\\)[\"']" html start)
+      ;; Capture positions before normalizing: `url-unhex-string' runs
+      ;; `string-match' internally and clobbers the loop's match data.
+      (let ((name (match-string 1 html))
+            (next (match-end 0)))
+        (push (url-unhex-string (subst-char-in-string ?\\ ?/ name)) refs)
+        (setq start next)))
+    (setq start 0)
+    (while (string-match "<img\\s-+\\([^>]*\\)>" html start)
+      (let ((attrs (match-string 1 html))
+            (next (match-end 0)))
+        (when (string-match "src\\s-*=\\s-*[\"']\\([^\"']+\\)[\"']" attrs)
+          (push (match-string 1 attrs) refs))
+        (setq start next)))
+    (delete-dups (nreverse refs))))
 
 (provide 'johnson-html)
 
