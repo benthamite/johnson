@@ -26,7 +26,11 @@
 ;; protocol-failure path.  The filter tests use real `make-process'
 ;; pipes, not mocks.  The child tests spawn a real batch Emacs running
 ;; `johnson-worker-main' over the deterministic `worker-fixture' format
-;; and assert the wire-level message sequences and exit codes.
+;; and assert the wire-level message sequences and exit codes.  The
+;; client lifecycle tests start the real worker through
+;; `johnson-worker-start' and assert the nonblocking handshake, entry
+;; chunk assembly, strict sequence validation, stale-lookup
+;; supersession, and the stop and crash paths.
 
 ;;; Code:
 
@@ -50,12 +54,21 @@
 (defvar johnson-worker-test--protocol-errors nil
   "List of protocol-error messages delivered to the test message function.")
 
+(defvar johnson-worker-test--core-messages nil
+  "All messages delivered to the test message function, newest first.")
+
 (defun johnson-worker-test--record-message (message)
   "Record one delivered MESSAGE in the test counters."
+  (push message johnson-worker-test--core-messages)
   (setq johnson-worker-test--messages-seen
         (1+ johnson-worker-test--messages-seen))
   (when (eq (plist-get message :type) 'protocol-error)
     (push message johnson-worker-test--protocol-errors)))
+
+(defun johnson-worker-test--core-messages-of-type (type)
+  "Return the recorded core messages of TYPE in arrival order."
+  (seq-filter (lambda (message) (eq (plist-get message :type) type))
+              (reverse johnson-worker-test--core-messages)))
 
 (defmacro johnson-worker-test--with-client (process &rest body)
   "Run BODY with fresh worker client state and a live pipe process.
@@ -66,11 +79,16 @@ All processes, buffers, and timers are cleaned up even on failure."
   (declare (indent 1))
   `(let* ((johnson-worker-test--messages-seen 0)
           (johnson-worker-test--protocol-errors nil)
+          (johnson-worker-test--core-messages nil)
           (johnson-worker--decode-delay 60)
           (johnson-worker--receive-buffer
            (generate-new-buffer " *johnson-worker-test-receive*"))
           (johnson-worker--decode-timer nil)
           (johnson-worker--state 'stopped)
+          (johnson-worker--terminating nil)
+          (johnson-worker--pending-requests nil)
+          (johnson-worker--active-request nil)
+          (johnson-worker--core-function nil)
           (johnson-worker--message-function
            #'johnson-worker-test--record-message)
           (johnson-worker--entry-assemblies (make-hash-table :test #'equal))
@@ -308,16 +326,21 @@ LOOKUP and DICTIONARY identify the request; each element of OFFSETS
 becomes one match behavior string."
   (johnson-worker-test--send
    process
-   (list :type 'request
-         :lookup lookup
-         :dictionary dictionary
-         :format "worker-fixture"
-         :path "/fixture/dictionary"
-         :name "Worker Fixture"
-         :word "fixture"
-         :matches (mapcar (lambda (offset)
-                            (list :word "fixture" :offset offset :length 0))
-                          offsets))))
+   (append (list :type 'request)
+           (johnson-worker-test--request-plist lookup dictionary offsets))))
+
+(defun johnson-worker-test--request-plist (lookup dictionary offsets)
+  "Return a fixture request plist for LOOKUP, DICTIONARY, and OFFSETS.
+Each element of OFFSETS becomes one match behavior string."
+  (list :lookup lookup
+        :dictionary dictionary
+        :format "worker-fixture"
+        :path "/fixture/dictionary"
+        :name "Worker Fixture"
+        :word "fixture"
+        :matches (mapcar (lambda (offset)
+                           (list :word "fixture" :offset offset :length 0))
+                         offsets)))
 
 (defun johnson-worker-test--message-types (messages)
   "Return the `:type' symbols of MESSAGES in order."
@@ -496,6 +519,419 @@ becomes one match behavior string."
     (should (equal (johnson-worker-test--message-types messages)
                    '(dictionary-complete)))
     (should (equal (plist-get (car messages) :entries) 0))))
+
+;;;; Client harness
+
+(defmacro johnson-worker-test--forbidding-blocking (&rest body)
+  "Run BODY with `accept-process-output' and `sit-for' made fatal."
+  (declare (indent 0) (debug t))
+  `(cl-letf (((symbol-function 'accept-process-output)
+              (lambda (&rest _args) (error "blocking wait")))
+             ((symbol-function 'sit-for)
+              (lambda (&rest _args) (error "blocking wait"))))
+     ,@body))
+
+(defmacro johnson-worker-test--with-live-client (&rest body)
+  "Run BODY with fresh client state ready for a real `johnson-worker-start'.
+The worker command is rebound to the fixture child command and
+`johnson-cache-directory' to a temporary directory.  The client is
+stopped and its buffers and timers cleaned up even when BODY fails."
+  (declare (indent 0) (debug t))
+  `(johnson-test-support-with-temp-cache-dir
+     (let ((johnson-worker-command-function
+            #'johnson-worker-test--child-command)
+           (johnson-worker--process nil)
+           (johnson-worker--receive-buffer nil)
+           (johnson-worker--decode-timer nil)
+           (johnson-worker--message-function nil)
+           (johnson-worker--core-function nil)
+           (johnson-worker--state 'stopped)
+           (johnson-worker--terminating nil)
+           (johnson-worker--pending-requests nil)
+           (johnson-worker--active-request nil)
+           (johnson-worker--entry-assemblies (make-hash-table :test #'equal))
+           (johnson-worker-test--messages-seen 0)
+           (johnson-worker-test--core-messages nil)
+           (johnson-worker-test--protocol-errors nil))
+       (unwind-protect
+           (progn ,@body)
+         (johnson-worker-stop)
+         (cancel-function-timers #'johnson-worker--decode-next)
+         (when (get-buffer johnson-worker--diagnostics-buffer-name)
+           (kill-buffer johnson-worker--diagnostics-buffer-name))))))
+
+(defmacro johnson-worker-test--with-stepped-client (&rest body)
+  "Run BODY like `johnson-worker-test--with-live-client', stepped manually.
+The decode delay is bound high so armed timers never fire on their own;
+BODY advances the decoder with `johnson-worker-test--pump-frame'."
+  (declare (indent 0) (debug t))
+  `(let ((johnson-worker--decode-delay 60))
+     (johnson-worker-test--with-live-client ,@body)))
+
+(defmacro johnson-worker-test--with-retrieving-client (process &rest body)
+  "Run BODY with a client already in `retrieving' state over a `cat' child.
+PROCESS is bound to the child; the client message handler and sentinel
+are the real ones, the core function is the test recorder, and the
+active request expects lookup 1, dictionary 0, entry 0.  All processes,
+buffers, and timers are cleaned up even on failure."
+  (declare (indent 1) (debug (symbolp body)))
+  `(let* ((johnson-worker-test--messages-seen 0)
+          (johnson-worker-test--protocol-errors nil)
+          (johnson-worker-test--core-messages nil)
+          (johnson-worker--decode-delay 60)
+          (johnson-worker--receive-buffer
+           (generate-new-buffer " *johnson-worker-test-receive*"))
+          (johnson-worker--decode-timer nil)
+          (johnson-worker--state 'retrieving)
+          (johnson-worker--terminating nil)
+          (johnson-worker--pending-requests nil)
+          (johnson-worker--active-request
+           (list :request nil :lookup 1 :dictionary 0 :stale nil :started t
+                 :next-entry 0 :entry nil :chunk nil))
+          (johnson-worker--message-function #'johnson-worker--handle-message)
+          (johnson-worker--core-function #'johnson-worker-test--record-message)
+          (johnson-worker--entry-assemblies (make-hash-table :test #'equal))
+          (,process (make-process
+                     :name "johnson-worker-test"
+                     :command '("cat")
+                     :connection-type 'pipe
+                     :coding 'binary
+                     :noquery t
+                     :filter #'johnson-worker--process-filter
+                     :sentinel #'johnson-worker--sentinel))
+          (johnson-worker--process ,process))
+     (unwind-protect
+         (progn ,@body)
+       (when (process-live-p ,process)
+         (delete-process ,process))
+       (cancel-function-timers #'johnson-worker--decode-next)
+       (when (buffer-live-p johnson-worker--receive-buffer)
+         (kill-buffer johnson-worker--receive-buffer))
+       (when (get-buffer johnson-worker--diagnostics-buffer-name)
+         (kill-buffer johnson-worker--diagnostics-buffer-name)))))
+
+(defun johnson-worker-test--feed (process frame)
+  "Hand FRAME from PROCESS to the client filter and drain the decoder."
+  (johnson-worker--process-filter process frame)
+  (johnson-worker-test--drain))
+
+(defun johnson-worker-test--cancel-decode-timer ()
+  "Cancel and clear the armed decode timer, if any."
+  (when (timerp johnson-worker--decode-timer)
+    (cancel-timer johnson-worker--decode-timer))
+  (setq johnson-worker--decode-timer nil))
+
+(defun johnson-worker-test--peek-line ()
+  "Return the first complete buffered line without consuming it."
+  (with-current-buffer johnson-worker--receive-buffer
+    (save-excursion
+      (goto-char (point-min))
+      (when (search-forward "\n" nil t)
+        (buffer-substring-no-properties (point-min) (1- (point)))))))
+
+(defun johnson-worker-test--pump-frame ()
+  "Decode buffered worker lines until one protocol frame is handled."
+  (let (done)
+    (while (not done)
+      (should (johnson-test-support-wait-for
+               #'johnson-worker--complete-line-buffered-p 10
+               johnson-worker--process))
+      (let ((line (johnson-worker-test--peek-line)))
+        (johnson-worker-test--cancel-decode-timer)
+        (johnson-worker--decode-next)
+        (setq done (string-prefix-p johnson-protocol-prefix line))))))
+
+(defun johnson-worker-test--wait-for-sentinel ()
+  "Wait until the worker sentinel has cleared the client process."
+  (should (johnson-test-support-wait-for
+           (lambda () (null johnson-worker--process)) 10)))
+
+;;;; Client lifecycle
+
+(ert-deftest johnson-worker-test-start-is-nonblocking ()
+  (johnson-worker-test--with-live-client
+    (let* ((sent nil)
+           (real-send (symbol-function 'johnson-worker--send)))
+      (cl-letf (((symbol-function 'johnson-worker--send)
+                 (lambda (message)
+                   (push (cons johnson-worker--state
+                               (plist-get message :type))
+                         sent)
+                   (funcall real-send message))))
+        (johnson-worker-test--forbidding-blocking
+          (johnson-worker-start #'johnson-worker-test--record-message))
+        (should (eq johnson-worker--state 'starting))
+        (should (johnson-worker-live-p))
+        (should-not (johnson-worker-ready-p))
+        (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                               johnson-worker--process))
+        (should (equal (reverse sent) '((configuring . configure))))
+        (johnson-worker-submit
+         (johnson-worker-test--request-plist 1 0 '("slow:0.2:hello")))
+        (should (johnson-test-support-wait-for
+                 (lambda () (eq johnson-worker--state 'retrieving)) 10
+                 johnson-worker--process))
+        (should (johnson-test-support-wait-for
+                 (lambda ()
+                   (johnson-worker-test--core-messages-of-type
+                    'dictionary-complete))
+                 10 johnson-worker--process))
+        (should (johnson-worker-ready-p))
+        (should (equal (mapcar #'cdr (reverse sent)) '(configure request)))
+        (should (equal (mapcar #'car (reverse sent))
+                       '(configuring retrieving)))
+        (let ((entry (car (johnson-worker-test--core-messages-of-type
+                           'entry))))
+          (should entry)
+          (should (equal (plist-get entry :raw) "hello"))
+          (should (equal (plist-get entry :context) '(:prepared t))))))))
+
+(ert-deftest johnson-worker-test-submit-before-ready-is-queued ()
+  (johnson-worker-test--with-live-client
+    (let* ((sent nil)
+           (real-send (symbol-function 'johnson-worker--send)))
+      (cl-letf (((symbol-function 'johnson-worker--send)
+                 (lambda (message)
+                   (push (cons johnson-worker--state
+                               (plist-get message :type))
+                         sent)
+                   (funcall real-send message))))
+        (johnson-worker-start #'johnson-worker-test--record-message)
+        (johnson-worker-submit
+         (johnson-worker-test--request-plist 1 0 '("hello")))
+        (should (eq johnson-worker--state 'starting))
+        (should-not sent)
+        (should (johnson-test-support-wait-for
+                 (lambda ()
+                   (johnson-worker-test--core-messages-of-type
+                    'dictionary-complete))
+                 10 johnson-worker--process))
+        (should (equal (mapcar #'cdr (reverse sent)) '(configure request)))
+        (should (equal (mapcar #'car (reverse sent))
+                       '(configuring retrieving)))))))
+
+(ert-deftest johnson-worker-test-configure-frame-includes-format-configs ()
+  (let ((johnson--formats johnson--formats)
+        (johnson-cache-directory "~/johnson-test-cache"))
+    (johnson-register-format
+     :name "config-fixture"
+     :extensions nil
+     :detect #'ignore
+     :retrieve-entry #'ignore
+     :worker-config (lambda () '(:enabled t))
+     :apply-worker-config #'ignore)
+    (let ((frame (johnson-worker--configure-frame)))
+      (should (eq (nth 0 frame) :type))
+      (should (eq (nth 1 frame) 'configure))
+      (should (equal (plist-get frame :cache-directory)
+                     (expand-file-name "~/johnson-test-cache")))
+      (let ((entry (seq-find (lambda (fmt)
+                               (equal (plist-get fmt :name) "config-fixture"))
+                             (plist-get frame :formats))))
+        (should entry)
+        (should (equal (plist-get entry :config) '(:enabled t))))
+      (should-not (seq-find (lambda (fmt)
+                              (equal (plist-get fmt :name) "worker-fixture"))
+                            (plist-get frame :formats))))))
+
+;;;; Entry chunk assembly
+
+(ert-deftest johnson-worker-test-chunks-assemble-into-single-entry ()
+  (johnson-worker-test--with-retrieving-client process
+    (let* ((raw (make-string 70000 ?x))
+           (context '(:origin "assembly-test"))
+           (frames (johnson-protocol-entry-frames
+                    '(:lookup 1 :dictionary 0 :entry 0)
+                    (list :raw raw :context context))))
+      (should (= (length frames) 3))
+      (johnson-worker-test--feed process (nth 0 frames))
+      (should (= johnson-worker-test--messages-seen 0))
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 1))
+      (johnson-worker-test--feed process (nth 1 frames))
+      (should (= johnson-worker-test--messages-seen 0))
+      (johnson-worker-test--feed process (nth 2 frames))
+      (should (= johnson-worker-test--messages-seen 1))
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 0))
+      (let ((entry (car (johnson-worker-test--core-messages-of-type 'entry))))
+        (should (equal (plist-get entry :lookup) 1))
+        (should (equal (plist-get entry :dictionary) 0))
+        (should (equal (plist-get entry :entry) 0))
+        (should (equal (plist-get entry :raw) raw))
+        (should (equal (plist-get entry :context) context))))))
+
+(ert-deftest johnson-worker-test-out-of-order-entry-fails-protocol ()
+  (johnson-worker-test--with-retrieving-client process
+    (let ((frames (johnson-protocol-entry-frames
+                   '(:lookup 1 :dictionary 0 :entry 1)
+                   '(:raw "wrong" :context nil))))
+      (johnson-worker-test--feed process (car frames))
+      (johnson-worker-test--check-failure process)
+      (should-not (johnson-worker-test--core-messages-of-type 'entry))
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 0))
+      (johnson-worker-test--wait-for-sentinel)
+      (should-not (johnson-worker-test--core-messages-of-type 'worker-exit))
+      (should (= johnson-worker-test--messages-seen 1)))))
+
+(ert-deftest johnson-worker-test-out-of-order-chunk-fails-protocol ()
+  (johnson-worker-test--with-retrieving-client process
+    (let ((frames (johnson-protocol-entry-frames
+                   '(:lookup 1 :dictionary 0 :entry 0)
+                   (list :raw (make-string 70000 ?x) :context nil))))
+      (should (= (length frames) 3))
+      (johnson-worker-test--feed process (nth 0 frames))
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 1))
+      (johnson-worker-test--feed process (nth 2 frames))
+      (johnson-worker-test--check-failure process)
+      (should-not (johnson-worker-test--core-messages-of-type 'entry))
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 0))
+      (johnson-worker-test--wait-for-sentinel)
+      (should-not (johnson-worker-test--core-messages-of-type 'worker-exit))
+      (should (= johnson-worker-test--messages-seen 1)))))
+
+(ert-deftest johnson-worker-test-mismatched-request-identity-fails-protocol ()
+  (johnson-worker-test--with-retrieving-client process
+    (let ((frames (johnson-protocol-entry-frames
+                   '(:lookup 9 :dictionary 0 :entry 0)
+                   '(:raw "other" :context nil))))
+      (johnson-worker-test--feed process (car frames))
+      (johnson-worker-test--check-failure process)
+      (should-not (johnson-worker-test--core-messages-of-type 'entry)))))
+
+(ert-deftest johnson-worker-test-stale-stream-violation-still-fails ()
+  (johnson-worker-test--with-retrieving-client process
+    (plist-put johnson-worker--active-request :stale t)
+    (let ((frames (johnson-protocol-entry-frames
+                   '(:lookup 1 :dictionary 0 :entry 1)
+                   '(:raw "wrong" :context nil))))
+      (johnson-worker-test--feed process (car frames))
+      (johnson-worker-test--check-failure process))))
+
+;;;; Supersession
+
+(ert-deftest johnson-worker-test-supersession-discards-stale-lookup ()
+  (johnson-worker-test--with-stepped-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (johnson-worker-test--pump-frame)
+    (should (eq johnson-worker--state 'configuring))
+    (johnson-worker-test--pump-frame)
+    (should (johnson-worker-ready-p))
+    (johnson-worker-submit
+     (johnson-worker-test--request-plist 1 0 '("large:70000")))
+    (should (eq johnson-worker--state 'retrieving))
+    (johnson-worker-test--pump-frame)
+    (johnson-worker-test--pump-frame)
+    (should (= (hash-table-count johnson-worker--entry-assemblies) 1))
+    (johnson-worker-submit
+     (johnson-worker-test--request-plist 2 0 '("b-entry")))
+    (should (plist-get johnson-worker--active-request :stale))
+    (should (= (length johnson-worker--pending-requests) 1))
+    (should (= (hash-table-count johnson-worker--entry-assemblies) 1))
+    (johnson-worker-test--pump-frame)
+    (should-not (eq johnson-worker--state 'failed))
+    (should (= (hash-table-count johnson-worker--entry-assemblies) 1))
+    (johnson-worker-test--pump-frame)
+    (should-not (eq johnson-worker--state 'failed))
+    (should-not (johnson-worker-test--core-messages-of-type 'entry))
+    (should (equal (plist-get johnson-worker--active-request :lookup) 1))
+    (johnson-worker-test--pump-frame)
+    (should-not (eq johnson-worker--state 'failed))
+    (should-not johnson-worker-test--protocol-errors)
+    (should (eq johnson-worker--state 'retrieving))
+    (should (equal (plist-get johnson-worker--active-request :lookup) 2))
+    (should-not
+     (seq-find (lambda (message) (equal (plist-get message :lookup) 1))
+               (johnson-worker-test--core-messages-of-type
+                'dictionary-complete)))
+    (johnson-worker-test--pump-frame)
+    (johnson-worker-test--pump-frame)
+    (johnson-worker-test--pump-frame)
+    (let ((entry (car (johnson-worker-test--core-messages-of-type 'entry))))
+      (should entry)
+      (should (equal (plist-get entry :lookup) 2))
+      (should (equal (plist-get entry :raw) "b-entry")))
+    (should (johnson-worker-ready-p))))
+
+;;;; Stop, crash, and sentinel
+
+(ert-deftest johnson-worker-test-stop-is-immediate-and-silent ()
+  (johnson-worker-test--with-live-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))
+    (let ((process johnson-worker--process))
+      (johnson-worker-test--forbidding-blocking
+        (johnson-worker-stop))
+      (should (eq johnson-worker--state 'stopped))
+      (should-not johnson-worker--process)
+      (should-not (process-live-p process))
+      (should-not (johnson-worker-live-p)))
+    (johnson-test-support-wait-for #'ignore 0.3)
+    (should (eq johnson-worker--state 'stopped))
+    (should-not (johnson-worker-test--core-messages-of-type 'worker-exit))))
+
+(ert-deftest johnson-worker-test-crash-delivers-worker-exit ()
+  (johnson-worker-test--with-live-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))
+    (let ((process johnson-worker--process))
+      (delete-process process)
+      (should (johnson-test-support-wait-for
+               (lambda () (eq johnson-worker--state 'failed)) 10)))
+    (should-not johnson-worker--process)
+    (let ((exits (johnson-worker-test--core-messages-of-type 'worker-exit)))
+      (should (= (length exits) 1))
+      (should (stringp (plist-get (car exits) :status)))
+      (should (equal (plist-get (car exits) :diagnostics)
+                     johnson-worker--diagnostics-buffer-name)))
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))))
+
+(ert-deftest johnson-worker-test-late-sentinel-leaves-replacement-alone ()
+  (johnson-worker-test--with-live-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))
+    (let ((stale (make-process :name "johnson-worker-test-stale"
+                               :command '("cat")
+                               :connection-type 'pipe
+                               :noquery t)))
+      (delete-process stale)
+      (johnson-worker--sentinel stale "killed\n"))
+    (should (johnson-worker-ready-p))
+    (should (johnson-worker-live-p))
+    (should-not (johnson-worker-test--core-messages-of-type 'worker-exit))))
+
+(ert-deftest johnson-worker-test-shutdown-at-exit-sends-shutdown-when-ready ()
+  (johnson-worker-test--with-live-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))
+    (let ((process johnson-worker--process))
+      (johnson-worker-test--forbidding-blocking
+        (johnson-worker--shutdown-at-exit))
+      (should (johnson-test-support-wait-for
+               (lambda () (eq (process-status process) 'exit)) 10 process))
+      (should (zerop (process-exit-status process)))
+      (should (johnson-test-support-wait-for
+               (lambda () (eq johnson-worker--state 'stopped)) 10))
+      (should-not (johnson-worker-test--core-messages-of-type
+                   'worker-exit)))))
+
+(ert-deftest johnson-worker-test-shutdown-at-exit-stops-unready-worker ()
+  (johnson-worker-test--with-live-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (eq johnson-worker--state 'starting))
+    (let ((process johnson-worker--process))
+      (johnson-worker-test--forbidding-blocking
+        (johnson-worker--shutdown-at-exit))
+      (should (eq johnson-worker--state 'stopped))
+      (should-not johnson-worker--process)
+      (should-not (process-live-p process)))
+    (johnson-test-support-wait-for #'ignore 0.3)
+    (should (eq johnson-worker--state 'stopped))
+    (should-not (johnson-worker-test--core-messages-of-type 'worker-exit))))
 
 (provide 'johnson-worker-test)
 ;;; johnson-worker-test.el ends here
