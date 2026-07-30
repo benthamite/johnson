@@ -717,27 +717,60 @@ raise it if completion feels sluggish with very large indexes:
 @section Rendering performance
 
 @vindex johnson-render-batch-size
+@vindex johnson-render-scheduling-delay
 @vindex johnson-render-idle-delay
 @vindex johnson-render-batch-time-budget
-The first dictionary result is rendered synchronously when the
-@code{*johnson*} buffer is displayed, so the buffer appears immediately
-even when a lookup matches many dictionaries.  Remaining results are
-rendered in the background via an idle timer, which yields to user
-input between batches.
+Johnson displays the results buffer and its known table of contents
+before reading dictionary entries.  A persistent child Emacs retrieves
+entries and reuses backend caches across lookups.  The interactive Emacs
+inserts ready entries in bounded ordinary-timer slices and checks for
+pending input before every unit.
 
-The user option @code{johnson-render-batch-size} (default @code{1}) controls
-the minimum number of results rendered per idle slice.  After rendering
-that minimum, Johnson keeps draining fast results until
-@code{johnson-render-batch-time-budget} expires or Emacs has pending input.
-The default time budget is @code{0.05} seconds.
+The table of contents lists the local dictionaries known to match when
+the lookup starts.  Remote DICT sections cannot be known in advance,
+so their items are appended to the table of contents progressively, as
+each server reports a match (@ref{DICT protocol}).
+
+The user option @code{johnson-render-batch-size} (default @code{1}) is the floor
+of each insertion slice: the minimum number of queued render units
+(section headers, streamed entries, and section closings) a slice
+inserts before its time budget applies.  After inserting that minimum,
+Johnson keeps draining ready units until
+@code{johnson-render-batch-time-budget} (default @code{0.05} seconds) expires or
+user input arrives.  Raise the time budget to make all results
+available sooner, at the cost of longer pauses when individual entries
+are slow to render:
 
 @lisp
 (setopt johnson-render-batch-time-budget 0.1)
 @end lisp
 
-The user option @code{johnson-render-idle-delay} (default @code{0.0}) sets
-the idle time that must elapse before the next slice fires.  Raise
-this value only if you want an additional pause between slices.
+The user option @code{johnson-render-scheduling-delay} (default @code{0.01})
+sets the delay, in seconds, before the next insertion slice is
+scheduled.  The slices run on ordinary timers, not idle timers, so
+results keep streaming in while you type; each slice checks for
+pending input first and yields immediately when there is any.  The
+option's former name, @code{johnson-render-idle-delay}, is kept as an
+obsolete alias.
+
+When the retrieval child fails, the failure is explicit: Johnson never
+falls back to retrieving entries in the interactive Emacs silently.
+The loading line is replaced with one of the following messages, each
+naming the diagnostics buffer that holds the details:
+
+@example
+[Johnson retrieval worker exited with status STATUS; see BUFFER]
+[Johnson retrieval protocol failed: MESSAGE; see BUFFER]
+[Johnson retrieval worker failed to start: MESSAGE; see BUFFER]
+@end example
+
+An error in a single dictionary does not abort the lookup: the failing
+dictionary renders as an error section and the remaining dictionaries
+continue streaming.
+
+The retrieval child's lifetime is decoupled from the results buffer;
+see @ref{Cache management} for when the worker is
+stopped and shut down.
 
 @node Commands
 @chapter Commands
@@ -1038,6 +1071,21 @@ cached dictionary buffers.
 The command reports how many cache buffers were closed and confirms that
 all database connections were closed.
 
+The retrieval worker is a persistent child Emacs that keeps backend
+caches warm across lookups (@ref{Rendering performance}).
+Commands that mutate the caches or indexes stop the worker first, so
+no retrieval overlaps the mutation: @code{johnson-index},
+@code{johnson-dict-list-reindex}, and @code{johnson-close-caches} all stop it,
+and @code{johnson-clear-index} stops it through @code{johnson-close-caches}
+(@ref{Clearing the index}).  The next lookup starts a
+fresh worker automatically.
+
+Killing the @samp{*johnson*} buffer does not stop the worker: it stays
+alive so a later lookup can reuse its caches.  When Emacs exits, a
+@code{kill-emacs-hook} function shuts the worker down, sending it a
+protocol shutdown when it is idle and terminating it immediately when
+it is blocked in a retrieval.
+
 @findex johnson-clear-resource-cache
 The command @code{johnson-clear-resource-cache} deletes the
 @samp{resources/} subdirectory of @code{johnson-cache-directory},
@@ -1335,6 +1383,38 @@ that retrieves the raw entry text at the given location.
 @code{:render-entry} --- a function @samp{(RAW-TEXT) → NIL} that inserts
 rendered content into the current buffer at point.
 @end itemize
+
+A format may also register worker hooks, which let its retrieval run
+inside the persistent retrieval child
+(@ref{Rendering performance}) while rendering
+stays in the interactive Emacs:
+
+@itemize
+@item
+@code{:worker-query} --- the query function the worker runs for formats
+without a file-based index, such as the DICT protocol backend
+(@ref{DICT protocol}); it is called with the
+request's word in place of the indexed @code{:retrieve-entry} path.
+@item
+@code{:worker-prepare-entry} --- called in the retrieval worker with the
+dictionary plist, the database match, and the raw entry string;
+returns a serializable packet of the form
+@samp{(:raw RAW :context CONTEXT)}.
+@item
+@code{:render-entry-with-context} --- called in the interactive Emacs
+with the packet's RAW and CONTEXT values; it must rely only on
+CONTEXT, never on global state set at retrieval time.
+@item
+@code{:worker-config} --- returns extra serializable configuration the
+parent sends to the worker at startup.
+@item
+@code{:apply-worker-config} --- called in the worker to apply the
+configuration returned by @code{:worker-config}.
+@end itemize
+
+Formats that register none of these hooks keep the single-argument
+@code{:render-entry} path and receive a default packet with a @code{nil}
+context.
 
 If a format with the same @code{:name} is already registered, it is replaced.
 This allows format backends to re-register themselves (e.g., after

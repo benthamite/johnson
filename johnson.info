@@ -670,23 +670,52 @@ File: johnson.info,  Node: Rendering performance,  Prev: Completion behavior,  U
 2.18 Rendering performance
 ==========================
 
-The first dictionary result is rendered synchronously when the
-‘*johnson*’ buffer is displayed, so the buffer appears immediately even
-when a lookup matches many dictionaries.  Remaining results are rendered
-in the background via an idle timer, which yields to user input between
-batches.
+Johnson displays the results buffer and its known table of contents
+before reading dictionary entries.  A persistent child Emacs retrieves
+entries and reuses backend caches across lookups.  The interactive Emacs
+inserts ready entries in bounded ordinary-timer slices and checks for
+pending input before every unit.
 
-   The user option ‘johnson-render-batch-size’ (default ‘1’) controls
-the minimum number of results rendered per idle slice.  After rendering
-that minimum, Johnson keeps draining fast results until
-‘johnson-render-batch-time-budget’ expires or Emacs has pending input.
-The default time budget is ‘0.05’ seconds.
+   The table of contents lists the local dictionaries known to match
+when the lookup starts.  Remote DICT sections cannot be known in
+advance, so their items are appended to the table of contents
+progressively, as each server reports a match (*note DICT protocol::).
+
+   The user option ‘johnson-render-batch-size’ (default ‘1’) is the
+floor of each insertion slice: the minimum number of queued render units
+(section headers, streamed entries, and section closings) a slice
+inserts before its time budget applies.  After inserting that minimum,
+Johnson keeps draining ready units until
+‘johnson-render-batch-time-budget’ (default ‘0.05’ seconds) expires or
+user input arrives.  Raise the time budget to make all results available
+sooner, at the cost of longer pauses when individual entries are slow to
+render:
 
      (setopt johnson-render-batch-time-budget 0.1)
 
-   The user option ‘johnson-render-idle-delay’ (default ‘0.0’) sets the
-idle time that must elapse before the next slice fires.  Raise this
-value only if you want an additional pause between slices.
+   The user option ‘johnson-render-scheduling-delay’ (default ‘0.01’)
+sets the delay, in seconds, before the next insertion slice is
+scheduled.  The slices run on ordinary timers, not idle timers, so
+results keep streaming in while you type; each slice checks for pending
+input first and yields immediately when there is any.  The option's
+former name, ‘johnson-render-idle-delay’, is kept as an obsolete alias.
+
+   When the retrieval child fails, the failure is explicit: Johnson
+never falls back to retrieving entries in the interactive Emacs
+silently.  The loading line is replaced with one of the following
+messages, each naming the diagnostics buffer that holds the details:
+
+     [Johnson retrieval worker exited with status STATUS; see BUFFER]
+     [Johnson retrieval protocol failed: MESSAGE; see BUFFER]
+     [Johnson retrieval worker failed to start: MESSAGE; see BUFFER]
+
+   An error in a single dictionary does not abort the lookup: the
+failing dictionary renders as an error section and the remaining
+dictionaries continue streaming.
+
+   The retrieval child's lifetime is decoupled from the results buffer;
+see *note Cache management:: for when the worker is stopped and shut
+down.
 
 
 File: johnson.info,  Node: Commands,  Next: Functions,  Prev: User options,  Up: Top
@@ -993,6 +1022,20 @@ by cached dictionary buffers.
    The command reports how many cache buffers were closed and confirms
 that all database connections were closed.
 
+   The retrieval worker is a persistent child Emacs that keeps backend
+caches warm across lookups (*note Rendering performance::).  Commands
+that mutate the caches or indexes stop the worker first, so no retrieval
+overlaps the mutation: ‘johnson-index’, ‘johnson-dict-list-reindex’, and
+‘johnson-close-caches’ all stop it, and ‘johnson-clear-index’ stops it
+through ‘johnson-close-caches’ (*note Clearing the index::).  The next
+lookup starts a fresh worker automatically.
+
+   Killing the ‘*johnson*’ buffer does not stop the worker: it stays
+alive so a later lookup can reuse its caches.  When Emacs exits, a
+‘kill-emacs-hook’ function shuts the worker down, sending it a protocol
+shutdown when it is idle and terminating it immediately when it is
+blocked in a retrieval.
+
    The command ‘johnson-clear-resource-cache’ deletes the ‘resources/’
 subdirectory of ‘johnson-cache-directory’, removing all audio files
 extracted from companion zip archives (*note Audio playback::).
@@ -1276,6 +1319,29 @@ backend with the core.  It accepts a plist with the following keys:
      that retrieves the raw entry text at the given location.
    • ‘:render-entry’ -- a function ‘(RAW-TEXT) → NIL’ that inserts
      rendered content into the current buffer at point.
+
+   A format may also register worker hooks, which let its retrieval run
+inside the persistent retrieval child (*note Rendering performance::)
+while rendering stays in the interactive Emacs:
+
+   • ‘:worker-query’ -- the query function the worker runs for formats
+     without a file-based index, such as the DICT protocol backend
+     (*note DICT protocol::); it is called with the request's word in
+     place of the indexed ‘:retrieve-entry’ path.
+   • ‘:worker-prepare-entry’ -- called in the retrieval worker with the
+     dictionary plist, the database match, and the raw entry string;
+     returns a serializable packet of the form ‘(:raw RAW :context
+     CONTEXT)’.
+   • ‘:render-entry-with-context’ -- called in the interactive Emacs
+     with the packet's RAW and CONTEXT values; it must rely only on
+     CONTEXT, never on global state set at retrieval time.
+   • ‘:worker-config’ -- returns extra serializable configuration the
+     parent sends to the worker at startup.
+   • ‘:apply-worker-config’ -- called in the worker to apply the
+     configuration returned by ‘:worker-config’.
+
+   Formats that register none of these hooks keep the single-argument
+‘:render-entry’ path and receive a default packet with a ‘nil’ context.
 
    If a format with the same ‘:name’ is already registered, it is
 replaced.  This allows format backends to re-register themselves (e.g.,
@@ -2351,7 +2417,7 @@ File: johnson.info,  Node: Function index,  Next: Variable index,  Up: Indices
 * johnson-clear-index:                   Clearing the index.   (line  6)
 * johnson-clear-resource-cache:          Companion zip archives.
                                                                (line  6)
-* johnson-clear-resource-cache <1>:      Cache management.     (line 18)
+* johnson-clear-resource-cache <1>:      Cache management.     (line 32)
 * johnson-close-caches:                  Cache management.     (line  6)
 * johnson-collapse-all:                  Navigating the results buffer.
                                                                (line  6)
@@ -2546,6 +2612,7 @@ File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
 * johnson-render-batch-size:             Rendering performance. (line 6)
 * johnson-render-batch-time-budget:      Rendering performance. (line 6)
 * johnson-render-idle-delay:             Rendering performance. (line 6)
+* johnson-render-scheduling-delay:       Rendering performance. (line 6)
 * johnson-reorder-unmatched-face:        UI faces.              (line 6)
 * johnson-scan-idle-delay:               Scan-popup mode.       (line 6)
 * johnson-scan-popup-duration:           Scan-popup mode.       (line 6)
@@ -2581,75 +2648,75 @@ Node: Bookmarks22248
 Node: History buffer22858
 Node: Completion behavior23696
 Node: Rendering performance24394
-Node: Commands25431
-Node: Looking up words26059
-Node: Indexing dictionaries28343
-Node: Managing groups and scope30020
-Node: Navigating the results buffer31110
-Node: Following cross-references33492
-Node: Navigation history34401
-Node: Copying entries35809
-Node: Dictionary list37061
-Node: Cache management38472
-Node: Toggling images39396
-Node: Searching definitions39902
-Node: Eldoc integration commands40633
-Node: Scan-popup mode commands41538
-Node: Managing bookmarks42315
-Node: Browsing history43460
-Node: Browsing dictionary files44390
-Node: Clearing the index44936
-Node: Reordering dictionaries45632
-Node: Importing GoldenDict order46795
-Node: Transient menu47642
-Node: Functions48502
-Node: Format registration49205
-Node: Completion at point50956
-Node: Database lifecycle51859
-Node: Metadata storage52758
-Node: Headword normalization53929
-Node: Entry insertion54766
-Node: Querying entries55778
-Node: Staleness detection and reset57088
-Node: Wildcard and full-text search queries58518
-Node: Completion index59876
-Node: DSL format detection61188
-Node: DSL metadata parsing62151
-Node: DSL index building63162
-Node: DSL entry retrieval65190
-Node: DSL entry rendering66096
-Node: StarDict backend68299
-Node: MDict backend70026
-Node: BGL backend71623
-Node: DICT protocol backend72812
-Node: Dictzip backend74241
-Node: HTML rendering75255
-Node: RIPEMD-128 hashing76810
-Node: Audio playback functions77579
-Node: EPWING backend78405
-Node: EBZIP backend80164
-Node: Faces81110
-Node: Text styling faces81626
-Node: Content type faces82330
-Node: Link faces83591
-Node: Section header face84250
-Node: Color faces84838
-Node: UI faces86242
-Node: Tips86941
-Node: Looking up words in PDF documents87079
-Node: Roadmap88676
-Node: Version 01 --- DSL89267
-Node: Version 02 --- StarDict and compressed DSL90267
-Node: Version 03 --- MDict and DSL abbreviations91560
-Node: Version 04 --- BGL DICT and more92058
-Node: Version 05 --- EPWING93409
-Node: Version 06 (current) --- EPWING improvements and audits94211
-Node: Future features94690
-Node: Contributing95009
-Node: Running the test suite95549
-Node: Indices95909
-Node: Function index96047
-Node: Variable index107952
+Node: Commands26953
+Node: Looking up words27581
+Node: Indexing dictionaries29865
+Node: Managing groups and scope31542
+Node: Navigating the results buffer32632
+Node: Following cross-references35014
+Node: Navigation history35923
+Node: Copying entries37331
+Node: Dictionary list38583
+Node: Cache management39994
+Node: Toggling images41720
+Node: Searching definitions42226
+Node: Eldoc integration commands42957
+Node: Scan-popup mode commands43862
+Node: Managing bookmarks44639
+Node: Browsing history45784
+Node: Browsing dictionary files46714
+Node: Clearing the index47260
+Node: Reordering dictionaries47956
+Node: Importing GoldenDict order49119
+Node: Transient menu49966
+Node: Functions50826
+Node: Format registration51529
+Node: Completion at point54571
+Node: Database lifecycle55474
+Node: Metadata storage56373
+Node: Headword normalization57544
+Node: Entry insertion58381
+Node: Querying entries59393
+Node: Staleness detection and reset60703
+Node: Wildcard and full-text search queries62133
+Node: Completion index63491
+Node: DSL format detection64803
+Node: DSL metadata parsing65766
+Node: DSL index building66777
+Node: DSL entry retrieval68805
+Node: DSL entry rendering69711
+Node: StarDict backend71914
+Node: MDict backend73641
+Node: BGL backend75238
+Node: DICT protocol backend76427
+Node: Dictzip backend77856
+Node: HTML rendering78870
+Node: RIPEMD-128 hashing80425
+Node: Audio playback functions81194
+Node: EPWING backend82020
+Node: EBZIP backend83779
+Node: Faces84725
+Node: Text styling faces85241
+Node: Content type faces85945
+Node: Link faces87206
+Node: Section header face87865
+Node: Color faces88453
+Node: UI faces89857
+Node: Tips90556
+Node: Looking up words in PDF documents90694
+Node: Roadmap92291
+Node: Version 01 --- DSL92882
+Node: Version 02 --- StarDict and compressed DSL93882
+Node: Version 03 --- MDict and DSL abbreviations95175
+Node: Version 04 --- BGL DICT and more95673
+Node: Version 05 --- EPWING97024
+Node: Version 06 (current) --- EPWING improvements and audits97826
+Node: Future features98305
+Node: Contributing98624
+Node: Running the test suite99164
+Node: Indices99524
+Node: Function index99662
+Node: Variable index111567
 
 End Tag Table
 
