@@ -143,6 +143,64 @@
       (should (> (length cached) 0))))
   (johnson-dict-test--cleanup))
 
+;;;; Worker hooks
+
+(ert-deftest johnson-dict-test-worker-query-bypasses-parent-cache ()
+  "Worker query returns entry packets without touching the result cache."
+  (let ((johnson-dict--result-cache (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'johnson-dict--define)
+               (lambda (_host _port _db _word)
+                 '("first definition" "second definition"))))
+      (should
+       (equal
+        (mapcar (lambda (packet) (plist-get packet :raw))
+                (johnson-dict-worker-query
+                 '(:path "dict://dict.org:2628/gcide") "house"))
+        '("first definition" "second definition")))
+      (should (= (hash-table-count johnson-dict--result-cache) 0)))))
+
+(ert-deftest johnson-dict-test-worker-query-no-match ()
+  "Worker query returns nil when the server has no definitions."
+  (let ((johnson-dict--result-cache (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'johnson-dict--define)
+               (lambda (_host _port _db _word) nil)))
+      (should-not (johnson-dict-worker-query
+                   '(:path "dict://dict.org:2628/gcide") "xyzzyplugh42"))
+      (should (= (hash-table-count johnson-dict--result-cache) 0)))))
+
+(ert-deftest johnson-dict-test-worker-query-network-error ()
+  "Worker query lets network errors signal to the caller."
+  (let ((johnson-dict--result-cache (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'johnson-dict--define)
+               (lambda (_host _port _db _word)
+                 (error "DICT protocol timeout waiting for response"))))
+      (should-error (johnson-dict-worker-query
+                     '(:path "dict://dict.org:2628/gcide") "house")
+                    :type 'error)
+      (should (= (hash-table-count johnson-dict--result-cache) 0)))))
+
+(ert-deftest johnson-dict-test-worker-config-roundtrip ()
+  "Worker config serializes and restores servers and enabled state."
+  (let* ((johnson-dict-enabled t)
+         (johnson-dict-servers '(("dict.example.org" . 2628)
+                                 ("localhost" . 9999)))
+         (config (johnson-dict-worker-config)))
+    (let ((johnson-dict-enabled nil)
+          (johnson-dict-servers nil))
+      (johnson-dict-apply-worker-config config)
+      (should (eq johnson-dict-enabled t))
+      (should (equal johnson-dict-servers
+                     '(("dict.example.org" . 2628)
+                       ("localhost" . 9999)))))))
+
+(ert-deftest johnson-dict-test-worker-hooks-registered ()
+  "DICT format registers worker query and config hooks."
+  (let ((fmt (johnson--get-format "dict-protocol")))
+    (should (eq (plist-get fmt :worker-query) #'johnson-dict-worker-query))
+    (should (eq (plist-get fmt :worker-config) #'johnson-dict-worker-config))
+    (should (eq (plist-get fmt :apply-worker-config)
+                #'johnson-dict-apply-worker-config))))
+
 ;;;; Format registration
 
 (ert-deftest johnson-dict-test-format-registered ()

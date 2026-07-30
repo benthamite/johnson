@@ -403,6 +403,31 @@ The definition must have been previously cached."
 DICT responses are plain text, so insert as-is."
   (insert text))
 
+;;;; Worker hooks
+
+(defun johnson-dict-worker-query (dict word)
+  "Return entry packets for DICT and WORD.
+DICT is a dictionary plist whose :path is a dict:// URL.  Query the
+DICT server directly, bypassing `johnson-dict--result-cache': the
+worker child owns its own connections and the parent cache must stay
+untouched.  Network errors signal to the caller, which handles them
+per dictionary."
+  (pcase-let ((`(,host ,port ,database)
+               (johnson-dict--parse-path (plist-get dict :path))))
+    (mapcar (lambda (definition)
+              (list :raw definition :context nil))
+            (johnson-dict--define host port database word))))
+
+(defun johnson-dict-worker-config ()
+  "Return serializable DICT worker configuration."
+  (list :enabled johnson-dict-enabled :servers johnson-dict-servers))
+
+(defun johnson-dict-apply-worker-config (config)
+  "Apply DICT worker CONFIG.
+CONFIG is a plist as returned by `johnson-dict-worker-config'."
+  (setq johnson-dict-enabled (plist-get config :enabled)
+        johnson-dict-servers (plist-get config :servers)))
+
 ;;;; Cache clearing
 
 (defun johnson-dict-clear-caches ()
@@ -425,6 +450,9 @@ DICT responses are plain text, so insert as-is."
    :retrieve-entry #'johnson-dict-retrieve-entry
    :render-entry #'johnson-dict-render-entry
    :query-exact #'johnson-dict-query-exact
-   :discover #'johnson-dict-discover))
+   :discover #'johnson-dict-discover
+   :worker-query #'johnson-dict-worker-query
+   :worker-config #'johnson-dict-worker-config
+   :apply-worker-config #'johnson-dict-apply-worker-config))
 
 ;;; johnson-dict.el ends here
