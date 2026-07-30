@@ -90,29 +90,32 @@ queries against the full headword index."
   :group 'johnson)
 
 (defcustom johnson-render-batch-size 1
-  "Number of dictionary results to render per background batch.
-After the first result is rendered synchronously, remaining
-results are rendered in batches of this size via an idle timer.
-A small value keeps Emacs responsive to user input between
-batches; a larger value makes all results available sooner but
-can cause perceptible pauses when individual entries are slow
-to render (e.g., uncached BGL or MDict files)."
+  "Number of render units inserted per ordinary timer slice.
+Each slice of the streaming renderer inserts up to this many queued
+render units (section headers, streamed entries, and section
+closings) before rearming its ordinary timer.  A small value keeps
+Emacs responsive to user input between slices; a larger value makes
+all results available sooner but can cause perceptible pauses when
+individual entries are slow to render (e.g., uncached BGL or MDict
+files)."
   :type '(integer 1 100)
   :group 'johnson)
 
-(defcustom johnson-render-idle-delay 0.0
-  "Seconds of idle time before the next deferred render batch fires.
-Rendering is scheduled via `run-with-idle-timer', so batches only
-run when Emacs is idle.  The default keeps draining fast results
-without adding artificial delay between batches."
+(define-obsolete-variable-alias
+  'johnson-render-idle-delay
+  'johnson-render-scheduling-delay
+  "0.7.0")
+
+(defcustom johnson-render-scheduling-delay 0.01
+  "Seconds before the next ordinary result insertion slice."
   :type 'number
   :group 'johnson)
 
 (defcustom johnson-render-batch-time-budget 0.05
-  "Maximum seconds spent rendering fast deferred results per idle slice.
-Each slice renders at least `johnson-render-batch-size' results.
-It then continues rendering while entries are fast, stopping when
-this budget expires or Emacs has pending input."
+  "Maximum seconds one ordinary timer slice spends inserting render units.
+A slice inserts at least `johnson-render-batch-size' render units.
+It then continues inserting queued units while this budget remains
+and Emacs has no pending user input."
   :type 'number
   :group 'johnson)
 
@@ -371,9 +374,13 @@ Each descriptor is a plist with `:kind' (`indexed' or `remote'),
 
 (defvar-local johnson--section-state nil
   "Bookkeeping plist of the current lookup.
-Carries the plan's `:total' descriptor count, the `:done' and
+Carries the looked-up `:word', the plan's `:total' descriptor count,
+the `:next' index of the first unsubmitted descriptor, the `:done' and
 `:matched' section counts, the same-dictionary `:fallback' plist, and
 the open section's `:section-start' marker and `:section-name'.")
+
+(defvar-local johnson--toc-marker nil
+  "Marker where dynamically discovered TOC items are appended, or nil.")
 
 (defvar-local johnson--history-entry nil
   "History log object of the current lookup, or nil.")
@@ -1351,7 +1358,8 @@ CONTEXT is the display context and ENTRY the history log object; see
         (setq johnson--lookup-plan plan)
         (setq johnson--history-entry entry)
         (setq johnson--section-state
-              (list :total (length plan) :done 0 :matched 0
+              (list :word word :total (length plan) :next 1
+                    :done 0 :matched 0
                     :fallback (and (plist-get context :fallback)
                                    (list :word word))
                     :section-start nil :section-name nil))
@@ -1374,38 +1382,66 @@ CONTEXT is the display context and ENTRY the history log object; see
     (pop-to-buffer buf)))
 
 (defun johnson--insert-plan-toc (plan)
-  "Insert a table of contents at point for the descriptors in PLAN."
+  "Insert a table of contents at point for the descriptors in PLAN.
+List only the indexed descriptors, whose sections are certain to
+render.  Remote candidates may miss, so their items are appended at
+`johnson--toc-marker' by `johnson--toc-add-item' only when their
+sections actually start."
   (when (> (length plan) 1)
     (johnson--insert-section-header "Contents")
     (let ((toc-start (point)))
       (dolist (item plan)
-        (let ((name (plist-get (plist-get item :dict) :name)))
-          (insert "  \u2022 ")
-          (let ((link-start (point)))
-            (insert name)
-            (make-text-button link-start (point)
-                              'face 'johnson-toc-face
-                              'action (lambda (_btn)
-                                        (johnson--jump-to-section name))
-                              'help-echo (format "Jump to %s" name)))
-          (insert "\n")))
-      (let ((ov (make-overlay toc-start (point))))
+        (when (eq (plist-get item :kind) 'indexed)
+          (johnson--insert-toc-item (plist-get (plist-get item :dict) :name))))
+      (setq johnson--toc-marker (point-marker))
+      (let ((ov (make-overlay toc-start (point) nil nil t)))
         (overlay-put ov 'johnson-section "Contents")
         (overlay-put ov 'johnson-section-content t)
         (overlay-put ov 'evaporate t))
       (insert "\n"))))
 
+(defun johnson--insert-toc-item (name)
+  "Insert one TOC line at point linking to the section for NAME."
+  (insert "  \u2022 ")
+  (let ((link-start (point)))
+    (insert name)
+    (make-text-button link-start (point)
+                      'face 'johnson-toc-face
+                      'action (lambda (_btn)
+                                (johnson--jump-to-section name))
+                      'help-echo (format "Jump to %s" name)))
+  (insert "\n"))
+
+(defun johnson--toc-add-item (name)
+  "Append a TOC item for the dynamically discovered section NAME."
+  (when (and (markerp johnson--toc-marker)
+             (marker-position johnson--toc-marker))
+    (save-excursion
+      (goto-char johnson--toc-marker)
+      (johnson--insert-toc-item name)
+      (set-marker johnson--toc-marker (point)))))
+
 (defun johnson--dispatch-plan (word plan)
-  "Submit one worker request per descriptor of PLAN for WORD.
-Start the retrieval worker first when it is not live.  Must run in the
-results buffer, after the shell is displayed."
+  "Submit the first descriptor of PLAN for WORD to the retrieval worker.
+Start the worker first when it is not live.  Later descriptors are
+submitted one at a time by `johnson--submit-next-descriptor' as each
+dictionary reports its terminal message, so this lookup never has more
+than one dictionary in flight.  Must run in the results buffer, after
+the shell is displayed."
   (unless (johnson-worker-live-p)
     (johnson-worker-start #'johnson--worker-message))
-  (let ((lookup johnson--lookup-id)
-        (dseq -1))
-    (dolist (item plan)
-      (setq dseq (1+ dseq))
-      (johnson-worker-submit (johnson--plan-request word lookup dseq item)))))
+  (johnson-worker-submit
+   (johnson--plan-request word johnson--lookup-id 0 (car plan))))
+
+(defun johnson--submit-next-descriptor ()
+  "Submit the next unsubmitted plan descriptor, when one remains."
+  (let* ((state johnson--section-state)
+         (next (plist-get state :next)))
+    (when (< next (plist-get state :total))
+      (plist-put state :next (1+ next))
+      (johnson-worker-submit
+       (johnson--plan-request (plist-get state :word) johnson--lookup-id
+                              next (nth next johnson--lookup-plan))))))
 
 (defun johnson--plan-request (word lookup dictionary item)
   "Return the worker request for descriptor ITEM of lookup LOOKUP.
@@ -1446,7 +1482,7 @@ unless they carry the buffer's current lookup generation."
   "Show worker failure MESSAGE in the results buffer."
   (when johnson--loading-marker
     (johnson--enqueue-render-unit
-     (list :unit 'lookup-failed
+     (list :type 'lookup-failed :lookup johnson--lookup-id
            :message (or (plist-get message :message)
                         (plist-get message :status)
                         "worker exited")))))
@@ -1460,35 +1496,37 @@ unless they carry the buffer's current lookup generation."
                (eq (plist-get item :kind) 'remote))
       (johnson--history-log-increment johnson--history-entry))
     (johnson--enqueue-render-unit
-     (list :unit 'section-start :name (plist-get message :name)))))
+     (list :type 'section-start :lookup johnson--lookup-id
+           :dict (plist-get item :dict)))))
 
 (defun johnson--handle-entry (message)
   "Enqueue the render unit for entry MESSAGE."
-  (let* ((item (nth (plist-get message :dictionary) johnson--lookup-plan))
-         (dict (plist-get item :dict)))
+  (let ((item (nth (plist-get message :dictionary) johnson--lookup-plan)))
     (johnson--enqueue-render-unit
-     (list :unit 'entry
-           :format-name (plist-get dict :format-name)
-           :raw (plist-get message :raw)
-           :context (plist-get message :context)))))
+     (list :type 'entry :lookup johnson--lookup-id
+           :dict (plist-get item :dict)
+           :packet (list :raw (plist-get message :raw)
+                         :context (plist-get message :context))))))
 
 (defun johnson--handle-dictionary-terminal (message error)
-  "Record terminal dictionary MESSAGE; ERROR non-nil marks a failure.
-Enqueue the section end or error line, and close the lookup or fall
-back to the full plan once the plan is exhausted."
+  "Advance the lookup past the dictionary ended by MESSAGE.
+When ERROR is non-nil, mark the dictionary failed by enqueuing its
+error section unit; otherwise enqueue its closing unit.  Then close
+the lookup or fall back to the full plan once the plan is exhausted,
+and submit the next descriptor when it is not."
   (let* ((state johnson--section-state)
          (item (nth (plist-get message :dictionary) johnson--lookup-plan))
          (dict (plist-get item :dict)))
     (plist-put state :done (1+ (plist-get state :done)))
-    (cond (error
-           (johnson--enqueue-render-unit
-            (list :unit 'dictionary-error
-                  :name (plist-get dict :name)
-                  :message (plist-get message :message))))
-          ((> (plist-get message :entries) 0)
-           (johnson--enqueue-render-unit (list :unit 'section-end))))
-    (when (>= (plist-get state :done) (plist-get state :total))
-      (johnson--finish-lookup state))))
+    (johnson--enqueue-render-unit
+     (if error
+         (list :type 'section-error :lookup johnson--lookup-id :dict dict
+               :message (plist-get message :message))
+       (list :type 'section-complete :lookup johnson--lookup-id
+             :dict dict)))
+    (if (>= (plist-get state :done) (plist-get state :total))
+        (johnson--finish-lookup state)
+      (johnson--submit-next-descriptor))))
 
 (defun johnson--finish-lookup (state)
   "Close the exhausted lookup described by STATE.
@@ -1500,74 +1538,89 @@ lookup with no matching section; otherwise enqueue the terminal
         (johnson--fallback-to-full-plan (plist-get fallback :word)
                                         johnson--history-entry
                                         johnson--lookup-id)
-      (johnson--enqueue-render-unit (list :unit 'lookup-complete)))))
+      (johnson--enqueue-render-unit
+       (list :type 'lookup-complete :lookup johnson--lookup-id)))))
 
 (defun johnson--enqueue-render-unit (unit)
-  "Append render UNIT to the queue and arm the render timer."
+  "Append render UNIT to the queue and arm the ordinary render timer."
   (setq johnson--render-queue (nconc johnson--render-queue (list unit)))
   (unless (timerp johnson--render-timer)
     (setq johnson--render-timer
-          (run-at-time 0 nil #'johnson--render-step (current-buffer)))))
+          (run-at-time johnson-render-scheduling-delay nil
+                       #'johnson--render-step (current-buffer)))))
 
 (defun johnson--render-step (buffer)
-  "Render queued units of BUFFER within one bounded batch.
-Render at least `johnson-render-batch-size' units, keep going while
-`johnson-render-batch-time-budget' allows and no input is pending, and
-rearm an ordinary timer when units remain."
+  "Insert queued render units of BUFFER within one bounded timer slice.
+Skip the slice entirely when user input is pending, insert one bounded
+batch otherwise, and rearm an ordinary timer when units remain."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (setq johnson--render-timer nil)
-      (save-excursion
-        (let ((inhibit-read-only t)
-              (deadline (+ (float-time) johnson-render-batch-time-budget))
-              (rendered 0))
-          (while (and johnson--render-queue
-                      (or (< rendered johnson-render-batch-size)
-                          (and (< (float-time) deadline)
-                               (not (input-pending-p)))))
-            (cl-incf rendered)
-            (johnson--render-unit (pop johnson--render-queue)))))
+      (unless (input-pending-p)
+        (johnson--render-slice))
       (when (and johnson--render-queue
                  (not (timerp johnson--render-timer)))
         (setq johnson--render-timer
-              (run-at-time 0 nil #'johnson--render-step buffer))))))
+              (run-at-time johnson-render-scheduling-delay nil
+                           #'johnson--render-step buffer))))))
+
+(defun johnson--render-slice ()
+  "Insert one bounded batch of queued render units.
+Insert at least one unit, then continue while `johnson-render-batch-size'
+or `johnson-render-batch-time-budget' permits, checking `input-pending-p'
+again before every additional unit.  Point and the point and start of
+every live window showing the buffer are preserved across the
+insertions through markers, never raw integer positions."
+  (let ((windows (johnson--capture-window-positions))
+        (inhibit-read-only t)
+        (deadline (+ (float-time) johnson-render-batch-time-budget))
+        (rendered 0))
+    (unwind-protect
+        (save-excursion
+          (while (and johnson--render-queue
+                      (or (< rendered johnson-render-batch-size)
+                          (< (float-time) deadline))
+                      (or (zerop rendered)
+                          (not (input-pending-p))))
+            (johnson--render-unit (pop johnson--render-queue))
+            (cl-incf rendered)))
+      (johnson--restore-window-positions windows))))
+
+(defun johnson--capture-window-positions ()
+  "Return (WINDOW POINT-MARKER START-MARKER) for windows on this buffer.
+Both markers have a non-nil insertion type, so an insertion exactly at
+either position leaves the marker attached to the original following
+text."
+  (mapcar (lambda (window)
+            (list window
+                  (copy-marker (window-point window) t)
+                  (copy-marker (window-start window) t)))
+          (get-buffer-window-list nil nil t)))
+
+(defun johnson--restore-window-positions (records)
+  "Restore window points and starts from RECORDS, clearing the markers.
+RECORDS is a list as returned by `johnson--capture-window-positions'."
+  (pcase-dolist (`(,window ,point ,start) records)
+    (when (window-live-p window)
+      (set-window-point window point)
+      (set-window-start window start t))
+    (set-marker point nil)
+    (set-marker start nil)))
 
 (defun johnson--render-unit (unit)
   "Insert one render UNIT at the render marker."
   (goto-char johnson--render-marker)
-  (pcase (plist-get unit :unit)
+  (pcase (plist-get unit :type)
     ('section-start
-     (johnson--insert-section-header (plist-get unit :name))
-     (insert "\n")
-     (plist-put johnson--section-state :section-name (plist-get unit :name))
-     (plist-put johnson--section-state :section-start (point-marker)))
+     (johnson--render-section-start (plist-get unit :dict)))
     ('entry
-     (condition-case err
-         (johnson--render-entry-packet
-          (johnson--get-format (plist-get unit :format-name))
-          (list :raw (plist-get unit :raw)
-                :context (plist-get unit :context)))
-       (error
-        (insert (propertize (format "[Error rendering entry: %s]\n"
-                                    (error-message-string err))
-                            'face 'error))))
-     (unless (bolp) (insert "\n")))
-    ('section-end
-     (let ((start (plist-get johnson--section-state :section-start))
-           (name (plist-get johnson--section-state :section-name)))
-       (when start
-         (let ((ov (make-overlay start (point))))
-           (overlay-put ov 'johnson-section name)
-           (overlay-put ov 'johnson-section-content t)
-           (overlay-put ov 'evaporate t))
-         (set-marker start nil))
-       (plist-put johnson--section-state :section-start nil))
-     (insert "\n"))
-    ('dictionary-error
-     (insert (propertize (format "[Error retrieving %s: %s]\n"
-                                 (plist-get unit :name)
-                                 (plist-get unit :message))
-                         'face 'error)))
+     (johnson--render-entry-unit (plist-get unit :dict)
+                                 (plist-get unit :packet)))
+    ('section-complete
+     (johnson--render-section-complete (plist-get unit :dict)))
+    ('section-error
+     (johnson--render-section-error (plist-get unit :dict)
+                                    (plist-get unit :message)))
     ('lookup-complete
      (johnson--remove-loading-line)
      (when (zerop (plist-get johnson--section-state :matched))
@@ -1579,6 +1632,62 @@ rearm an ordinary timer when units remain."
                                  (plist-get unit :message))
                          'face 'error))))
   (set-marker johnson--render-marker (point)))
+
+(defun johnson--render-section-start (dict)
+  "Open the results section of DICT: TOC item, header, content marker.
+A remote dictionary's TOC item is appended now, because remote
+candidates are left out of the initial table of contents."
+  (let ((name (plist-get dict :name)))
+    (when (eq (johnson--plan-kind dict) 'remote)
+      (johnson--toc-add-item name))
+    (johnson--insert-section-header name)
+    (insert "\n")
+    (plist-put johnson--section-state :section-name name)
+    (plist-put johnson--section-state :section-start (point-marker))))
+
+(defun johnson--plan-kind (dict)
+  "Return the current plan descriptor kind of the dictionary DICT."
+  (plist-get (cl-find dict johnson--lookup-plan
+                      :key (lambda (item) (plist-get item :dict)))
+             :kind))
+
+(defun johnson--render-entry-unit (dict packet)
+  "Insert entry PACKET of DICT, reporting render failures inline."
+  (condition-case err
+      (johnson--render-entry-packet
+       (johnson--get-format (plist-get dict :format-name)) packet)
+    (error
+     (insert (propertize (format "[Error rendering entry: %s]\n"
+                                 (error-message-string err))
+                         'face 'error))))
+  (unless (bolp) (insert "\n")))
+
+(defun johnson--render-section-complete (dict)
+  "Close the open section of DICT with its content overlay.
+A dictionary that produced no section leaves the buffer untouched."
+  (when (plist-get johnson--section-state :section-start)
+    (johnson--close-section (plist-get dict :name))))
+
+(defun johnson--render-section-error (dict message)
+  "Insert the retrieval failure MESSAGE of DICT as a closed error section."
+  (unless (plist-get johnson--section-state :section-start)
+    (johnson--render-section-start dict))
+  (insert (propertize (format "[Error retrieving %s: %s]\n"
+                              (plist-get dict :name) message)
+                      'face 'error))
+  (johnson--close-section (plist-get dict :name)))
+
+(defun johnson--close-section (name)
+  "Cover the open section NAME with its content overlay and end it."
+  (let ((start (plist-get johnson--section-state :section-start)))
+    (let ((ov (make-overlay start (point))))
+      (overlay-put ov 'johnson-section name)
+      (overlay-put ov 'johnson-section-content t)
+      (overlay-put ov 'evaporate t))
+    (set-marker start nil)
+    (plist-put johnson--section-state :section-start nil)
+    (plist-put johnson--section-state :section-name nil)
+    (insert "\n")))
 
 (defun johnson--remove-loading-line ()
   "Delete the loading line, when present."
@@ -1603,11 +1712,13 @@ rearm an ordinary timer when units remain."
   (when-let* ((start (plist-get johnson--section-state :section-start)))
     (set-marker start nil))
   (setq johnson--section-state nil)
-  (dolist (marker (list johnson--render-marker johnson--loading-marker))
+  (dolist (marker (list johnson--render-marker johnson--loading-marker
+                        johnson--toc-marker))
     (when (markerp marker)
       (set-marker marker nil)))
   (setq johnson--render-marker nil)
-  (setq johnson--loading-marker nil))
+  (setq johnson--loading-marker nil)
+  (setq johnson--toc-marker nil))
 
 (defun johnson--insert-section-header (name)
   "Insert a section header for dictionary NAME."

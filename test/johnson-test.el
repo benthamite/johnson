@@ -291,24 +291,32 @@ Cleans up afterwards."
        :detect #'ignore
        :render-entry (lambda (raw) (insert raw)))
       (with-current-buffer (get-buffer-create "*johnson*")
-        (let ((inhibit-read-only t))
+        (let ((inhibit-read-only t)
+              (dict (list :path "/fake" :name "Fake" :format-name "fake")))
           (johnson-mode)
           (erase-buffer)
           (setq johnson--current-word "house")
-          (setq johnson--section-state (list :total 1 :done 1 :matched 1
+          (setq johnson--lookup-id 1)
+          (setq johnson--lookup-plan
+                (list (list :kind 'indexed :dict dict :matches nil)))
+          (setq johnson--section-state (list :word "house" :total 1 :next 1
+                                             :done 1 :matched 1
                                              :fallback nil
                                              :section-start nil
                                              :section-name nil))
           (setq johnson--render-marker (point-marker))
           (setq johnson--render-queue
-                (append (list (list :unit 'section-start :name "Fake"))
+                (append (list (list :type 'section-start :lookup 1
+                                    :dict dict))
                         (cl-loop for n from 1 to 5
-                                 collect (list :unit 'entry
-                                               :format-name "fake"
-                                               :raw (format "entry-%d " n)
-                                               :context nil))
-                        (list (list :unit 'section-end)
-                              (list :unit 'lookup-complete))))
+                                 collect (list :type 'entry :lookup 1
+                                               :dict dict
+                                               :packet
+                                               (list :raw (format "entry-%d " n)
+                                                     :context nil)))
+                        (list (list :type 'section-complete :lookup 1
+                                    :dict dict)
+                              (list :type 'lookup-complete :lookup 1))))
           (johnson--render-step (current-buffer))
           (should-not johnson--render-queue)
           (should-not (timerp johnson--render-timer))

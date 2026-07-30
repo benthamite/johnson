@@ -28,7 +28,8 @@
 ;; "unibyte" returns raw bytes including 0 and 255, "count" returns the
 ;; number of retrievals this process has served (the fixture's backend
 ;; cache, which makes worker persistence observable), "pid" returns the
-;; Emacs process id, and any other offset is returned as text.
+;; Emacs process id, "error:MESSAGE" signals an error with MESSAGE, and
+;; any other offset is returned as text.
 ;; Retrieval refuses to run in an interactive session so tests catch
 ;; work leaking into the parent Emacs.
 
@@ -48,8 +49,9 @@ OFFSET \"slow:SECONDS:TEXT\" sleeps SECONDS then returns TEXT,
 \"large:COUNT\" returns COUNT `x' characters, \"unibyte\" returns raw
 bytes including 0 and 255, \"count\" returns the updated value of
 `johnson-worker-fixture-retrievals', \"pid\" returns the Emacs process
-id, and any other OFFSET is returned as text.  _PATH and _LENGTH are
-ignored.  Signal an error when called outside a batch session."
+id, \"error:MESSAGE\" signals an error with MESSAGE, and any other
+OFFSET is returned as text.  _PATH and _LENGTH are ignored.  Signal an
+error when called outside a batch session."
   (unless noninteractive
     (error "fixture retrieval ran in parent"))
   (setq johnson-worker-fixture-retrievals
@@ -57,6 +59,8 @@ ignored.  Signal an error when called outside a batch session."
   (cond ((string-match "\\`slow:\\([0-9.]+\\):\\(.*\\)\\'" offset)
          (sleep-for (string-to-number (match-string 1 offset)))
          (match-string 2 offset))
+        ((string-match "\\`error:\\(.*\\)\\'" offset)
+         (error "%s" (match-string 1 offset)))
         ((string-match "\\`large:\\([0-9]+\\)\\'" offset)
          (make-string (string-to-number (match-string 1 offset)) ?x))
         ((equal offset "unibyte")

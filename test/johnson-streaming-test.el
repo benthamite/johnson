@@ -23,8 +23,11 @@
 
 ;; ERT tests for the streamed lookup flow: ordered lookup plans,
 ;; shell-first display over a real retrieval worker child, history
-;; object identity, no-result handling, and the same-dictionary
-;; reference scope fallback.
+;; object identity, no-result handling, the same-dictionary reference
+;; scope fallback, streaming render correctness (section order, entry
+;; order, loading lifetime, dynamic TOC items, point and window-start
+;; preservation, error sections), and stale lookup generations,
+;; including supersession in the middle of a multi-chunk entry.
 
 ;;; Code:
 
@@ -446,6 +449,457 @@ misses.  PRIORITY defaults to 1."
         (should (equal johnson--current-word "house"))
         (should (string-match-p "HOUSE-ENTRY"
                                 (johnson-streaming-test--buffer-text)))))))
+
+;;;; Streaming correctness helpers
+
+(defun johnson-streaming-test--section-names ()
+  "Return the rendered section header names, top to bottom.
+The synthetic \"Contents\" TOC header is excluded."
+  (with-current-buffer "*johnson*"
+    (let ((names nil)
+          (pos (point-min)))
+      (while pos
+        (let ((name (get-text-property pos 'johnson-section-header)))
+          (when (and name (not (equal name "Contents"))
+                     (or (= pos (point-min))
+                         (not (equal name (get-text-property
+                                           (1- pos)
+                                           'johnson-section-header)))))
+            (push name names)))
+        (setq pos (next-single-property-change pos 'johnson-section-header)))
+      (nreverse names))))
+
+(defun johnson-streaming-test--section-position (name)
+  "Return the buffer position of the section header NAME, or nil."
+  (with-current-buffer "*johnson*"
+    (let ((pos (point-min))
+          (found nil))
+      (while (and pos (not found))
+        (when (equal (get-text-property pos 'johnson-section-header) name)
+          (setq found pos))
+        (setq pos (next-single-property-change pos 'johnson-section-header)))
+      found)))
+
+(defun johnson-streaming-test--section-overlay (name)
+  "Return the section content overlay covering section NAME, or nil."
+  (with-current-buffer "*johnson*"
+    (cl-find-if (lambda (overlay)
+                  (and (overlay-get overlay 'johnson-section-content)
+                       (equal (overlay-get overlay 'johnson-section) name)))
+                (overlays-in (point-min) (point-max)))))
+
+(defun johnson-streaming-test--drain-render-queue ()
+  "Wait until the render queue of the results buffer is drained."
+  (let ((deadline (+ (float-time) 10)))
+    (while (and (< (float-time) deadline)
+                (with-current-buffer "*johnson*"
+                  (or johnson--render-queue
+                      (timerp johnson--render-timer))))
+      (sit-for 0.02)))
+  (with-current-buffer "*johnson*"
+    (should (null johnson--render-queue))
+    (should-not (timerp johnson--render-timer))))
+
+(defmacro johnson-streaming-test--with-stubbed-worker (submits &rest body)
+  "Run BODY with worker submissions recorded in the SUBMITS variable.
+`johnson-worker-submit' pushes each request onto SUBMITS instead of
+talking to a child, and the worker reports itself live so no process
+is ever started.  Requests are recorded oldest first."
+  (declare (indent 1) (debug (symbol body)))
+  `(cl-letf (((symbol-function 'johnson-worker-live-p) (lambda () t))
+             ((symbol-function 'johnson-worker-start) (lambda (_callback) nil))
+             ((symbol-function 'johnson-worker-submit)
+              (lambda (request)
+                (setq ,submits (append ,submits (list request)))
+                nil)))
+     ,@body))
+
+(defun johnson-streaming-test--lookup-id ()
+  "Return the lookup generation of the results buffer."
+  (buffer-local-value 'johnson--lookup-id (get-buffer "*johnson*")))
+
+(defun johnson-streaming-test--feed (message)
+  "Deliver worker core MESSAGE to the results buffer."
+  (johnson--worker-message message))
+
+(defun johnson-streaming-test--feed-dictionary (lookup dictionary name entries)
+  "Feed the full message series of one matching dictionary.
+LOOKUP and DICTIONARY identify the request, NAME is the dictionary
+display name, and ENTRIES the list of raw entry strings."
+  (johnson-streaming-test--feed
+   (list :type 'dictionary-start :lookup lookup :dictionary dictionary
+         :name name))
+  (let ((eseq -1))
+    (dolist (raw entries)
+      (setq eseq (1+ eseq))
+      (johnson-streaming-test--feed
+       (list :type 'entry :lookup lookup :dictionary dictionary
+             :entry eseq :raw raw :context nil))))
+  (johnson-streaming-test--feed
+   (list :type 'dictionary-complete :lookup lookup :dictionary dictionary
+         :entries (length entries))))
+
+;;;; Streaming correctness
+
+(ert-deftest johnson-streaming-test-fifty-dictionaries-in-priority-order ()
+  "Fifty one-entry dictionaries render fifty sections once, in order."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (setq johnson--dictionaries
+          (cl-loop for n from 0 to 49
+                   collect (johnson-streaming-test--local-dict
+                            (format "Dict %02d" n)
+                            (format "/fixture/many-%02d" n)
+                            (list (list "house" (format "ENTRY-%02d" n)))
+                            n)))
+    (save-window-excursion
+      (johnson-streaming-test--display "house")
+      (johnson-streaming-test--wait-for-completion)
+      (should (equal (johnson-streaming-test--section-names)
+                     (cl-loop for n from 0 to 49
+                              collect (format "Dict %02d" n))))
+      (let ((text (johnson-streaming-test--buffer-text)))
+        (dotimes (n 50)
+          (should (string-match-p (format "ENTRY-%02d" n) text)))))))
+
+(ert-deftest johnson-streaming-test-fifty-matches-in-one-section ()
+  "Fifty matches of one dictionary render one section of ordered entries."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Big Dict" "/fixture/big"
+                 (cl-loop for n from 0 to 49
+                          collect (list "house" (format "ENTRY-%02d." n))))))
+    (save-window-excursion
+      (johnson-streaming-test--display "house")
+      (johnson-streaming-test--wait-for-completion)
+      (should (equal (johnson-streaming-test--section-names) '("Big Dict")))
+      (let ((text (johnson-streaming-test--buffer-text))
+            (positions nil))
+        (dotimes (n 50)
+          (let ((start (string-match (format "ENTRY-%02d\\." n) text)))
+            (should start)
+            (push start positions)
+            (should-not (string-match (format "ENTRY-%02d\\." n) text
+                                      (1+ start)))))
+        (let ((ordered (reverse positions)))
+          (should (equal ordered (sort (copy-sequence ordered) #'<)))))
+      (should (johnson-streaming-test--section-overlay "Big Dict")))))
+
+(ert-deftest johnson-streaming-test-loading-persists-until-final-close ()
+  "The loading line survives every close unit but the final one."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Alpha" "/fixture/alpha" '(("house" "ALPHA-ENTRY")) 0)
+                (johnson-streaming-test--local-dict
+                 "Slow" "/fixture/slow"
+                 '(("house" "slow:1.0:SLOW-ENTRY")) 1)))
+    (save-window-excursion
+      (johnson-streaming-test--display "house")
+      (should (johnson-test-support-wait-for
+               (lambda ()
+                 (string-match-p "ALPHA-ENTRY"
+                                 (johnson-streaming-test--buffer-text)))
+               10))
+      ;; The first section is closed, yet the lookup keeps loading.
+      (should (string-match-p "Looking up"
+                              (johnson-streaming-test--buffer-text)))
+      (johnson-streaming-test--wait-for-completion)
+      (should (string-match-p "SLOW-ENTRY"
+                              (johnson-streaming-test--buffer-text)))
+      (should-not (string-match-p "Looking up"
+                                  (johnson-streaming-test--buffer-text))))))
+
+(ert-deftest johnson-streaming-test-toc-targets-dynamic-remote-section ()
+  "The TOC item added for a remote hit jumps to its rendered section."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (johnson-streaming-test--register-remote-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Alpha" "/fixture/alpha" '(("house" "ALPHA-ENTRY")) 0)
+                (johnson-streaming-test--remote-dict
+                 "Remote Fixture" "/fixture/remote/hit" 1)))
+    (save-window-excursion
+      (johnson-streaming-test--display "house")
+      (johnson-streaming-test--wait-for-completion)
+      (with-current-buffer "*johnson*"
+        (goto-char (point-min))
+        (should (search-forward "• Remote Fixture" nil t))
+        (let ((button (button-at (1- (point)))))
+          (should button)
+          (button-activate button)
+          (should (equal (get-text-property (point) 'johnson-section-header)
+                         "Remote Fixture")))))))
+
+(ert-deftest johnson-streaming-test-remote-miss-adds-no-toc-item ()
+  "A remote dictionary that misses never gets a dead TOC item."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (johnson-streaming-test--register-remote-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Alpha" "/fixture/alpha" '(("house" "ALPHA-ENTRY")) 0)
+                (johnson-streaming-test--remote-dict
+                 "Remote Miss" "/fixture/remote/miss" 1)))
+    (save-window-excursion
+      (johnson-streaming-test--display "house")
+      (johnson-streaming-test--wait-for-completion)
+      (let ((text (johnson-streaming-test--buffer-text)))
+        (should (string-match-p "ALPHA-ENTRY" text))
+        (should (string-match-p "• Alpha" text))
+        (should-not (string-match-p "Remote Miss" text))))))
+
+(ert-deftest johnson-streaming-test-insertion-preserves-point-and-start ()
+  "A TOC insertion above point and window-start moves neither logically."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (johnson-streaming-test--register-remote-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Alpha" "/fixture/alpha" '(("house" "ALPHA-ENTRY")) 0)
+                (johnson-streaming-test--remote-dict
+                 "Remote Fixture" "/fixture/remote/hit" 1)))
+    (let ((submits nil))
+      (johnson-streaming-test--with-stubbed-worker submits
+        (save-window-excursion
+          (johnson-streaming-test--display "house")
+          (should (equal (mapcar (lambda (request)
+                                   (plist-get request :dictionary))
+                                 submits)
+                         '(0)))
+          (let ((lookup (johnson-streaming-test--lookup-id)))
+            (johnson-streaming-test--feed-dictionary
+             lookup 0 "Alpha" '("ALPHA-ENTRY"))
+            (johnson-streaming-test--drain-render-queue)
+            ;; The terminal message of dictionary 0 submitted dictionary 1.
+            (should (equal (mapcar (lambda (request)
+                                     (plist-get request :dictionary))
+                                   submits)
+                           '(0 1)))
+            (with-current-buffer "*johnson*"
+              (let* ((window (get-buffer-window "*johnson*"))
+                     (target (johnson-streaming-test--section-position
+                              "Alpha")))
+                (should (window-live-p window))
+                (should target)
+                (should (> target (marker-position johnson--toc-marker)))
+                (set-window-point window target)
+                (set-window-start window target)
+                (let ((expected (buffer-substring-no-properties
+                                 target (+ target 9))))
+                  (johnson-streaming-test--feed
+                   (list :type 'dictionary-start :lookup lookup
+                         :dictionary 1 :name "Remote Fixture"))
+                  (johnson-streaming-test--drain-render-queue)
+                  (should (string-match-p
+                           "• Remote Fixture"
+                           (johnson-streaming-test--buffer-text)))
+                  (should (equal (buffer-substring-no-properties
+                                  (window-point window)
+                                  (+ (window-point window) 9))
+                                 expected))
+                  (should (equal (buffer-substring-no-properties
+                                  (window-start window)
+                                  (+ (window-start window) 9))
+                                 expected)))))))))))
+
+(ert-deftest johnson-streaming-test-error-closes-section-and-continues ()
+  "A dictionary error closes an error section and dispatches the next."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Broken" "/fixture/broken" '(("house" "error:boom")) 0)
+                (johnson-streaming-test--local-dict
+                 "Beta" "/fixture/beta" '(("house" "HOUSE-BETA")) 1)))
+    (save-window-excursion
+      (johnson-streaming-test--display "house")
+      (johnson-streaming-test--wait-for-completion)
+      (let ((text (johnson-streaming-test--buffer-text)))
+        (should (string-match-p "\\[Error retrieving Broken: boom\\]" text))
+        (should (string-match-p "HOUSE-BETA" text)))
+      (should (equal (johnson-streaming-test--section-names)
+                     '("Broken" "Beta")))
+      (let ((overlay (johnson-streaming-test--section-overlay "Broken")))
+        (should overlay)
+        (with-current-buffer "*johnson*"
+          (should (string-match-p
+                   "\\[Error retrieving Broken: boom\\]"
+                   (buffer-substring-no-properties
+                    (overlay-start overlay) (overlay-end overlay))))))
+      (should-not (string-match-p "Looking up"
+                                  (johnson-streaming-test--buffer-text))))))
+
+;;;; Stale generations
+
+(ert-deftest johnson-streaming-test-stale-generation-is-discarded ()
+  "Stale generation messages leave no text, buttons, or overlays behind."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (let ((submits nil))
+      (johnson-streaming-test--with-stubbed-worker submits
+        (save-window-excursion
+          (setq johnson--dictionaries
+                (list (johnson-streaming-test--local-dict
+                       "Stale One" "/fixture/stale-1"
+                       '(("house" "STALE-ONE-ENTRY")) 0)
+                      (johnson-streaming-test--local-dict
+                       "Stale Two" "/fixture/stale-2"
+                       '(("house" "STALE-TWO-ENTRY")) 1)))
+          (johnson-streaming-test--display "house")
+          (let ((stale-lookup (johnson-streaming-test--lookup-id)))
+            (should (= (length submits) 1))
+            (setq johnson--dictionaries
+                  (list (johnson-streaming-test--local-dict
+                         "Fresh One" "/fixture/fresh-1"
+                         '(("cat" "FRESH-ONE-ENTRY")) 0)
+                        (johnson-streaming-test--local-dict
+                         "Fresh Two" "/fixture/fresh-2"
+                         '(("cat" "FRESH-TWO-ENTRY")) 1)))
+            (johnson-streaming-test--display "cat")
+            (let ((fresh-lookup (johnson-streaming-test--lookup-id)))
+              (should-not (equal stale-lookup fresh-lookup))
+              (should (= (length submits) 2))
+              ;; The stale lookup's start, entry, and terminal messages
+              ;; must be dropped without queuing any render unit or
+              ;; submitting the stale lookup's next dictionary.
+              (johnson-streaming-test--feed-dictionary
+               stale-lookup 0 "Stale One" '("STALE-ONE-ENTRY"))
+              (with-current-buffer "*johnson*"
+                (should (null johnson--render-queue)))
+              (should (= (length submits) 2))
+              (johnson-streaming-test--feed-dictionary
+               fresh-lookup 0 "Fresh One" '("FRESH-ONE-ENTRY"))
+              (johnson-streaming-test--drain-render-queue)
+              (should (= (length submits) 3))
+              (johnson-streaming-test--feed-dictionary
+               fresh-lookup 1 "Fresh Two" '("FRESH-TWO-ENTRY"))
+              (johnson-streaming-test--drain-render-queue)
+              ;; Only one dictionary was ever in flight: each submission
+              ;; happened only after the previous terminal message, and
+              ;; the stale terminal never submitted "house" again.
+              (should (equal (mapcar (lambda (request)
+                                       (list (plist-get request :word)
+                                             (plist-get request :dictionary)))
+                                     submits)
+                             '(("house" 0) ("cat" 0) ("cat" 1))))
+              (let ((text (johnson-streaming-test--buffer-text)))
+                (should (string-match-p "FRESH-ONE-ENTRY" text))
+                (should (string-match-p "FRESH-TWO-ENTRY" text))
+                (should-not (string-match-p "STALE" text))
+                (should-not (string-match-p "Looking up" text)))
+              (should (equal (johnson-streaming-test--section-names)
+                             '("Fresh One" "Fresh Two")))
+              (should-not (johnson-streaming-test--section-overlay
+                           "Stale One")))))))))
+
+;;;; Multi-chunk supersession over the real worker client
+
+(defun johnson-streaming-test--cancel-decode-timer ()
+  "Cancel any armed decode timer and clear the timer slot.
+Clearing the slot matters: the worker client only rearms decoding when
+no timer is recorded, and a cancelled timer object would otherwise be
+mistaken for an armed one."
+  (cancel-function-timers #'johnson-worker--decode-next)
+  (setq johnson-worker--decode-timer nil))
+
+(defun johnson-streaming-test--await-retrieving-untimed ()
+  "Wait for the retrieving state, then cancel the decode timer.
+Uses short accepts so the decode timer cannot consume reply frames in
+the same accept that dispatched the request."
+  (let ((deadline (+ (float-time) 10)))
+    (while (and (not (eq johnson-worker--state 'retrieving))
+                (< (float-time) deadline))
+      (accept-process-output johnson-worker--process 0.005))
+    (johnson-streaming-test--cancel-decode-timer))
+  (should (eq johnson-worker--state 'retrieving)))
+
+(defun johnson-streaming-test--pump-until (predicate what)
+  "Decode buffered worker lines one at a time until PREDICATE holds.
+WHAT names the awaited condition.  The decode timer is kept cancelled
+so exactly one line is consumed per pump."
+  (let ((deadline (+ (float-time) 10)))
+    (while (and (not (funcall predicate))
+                (< (float-time) deadline))
+      (if (johnson-worker--complete-line-buffered-p)
+          (progn (johnson-worker--decode-one-line)
+                 (johnson-streaming-test--cancel-decode-timer))
+        (let ((johnson-worker--decode-delay 9999))
+          (accept-process-output johnson-worker--process 0.02)
+          (johnson-streaming-test--cancel-decode-timer)))))
+  (unless (funcall predicate)
+    (ert-fail (list "pump timeout" what
+                    :state johnson-worker--state
+                    :active johnson-worker--active-request))))
+
+(ert-deftest johnson-streaming-test-multichunk-supersession-discards-stale ()
+  "Superseding after chunk 0 of a multi-chunk entry stays a stale discard."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Aleph" "/fixture/aleph" '(("houseA" "large:70000")) 0)
+                (johnson-streaming-test--local-dict
+                 "Beth" "/fixture/beth" '(("cat" "CAT-ENTRY")) 1)))
+    (save-window-excursion
+      (johnson-streaming-test--display "houseA")
+      (let ((stale-lookup (johnson-streaming-test--lookup-id)))
+        (johnson-streaming-test--await-retrieving-untimed)
+        ;; Consume the reply up to and including chunk 0 of the
+        ;; three-chunk entry, then supersede the lookup.
+        (johnson-streaming-test--pump-until
+         (lambda ()
+           (let ((active johnson-worker--active-request))
+             (and active
+                  (eql (plist-get active :entry) 0)
+                  (eql (plist-get active :chunk) 1))))
+         "chunk 0 of the multi-chunk entry")
+        (johnson-streaming-test--display "cat")
+        (let ((fresh-lookup (johnson-streaming-test--lookup-id)))
+          (should (plist-get johnson-worker--active-request :stale))
+          (should (= (length johnson-worker--pending-requests) 1))
+          ;; The remaining ordered chunks are accepted into the stale
+          ;; discard path, not treated as sequence corruption.
+          (johnson-streaming-test--pump-until
+           (lambda ()
+             (let ((active johnson-worker--active-request))
+               (and active
+                    (eql (plist-get active :next-entry) 1)
+                    (null (plist-get active :entry)))))
+           "remaining chunks of the stale entry")
+          (should-not (eq johnson-worker--state 'failed))
+          (should (equal (plist-get johnson-worker--active-request :lookup)
+                         stale-lookup))
+          ;; The fresh request is still queued: it starts only after the
+          ;; stale terminal frame releases the worker.
+          (should (= (length johnson-worker--pending-requests) 1))
+          (with-current-buffer "*johnson*"
+            (should (cl-notany (lambda (unit)
+                                 (equal (plist-get unit :lookup)
+                                        stale-lookup))
+                               johnson--render-queue)))
+          (johnson-streaming-test--pump-until
+           (lambda ()
+             (equal (plist-get johnson-worker--active-request :lookup)
+                    fresh-lookup))
+           "dispatch of the fresh lookup after the stale terminal")
+          (should-not (eq johnson-worker--state 'failed))
+          (should (null johnson-worker--pending-requests))
+          ;; Hand decoding back to the ordinary timer path.
+          (when (johnson-worker--complete-line-buffered-p)
+            (johnson-worker--schedule-decode))
+          (johnson-streaming-test--wait-for-completion)
+          (let ((text (johnson-streaming-test--buffer-text)))
+            (should (string-match-p "CAT-ENTRY" text))
+            (should-not (string-match-p "xxxxx" text))
+            (should-not (string-match-p "Aleph" text))
+            (should-not (string-match-p "Looking up" text)))
+          (should (equal (johnson-streaming-test--section-names)
+                         '("Beth"))))))))
 
 (provide 'johnson-streaming-test)
 ;;; johnson-streaming-test.el ends here
