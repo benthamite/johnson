@@ -26,13 +26,16 @@
 ;; object identity, no-result handling, the same-dictionary reference
 ;; scope fallback, streaming render correctness (section order, entry
 ;; order, loading lifetime, dynamic TOC items, point and window-start
-;; preservation, error sections), and stale lookup generations,
-;; including supersession in the middle of a multi-chunk entry.
+;; preservation, error sections), stale lookup generations, including
+;; supersession in the middle of a multi-chunk entry, the lifecycle
+;; integration of cache and index invalidation with the worker, and
+;; the explicit no-fallback failure paths.
 
 ;;; Code:
 
 (require 'ert)
 (require 'johnson)
+(require 'johnson-protocol)
 (require 'johnson-worker)
 (eval-and-compile
   (add-to-list 'load-path
@@ -296,7 +299,7 @@ misses.  PRIORITY defaults to 1."
         (should (memq entry johnson--history-log))
         (should (johnson-test-support-wait-for
                  (lambda ()
-                   (string-match-p "Worker failed"
+                   (string-match-p "Johnson retrieval worker exited"
                                    (johnson-streaming-test--buffer-text)))
                  10))
         (should (memq entry johnson--history-log))))))
@@ -900,6 +903,225 @@ so exactly one line is consumed per pump."
             (should-not (string-match-p "Looking up" text)))
           (should (equal (johnson-streaming-test--section-names)
                          '("Beth"))))))))
+
+;;;; Lifecycle integration
+
+(defun johnson-streaming-test--blocked-lookup ()
+  "Start a lookup blocked inside worker retrieval; return the child.
+Replace the dictionaries with one slow fixture whose retrieval sleeps
+long enough for the test to act while the worker command loop is
+blocked, display the lookup, and wait for the retrieving state."
+  (setq johnson--dictionaries
+        (list (johnson-streaming-test--local-dict
+               "Slow Fixture" "/fixture/slow"
+               '(("house" "slow:5:HOUSE-ENTRY")))))
+  (johnson-streaming-test--display "house")
+  (should (johnson-test-support-wait-for
+           (lambda () (eq johnson-worker--state 'retrieving)) 10))
+  johnson-worker--process)
+
+(ert-deftest johnson-streaming-test-close-caches-stops-worker-first ()
+  "Cache invalidation stops a blocked worker before touching any cache."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (save-window-excursion
+      (let ((process (johnson-streaming-test--blocked-lookup))
+            (live-at-mutation 'unset))
+        (cl-letf (((symbol-function 'johnson--close-all-dbs)
+                   (lambda ()
+                     (setq live-at-mutation (process-live-p process)))))
+          (johnson-close-caches))
+        (should (eq live-at-mutation nil))
+        (should-not (johnson-worker-live-p))))))
+
+(ert-deftest johnson-streaming-test-clear-index-stops-worker-via-close-caches ()
+  "Clearing the index stops a blocked worker through `johnson-close-caches'."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (save-window-excursion
+      (let ((process (johnson-streaming-test--blocked-lookup))
+            (live-at-mutation 'unset))
+        (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_prompt) t))
+                  ((symbol-function 'johnson--close-all-dbs)
+                   (lambda ()
+                     (setq live-at-mutation (process-live-p process)))))
+          (johnson-clear-index))
+        (should (eq live-at-mutation nil))
+        (should-not (johnson-worker-live-p))))))
+
+(ert-deftest johnson-streaming-test-index-stops-worker-first ()
+  "Re-indexing stops a blocked worker before dictionary discovery."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (save-window-excursion
+      (let ((process (johnson-streaming-test--blocked-lookup))
+            (live-at-mutation 'unset))
+        (cl-letf (((symbol-function 'johnson--discover)
+                   (lambda ()
+                     (setq live-at-mutation (process-live-p process))
+                     (setq johnson--dictionaries nil)))
+                  ((symbol-function 'johnson-db-rebuild-completion-index)
+                   (lambda (_paths) 0)))
+          (unwind-protect
+              (johnson-index)
+            (when (get-buffer "*johnson-indexing*")
+              (kill-buffer "*johnson-indexing*"))))
+        (should (eq live-at-mutation nil))
+        (should-not (johnson-worker-live-p))))))
+
+(ert-deftest johnson-streaming-test-dict-list-reindex-stops-worker-first ()
+  "Single-dictionary re-indexing stops a blocked worker before mutating."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (save-window-excursion
+      (let* ((process (johnson-streaming-test--blocked-lookup))
+             (dict (car johnson--dictionaries))
+             (live-at-mutation 'unset))
+        (cl-letf (((symbol-function 'tabulated-list-get-id)
+                   (lambda () (plist-get dict :path)))
+                  ((symbol-function 'johnson--index-one-dict-sync)
+                   (lambda (_dict _buffer)
+                     (setq live-at-mutation (process-live-p process))))
+                  ((symbol-function 'johnson--dict-list-entries) #'ignore)
+                  ((symbol-function 'tabulated-list-print)
+                   (lambda (&rest _args) nil)))
+          (johnson-dict-list-reindex))
+        (should (eq live-at-mutation nil))
+        (should-not (johnson-worker-live-p))))))
+
+(ert-deftest johnson-streaming-test-buffer-kill-cancels-render-not-worker ()
+  "Killing the results buffer cancels its render state, not the worker."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (save-window-excursion
+      (johnson-streaming-test--blocked-lookup)
+      (let (timer loading-marker render-marker)
+        (with-current-buffer "*johnson*"
+          (johnson--enqueue-render-unit
+           (list :type 'section-start :lookup johnson--lookup-id
+                 :dict (list :name "Pending"
+                             :format-name "worker-fixture")))
+          (setq timer johnson--render-timer)
+          (setq loading-marker johnson--loading-marker)
+          (setq render-marker johnson--render-marker))
+        (should (timerp timer))
+        (should (memq timer timer-list))
+        (kill-buffer "*johnson*")
+        (should-not (memq timer timer-list))
+        (should-not (marker-buffer loading-marker))
+        (should-not (marker-buffer render-marker))
+        (should (johnson-worker-live-p))))))
+
+(ert-deftest johnson-streaming-test-next-lookup-after-exit-starts-new-pid ()
+  "The lookup after an unexpected worker exit starts a fresh child PID."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (save-window-excursion
+      (let* ((process (johnson-streaming-test--blocked-lookup))
+             (old-pid (process-id process)))
+        (delete-process process)
+        (should (johnson-test-support-wait-for
+                 (lambda () (eq johnson-worker--state 'failed)) 10))
+        (setq johnson--dictionaries
+              (list (johnson-streaming-test--local-dict
+                     "Fast Fixture" "/fixture/fast" '(("cat" "CAT-ENTRY")))))
+        (johnson-streaming-test--display "cat")
+        (should (johnson-worker-live-p))
+        (should-not (equal (process-id johnson-worker--process) old-pid))
+        (johnson-streaming-test--wait-for-completion)
+        (should (string-match-p "CAT-ENTRY"
+                                (johnson-streaming-test--buffer-text)))))))
+
+;;;; No-fallback failure paths
+
+(ert-deftest johnson-streaming-test-worker-exit-shows-explicit-error ()
+  "A worker exit mid-lookup replaces the loading line with the exit error."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (save-window-excursion
+      (let ((process (johnson-streaming-test--blocked-lookup)))
+        (delete-process process)
+        (should (johnson-test-support-wait-for
+                 (lambda ()
+                   (string-match-p
+                    "\\[Johnson retrieval worker exited with status .+; see  \\*johnson-worker-diagnostics\\*\\]"
+                    (johnson-streaming-test--buffer-text)))
+                 10))
+        (let ((text (johnson-streaming-test--buffer-text)))
+          (should-not (string-match-p "Looking up" text))
+          (should-not (string-match-p "No results found" text))
+          (should-not (string-match-p "Parent-side retrieval ran" text))
+          (should-not (string-match-p "HOUSE-ENTRY" text)))
+        (with-current-buffer "*johnson*"
+          (should (null johnson--render-queue))
+          (should (null johnson--loading-marker)))))))
+
+(ert-deftest johnson-streaming-test-protocol-failure-shows-explicit-error ()
+  "A malformed frame mid-lookup ends in one visible protocol error."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (save-window-excursion
+      (let ((process (johnson-streaming-test--blocked-lookup))
+            (messages-tail (with-current-buffer (messages-buffer)
+                             (point-max))))
+        (johnson-worker--process-filter
+         process (concat johnson-protocol-prefix "@@@not-base64@@@\n"))
+        (should (johnson-test-support-wait-for
+                 (lambda ()
+                   (string-match-p
+                    "\\[Johnson retrieval protocol failed: .+; see  \\*johnson-worker-diagnostics\\*\\]"
+                    (johnson-streaming-test--buffer-text)))
+                 10))
+        (should-not (process-live-p process))
+        (should (eq johnson-worker--state 'failed))
+        (should-not (timerp johnson-worker--decode-timer))
+        (should (null johnson-worker--pending-requests))
+        (should (null johnson-worker--active-request))
+        (should (zerop (hash-table-count johnson-worker--entry-assemblies)))
+        (with-current-buffer "*johnson*"
+          (should (null johnson--render-queue))
+          (should (null johnson--loading-marker)))
+        (let ((text (johnson-streaming-test--buffer-text)))
+          (should-not (string-match-p "Looking up" text))
+          (should-not (string-match-p "Parent-side retrieval ran" text)))
+        (johnson-test-support-wait-for #'ignore 0.3)
+        (with-current-buffer (messages-buffer)
+          (should-not (string-match-p
+                       "Error running timer"
+                       (buffer-substring-no-properties messages-tail
+                                                       (point-max)))))))))
+
+(ert-deftest johnson-streaming-test-worker-start-failure-shows-error ()
+  "A worker start failure is visible and does not poison later lookups."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Fixture" "/fixture/dict" '(("house" "HOUSE-ENTRY")))))
+    (save-window-excursion
+      (let ((johnson-worker-command-function
+             (lambda () (list "/nonexistent/johnson-worker-emacs"))))
+        (johnson-streaming-test--display "house"))
+      (should-not (johnson-worker-live-p))
+      (should (johnson-test-support-wait-for
+               (lambda ()
+                 (string-match-p
+                  "\\[Johnson retrieval worker failed to start: .*/nonexistent/johnson-worker-emacs.*; see  \\*johnson-worker-diagnostics\\*\\]"
+                  (johnson-streaming-test--buffer-text)))
+               10))
+      (should-not (string-match-p "Looking up"
+                                  (johnson-streaming-test--buffer-text)))
+      (should-not (string-match-p "Parent-side retrieval ran"
+                                  (johnson-streaming-test--buffer-text)))
+      (with-current-buffer (get-buffer johnson-worker--diagnostics-buffer-name)
+        (should (string-match-p "/nonexistent/johnson-worker-emacs"
+                                (buffer-string))))
+      (johnson-streaming-test--display "house")
+      (should (johnson-worker-live-p))
+      (johnson-streaming-test--wait-for-completion)
+      (let ((text (johnson-streaming-test--buffer-text)))
+        (should (string-match-p "HOUSE-ENTRY" text))
+        (should-not (string-match-p "failed to start" text))))))
 
 (provide 'johnson-streaming-test)
 ;;; johnson-streaming-test.el ends here

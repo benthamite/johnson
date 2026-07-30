@@ -113,11 +113,13 @@ the `:next-entry', `:entry', and `:chunk' sequence expectations.")
   "Start the retrieval worker child, reporting to MESSAGE-FUNCTION.
 MESSAGE-FUNCTION is called with each core message plist: completed
 `entry' messages, `dictionary-start' and terminal dictionary messages
-of the current lookup, `protocol-error' failures, and `worker-exit'
-reports.  Stop any previous worker, spawn the child with the command
-returned by `johnson-worker-command-function', and return immediately
-after `make-process' in the `starting' state; the handshake continues
-in the decoded-message and sentinel handlers."
+of the current lookup, `protocol-error' failures, `worker-exit'
+reports, and `worker-start-error' failures.  Stop any previous worker,
+spawn the child with the command returned by
+`johnson-worker-command-function', and return immediately after
+`make-process' in the `starting' state; the handshake continues in the
+decoded-message and sentinel handlers.  When spawning itself signals,
+mark the client failed and deliver one `worker-start-error' message."
   (johnson-worker-stop)
   (setq johnson-worker--core-function message-function)
   (setq johnson-worker--message-function #'johnson-worker--handle-message)
@@ -125,15 +127,18 @@ in the decoded-message and sentinel handlers."
   (setq johnson-worker--receive-buffer
         (generate-new-buffer " *johnson-worker-receive*"))
   (setq johnson-worker--state 'starting)
-  (setq johnson-worker--process
-        (make-process
-         :name "johnson-worker"
-         :command (funcall johnson-worker-command-function)
-         :connection-type 'pipe
-         :coding 'binary
-         :noquery t
-         :filter #'johnson-worker--process-filter
-         :sentinel #'johnson-worker--sentinel)))
+  (let ((command (funcall johnson-worker-command-function)))
+    (condition-case err
+        (setq johnson-worker--process
+              (make-process
+               :name "johnson-worker"
+               :command command
+               :connection-type 'pipe
+               :coding 'binary
+               :noquery t
+               :filter #'johnson-worker--process-filter
+               :sentinel #'johnson-worker--sentinel))
+      (error (johnson-worker--fail-start command err)))))
 
 (defun johnson-worker--default-command ()
   "Return the batch Emacs command list running `johnson-worker-main'."
@@ -142,6 +147,25 @@ in the decoded-message and sentinel handlers."
         "-L" (file-name-directory johnson-worker--source-file)
         "-l" "johnson"
         "--funcall" "johnson-worker-main"))
+
+(defun johnson-worker--fail-start (command error)
+  "Fail the worker client because spawning COMMAND signaled ERROR.
+COMMAND is the attempted command list and ERROR the signaled error
+condition.  Record both in the diagnostics buffer, drop the client
+state, mark the client failed, and deliver exactly one
+`worker-start-error' message whose `:message' names the attempted
+executable and whose `:diagnostics' names the diagnostics buffer."
+  (let ((message (format "%s (%s)" (error-message-string error)
+                         (car command))))
+    (johnson-worker--append-diagnostic
+     (format "Worker start error: %s\nAttempted command: %s"
+             (error-message-string error) (string-join command " ")))
+    (johnson-worker--clear-client-state)
+    (setq johnson-worker--state 'failed)
+    (johnson-worker--deliver-core
+     (list :type 'worker-start-error
+           :message message
+           :diagnostics johnson-worker--diagnostics-buffer-name))))
 
 (defun johnson-worker-submit (request)
   "Queue retrieval REQUEST, superseding queued work of older lookups.
@@ -204,6 +228,10 @@ because a child blocked in a retrieval cannot read a shutdown frame."
          (johnson-worker--send '(:type shutdown))
          (process-send-eof johnson-worker--process))
         (t (johnson-worker-stop))))
+
+;; Installed at load time so every Emacs exit shuts the persistent
+;; child down, without waiting, whatever state it is in.
+(add-hook 'kill-emacs-hook #'johnson-worker--shutdown-at-exit)
 
 (defun johnson-worker-live-p ()
   "Return non-nil when the worker child process is live."

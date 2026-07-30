@@ -919,6 +919,80 @@ buffers, and timers are cleaned up even on failure."
       (should-not (johnson-worker-test--core-messages-of-type
                    'worker-exit)))))
 
+(ert-deftest johnson-worker-test-start-failure-delivers-start-error ()
+  (johnson-worker-test--with-live-client
+    (let ((johnson-worker-command-function
+           (lambda () (list "/nonexistent/johnson-worker-emacs"))))
+      (johnson-worker-start #'johnson-worker-test--record-message))
+    (should (eq johnson-worker--state 'failed))
+    (should-not (johnson-worker-live-p))
+    (let ((errors (johnson-worker-test--core-messages-of-type
+                   'worker-start-error)))
+      (should (= (length errors) 1))
+      (should (string-match-p "/nonexistent/johnson-worker-emacs"
+                              (plist-get (car errors) :message)))
+      (should (equal (plist-get (car errors) :diagnostics)
+                     johnson-worker--diagnostics-buffer-name)))
+    (with-current-buffer (get-buffer johnson-worker--diagnostics-buffer-name)
+      (should (string-match-p "/nonexistent/johnson-worker-emacs"
+                              (buffer-string))))
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))))
+
+(ert-deftest johnson-worker-test-shutdown-at-exit-hook-is-installed ()
+  (should (memq #'johnson-worker--shutdown-at-exit kill-emacs-hook)))
+
+(ert-deftest johnson-worker-test-shutdown-at-exit-stops-blocked-worker ()
+  (johnson-worker-test--with-live-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))
+    (johnson-worker-submit
+     (johnson-worker-test--request-plist 1 0 '("slow:5:BLOCKED")))
+    (should (johnson-test-support-wait-for
+             (lambda () (eq johnson-worker--state 'retrieving)) 10
+             johnson-worker--process))
+    (let ((process johnson-worker--process))
+      (johnson-worker-test--forbidding-blocking
+        (johnson-worker--shutdown-at-exit))
+      (should (eq johnson-worker--state 'stopped))
+      (should-not johnson-worker--process)
+      (should-not (process-live-p process)))
+    (johnson-test-support-wait-for #'ignore 0.3)
+    (should (eq johnson-worker--state 'stopped))
+    (should-not (johnson-worker-test--core-messages-of-type 'worker-exit))))
+
+(ert-deftest johnson-worker-test-replacement-survives-stopped-blocked-sentinel ()
+  (johnson-worker-test--with-live-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))
+    (johnson-worker-submit
+     (johnson-worker-test--request-plist 1 0 '("slow:5:BLOCKED")))
+    (should (johnson-test-support-wait-for
+             (lambda () (eq johnson-worker--state 'retrieving)) 10
+             johnson-worker--process))
+    (let ((old-process johnson-worker--process))
+      (johnson-worker-stop)
+      (johnson-worker-start #'johnson-worker-test--record-message)
+      (let ((new-process johnson-worker--process))
+        (should-not (eq old-process new-process))
+        (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                               new-process))
+        ;; The old process's real sentinel has had every chance to fire
+        ;; during the waits above; firing it again explicitly must also
+        ;; leave the replacement untouched.
+        (should-not (process-live-p old-process))
+        (johnson-worker--sentinel old-process "killed\n")
+        (should (johnson-worker-ready-p))
+        (should (eq johnson-worker--process new-process))
+        (should (process-live-p new-process))
+        (should-not (equal (process-id old-process)
+                           (process-id new-process)))
+        (should-not (johnson-worker-test--core-messages-of-type
+                     'worker-exit))))))
+
 (ert-deftest johnson-worker-test-shutdown-at-exit-stops-unready-worker ()
   (johnson-worker-test--with-live-client
     (johnson-worker-start #'johnson-worker-test--record-message)

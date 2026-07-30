@@ -90,10 +90,12 @@ queries against the full headword index."
   :group 'johnson)
 
 (defcustom johnson-render-batch-size 1
-  "Number of render units inserted per ordinary timer slice.
-Each slice of the streaming renderer inserts up to this many queued
+  "Number of render units a slice inserts before its time budget applies.
+Each slice of the streaming renderer inserts at least this many queued
 render units (section headers, streamed entries, and section
-closings) before rearming its ordinary timer.  A small value keeps
+closings), stopping early only when the queue empties or user input
+arrives, and then continues inserting queued units while
+`johnson-render-batch-time-budget' permits.  A small value keeps
 Emacs responsive to user input between slices; a larger value makes
 all results available sooner but can cause perceptible pauses when
 individual entries are slow to render (e.g., uncached BGL or MDict
@@ -953,10 +955,13 @@ Progress is shown in the *johnson-indexing* buffer.
 In interactive mode, indexing runs in a child Emacs process so the
 current session stays responsive.  CALLBACK is called with no
 arguments when indexing completes successfully.
-In batch/noninteractive mode, indexing runs synchronously."
+In batch/noninteractive mode, indexing runs synchronously.
+The retrieval worker is stopped first, so no retrieval overlaps the
+discovery and index mutation."
   (interactive)
   (when johnson--indexing-in-progress
     (user-error "Indexing already in progress"))
+  (johnson-worker-stop)
   (johnson--discover)
   (let ((buf (get-buffer-create "*johnson-indexing*"))
         (total (length johnson--dictionaries)))
@@ -1466,7 +1471,8 @@ Worker failures always reach the buffer; other messages are dropped
 unless they carry the buffer's current lookup generation."
   (when-let* ((buf (get-buffer "*johnson*")))
     (with-current-buffer buf
-      (if (memq (plist-get message :type) '(worker-exit protocol-error))
+      (if (memq (plist-get message :type)
+                '(worker-exit protocol-error worker-start-error))
           (johnson--handle-worker-failure message)
         (when (and johnson--section-state
                    (equal (plist-get message :lookup) johnson--lookup-id))
@@ -1479,13 +1485,35 @@ unless they carry the buffer's current lookup generation."
              (johnson--handle-dictionary-terminal message t))))))))
 
 (defun johnson--handle-worker-failure (message)
-  "Show worker failure MESSAGE in the results buffer."
+  "Replace the streamed lookup with the fatal failure MESSAGE.
+Cancel the queued render units of the active generation and their
+timer, then enqueue the single unit that replaces the loading line
+with MESSAGE's explicit failure text.  A buffer whose loading line is
+already gone is left untouched."
   (when johnson--loading-marker
+    (when (timerp johnson--render-timer)
+      (cancel-timer johnson--render-timer))
+    (setq johnson--render-timer nil)
+    (setq johnson--render-queue nil)
     (johnson--enqueue-render-unit
      (list :type 'lookup-failed :lookup johnson--lookup-id
-           :message (or (plist-get message :message)
-                        (plist-get message :status)
-                        "worker exited")))))
+           :message (johnson--worker-failure-text message)))))
+
+(defun johnson--worker-failure-text (message)
+  "Return the visible failure line for the fatal worker MESSAGE.
+MESSAGE is a `worker-exit', `protocol-error', or `worker-start-error'
+core message naming its diagnostics buffer."
+  (let ((diagnostics (plist-get message :diagnostics)))
+    (pcase (plist-get message :type)
+      ('worker-exit
+       (format "[Johnson retrieval worker exited with status %s; see %s]"
+               (plist-get message :status) diagnostics))
+      ('protocol-error
+       (format "[Johnson retrieval protocol failed: %s; see %s]"
+               (plist-get message :message) diagnostics))
+      ('worker-start-error
+       (format "[Johnson retrieval worker failed to start: %s; see %s]"
+               (plist-get message :message) diagnostics)))))
 
 (defun johnson--handle-dictionary-start (message)
   "Record and enqueue the matching section announced by MESSAGE."
@@ -1598,8 +1626,9 @@ text."
           (get-buffer-window-list nil nil t)))
 
 (defun johnson--restore-window-positions (records)
-  "Restore window points and starts from RECORDS, clearing the markers.
-RECORDS is a list as returned by `johnson--capture-window-positions'."
+  "Restore each window's point and start position from RECORDS.
+The markers are cleared afterwards.  RECORDS is a list as returned by
+`johnson--capture-window-positions'."
   (pcase-dolist (`(,window ,point ,start) records)
     (when (window-live-p window)
       (set-window-point window point)
@@ -1628,8 +1657,7 @@ RECORDS is a list as returned by `johnson--capture-window-positions'."
                        johnson--current-word))))
     ('lookup-failed
      (johnson--remove-loading-line)
-     (insert (propertize (format "[Worker failed: %s]\n"
-                                 (plist-get unit :message))
+     (insert (propertize (concat (plist-get unit :message) "\n")
                          'face 'error))))
   (set-marker johnson--render-marker (point)))
 
@@ -2106,12 +2134,15 @@ mid-history discards all forward entries."
          johnson--dictionaries)))
 
 (defun johnson-dict-list-reindex ()
-  "Re-index the dictionary at point."
+  "Re-index the dictionary at point.
+The retrieval worker is stopped first, so no retrieval overlaps the
+index mutation."
   (interactive)
   (when-let* ((id (tabulated-list-get-id))
               (dict (cl-find-if (lambda (d) (equal (plist-get d :path) id))
                                 johnson--dictionaries)))
     (let* ((name (plist-get dict :name)))
+      (johnson-worker-stop)
       (message "Re-indexing %s..." name)
       ;; Force staleness by deleting the index file first.
       (let ((index-path (johnson-db--index-path id)))
@@ -2385,8 +2416,11 @@ appended at the end and highlighted."
 
 ;;;###autoload
 (defun johnson-close-caches ()
-  "Kill all dictionary file cache buffers and close database connections."
+  "Kill all dictionary file cache buffers and close database connections.
+The retrieval worker is stopped first, so no retrieval overlaps the
+cache invalidation."
   (interactive)
+  (johnson-worker-stop)
   (let ((count 0))
     (dolist (buf (buffer-list))
       (when (string-prefix-p " *johnson-cache: " (buffer-name buf))
