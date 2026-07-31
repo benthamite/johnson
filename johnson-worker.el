@@ -127,17 +127,19 @@ mark the client failed and deliver one `worker-start-error' message."
   (setq johnson-worker--receive-buffer
         (generate-new-buffer " *johnson-worker-receive*"))
   (setq johnson-worker--state 'starting)
-  (let ((command (funcall johnson-worker-command-function)))
+  (let (command)
     (condition-case err
-        (setq johnson-worker--process
-              (make-process
-               :name "johnson-worker"
-               :command command
-               :connection-type 'pipe
-               :coding 'binary
-               :noquery t
-               :filter #'johnson-worker--process-filter
-               :sentinel #'johnson-worker--sentinel))
+        (progn
+          (setq command (funcall johnson-worker-command-function))
+          (setq johnson-worker--process
+                (make-process
+                 :name "johnson-worker"
+                 :command command
+                 :connection-type 'pipe
+                 :coding 'binary
+                 :noquery t
+                 :filter #'johnson-worker--process-filter
+                 :sentinel #'johnson-worker--sentinel)))
       (error (johnson-worker--fail-start command err)))))
 
 (defun johnson-worker--default-command ()
@@ -150,16 +152,21 @@ mark the client failed and deliver one `worker-start-error' message."
 
 (defun johnson-worker--fail-start (command error)
   "Fail the worker client because spawning COMMAND signaled ERROR.
-COMMAND is the attempted command list and ERROR the signaled error
-condition.  Record both in the diagnostics buffer, drop the client
-state, mark the client failed, and deliver exactly one
-`worker-start-error' message whose `:message' names the attempted
-executable and whose `:diagnostics' names the diagnostics buffer."
+COMMAND is the attempted command list, or nil when
+`johnson-worker-command-function' itself signaled before producing
+one, and ERROR the signaled error condition.  Record both in the
+diagnostics buffer, drop the client state, mark the client failed, and
+deliver exactly one `worker-start-error' message whose `:message'
+names the attempted executable and whose `:diagnostics' names the
+diagnostics buffer."
   (let ((message (format "%s (%s)" (error-message-string error)
-                         (car command))))
+                         (or (car command)
+                             "johnson-worker-command-function"))))
     (johnson-worker--append-diagnostic
      (format "Worker start error: %s\nAttempted command: %s"
-             (error-message-string error) (string-join command " ")))
+             (error-message-string error)
+             (if command (string-join command " ")
+               "none: the command function signaled")))
     (johnson-worker--clear-client-state)
     (setq johnson-worker--state 'failed)
     (johnson-worker--deliver-core
@@ -243,9 +250,14 @@ because a child blocked in a retrieval cannot read a shutdown frame."
 
 (defun johnson-worker--send (message)
   "Encode MESSAGE and send the frame to the worker child.
-MESSAGE must start with `:type'; the child dispatches positionally."
-  (process-send-string johnson-worker--process
-                       (johnson-protocol-encode message)))
+MESSAGE must start with `:type'; the child dispatches positionally.
+Signal `johnson-protocol-error' without writing anything when the
+encoded frame exceeds `johnson-protocol-max-frame-bytes', because the
+child would reject the oversized frame anyway."
+  (let ((frame (johnson-protocol-encode message)))
+    (when (> (string-bytes frame) johnson-protocol-max-frame-bytes)
+      (signal 'johnson-protocol-error '("frame exceeds maximum size")))
+    (process-send-string johnson-worker--process frame)))
 
 (defun johnson-worker--clear-client-state ()
   "Drop the worker process, decode timer, queues, and receive buffer."
@@ -499,10 +511,16 @@ superseded, in which case the completed entry is dropped."
 
 (defun johnson-worker--handle-terminal (message)
   "Handle terminal dictionary MESSAGE, then dispatch queued work.
-Mark the client ready before touching the core so a stale request's
-terminal frame dispatches the current lookup; deliver MESSAGE to the
-core only when the finished request was not superseded."
+Signal `johnson-protocol-error' when MESSAGE arrives while an entry of
+the request is still mid-assembly, whether or not the request is
+stale-discarding, because the child never legitimately truncates an
+entry.  Mark the client ready before touching the core so a stale
+request's terminal frame dispatches the current lookup; deliver
+MESSAGE to the core only when the finished request was not
+superseded."
   (johnson-worker--check-identity message)
+  (when (plist-get johnson-worker--active-request :entry)
+    (signal 'johnson-protocol-error '("terminal frame arrived mid-entry")))
   (let ((stale (plist-get johnson-worker--active-request :stale)))
     (johnson-worker--drop-request-assemblies johnson-worker--active-request)
     (setq johnson-worker--active-request nil)
@@ -618,6 +636,10 @@ command plist must start with `:type'."
         (while (not done)
           (pcase (johnson-worker--read-command)
             (:eof (setq done t))
+            (:invalid
+             (johnson-worker--emit
+              '(:type protocol-error
+                :message "malformed worker command frame")))
             (`(:type shutdown . ,_) (setq done t))
             ((and message `(:type configure . ,_))
              (johnson-worker--apply-configuration message)
@@ -654,10 +676,14 @@ command plist must start with `:type'."
   (princ (johnson-protocol-encode message)))
 
 (defun johnson-worker--read-command ()
-  "Read and decode one command, or return `:eof'."
+  "Read and decode one command, or return `:eof' or `:invalid'.
+Return `:eof' when standard input is exhausted and `:invalid' when the
+line is not a well-formed protocol frame, so a garbage line never
+kills the command loop."
   (condition-case nil
       (johnson-protocol-decode (read-from-minibuffer ""))
-    (end-of-file :eof)))
+    (end-of-file :eof)
+    (johnson-protocol-error :invalid)))
 
 (defun johnson-worker--apply-configuration (message)
   "Apply the `configure' command MESSAGE to this worker process.

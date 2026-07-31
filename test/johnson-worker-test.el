@@ -430,11 +430,24 @@ Each element of OFFSETS becomes one match behavior string."
     (johnson-worker-test--configure child)
     (should (process-live-p child))))
 
-(ert-deftest johnson-worker-test-child-exits-nonzero-on-malformed-input ()
+(ert-deftest johnson-worker-test-child-survives-malformed-input ()
   (johnson-worker-test--with-child child
     (johnson-worker-test--wait-for-message child 'ready)
+    (johnson-worker-test--configure child)
     (process-send-string child "this is not a protocol frame\n")
-    (should-not (zerop (johnson-worker-test--wait-for-exit child)))))
+    (let* ((messages (johnson-worker-test--wait-for-message
+                      child 'protocol-error))
+           (rejection (seq-find (lambda (message)
+                                  (eq (plist-get message :type)
+                                      'protocol-error))
+                                messages)))
+      (should (equal (plist-get rejection :message)
+                     "malformed worker command frame")))
+    (should (process-live-p child))
+    (johnson-worker-test--request child 1 0 '("hello"))
+    (johnson-worker-test--wait-for-message child 'dictionary-complete)
+    (should (process-live-p child))
+    (should (equal (johnson-worker-test--entry-raws child) '("hello")))))
 
 (ert-deftest johnson-worker-test-child-exits-cleanly-on-eof ()
   (johnson-worker-test--with-child child
@@ -734,6 +747,21 @@ buffers, and timers are cleaned up even on failure."
                               (equal (plist-get fmt :name) "worker-fixture"))
                             (plist-get frame :formats))))))
 
+;;;; Parent send bound
+
+(ert-deftest johnson-worker-test-send-rejects-oversized-frame ()
+  (johnson-worker-test--with-client process
+    (let ((written nil))
+      (cl-letf (((symbol-function 'process-send-string)
+                 (lambda (_process string) (push string written))))
+        (should-error
+         (johnson-worker--send
+          (list :type 'request :word (make-string 200000 ?x)))
+         :type 'johnson-protocol-error)
+        (should-not written)
+        (johnson-worker--send '(:type shutdown))
+        (should (= (length written) 1))))))
+
 ;;;; Entry chunk assembly
 
 (ert-deftest johnson-worker-test-chunks-assemble-into-single-entry ()
@@ -796,6 +824,41 @@ buffers, and timers are cleaned up even on failure."
       (johnson-worker-test--feed process (car frames))
       (johnson-worker-test--check-failure process)
       (should-not (johnson-worker-test--core-messages-of-type 'entry)))))
+
+(ert-deftest johnson-worker-test-terminal-mid-entry-fails-protocol ()
+  (johnson-worker-test--with-retrieving-client process
+    (let ((frames (johnson-protocol-entry-frames
+                   '(:lookup 1 :dictionary 0 :entry 0)
+                   (list :raw (make-string 70000 ?x) :context nil))))
+      (should (= (length frames) 3))
+      (johnson-worker-test--feed process (nth 0 frames))
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 1))
+      (johnson-worker-test--feed
+       process (johnson-protocol-encode
+                '(:type dictionary-complete :lookup 1 :dictionary 0
+                  :entries 1)))
+      (johnson-worker-test--check-failure process)
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 0))
+      (should-not (johnson-worker-test--core-messages-of-type 'entry))
+      (should-not (johnson-worker-test--core-messages-of-type
+                   'dictionary-complete)))))
+
+(ert-deftest johnson-worker-test-stale-terminal-mid-entry-fails-protocol ()
+  (johnson-worker-test--with-retrieving-client process
+    (plist-put johnson-worker--active-request :stale t)
+    (let ((frames (johnson-protocol-entry-frames
+                   '(:lookup 1 :dictionary 0 :entry 0)
+                   (list :raw (make-string 70000 ?x) :context nil))))
+      (johnson-worker-test--feed process (nth 0 frames))
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 1))
+      (johnson-worker-test--feed
+       process (johnson-protocol-encode
+                '(:type dictionary-error :lookup 1 :dictionary 0
+                  :message "truncated")))
+      (johnson-worker-test--check-failure process)
+      (should (= (hash-table-count johnson-worker--entry-assemblies) 0))
+      (should-not (johnson-worker-test--core-messages-of-type
+                   'dictionary-error)))))
 
 (ert-deftest johnson-worker-test-stale-stream-violation-still-fails ()
   (johnson-worker-test--with-retrieving-client process
@@ -935,6 +998,27 @@ buffers, and timers are cleaned up even on failure."
                      johnson-worker--diagnostics-buffer-name)))
     (with-current-buffer (get-buffer johnson-worker--diagnostics-buffer-name)
       (should (string-match-p "/nonexistent/johnson-worker-emacs"
+                              (buffer-string))))
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))))
+
+(ert-deftest johnson-worker-test-signaling-command-function-fails-start ()
+  (johnson-worker-test--with-live-client
+    (let ((johnson-worker-command-function
+           (lambda () (error "command construction exploded"))))
+      (johnson-worker-start #'johnson-worker-test--record-message))
+    (should (eq johnson-worker--state 'failed))
+    (should-not (johnson-worker-live-p))
+    (let ((errors (johnson-worker-test--core-messages-of-type
+                   'worker-start-error)))
+      (should (= (length errors) 1))
+      (should (string-match-p "command construction exploded"
+                              (plist-get (car errors) :message)))
+      (should (equal (plist-get (car errors) :diagnostics)
+                     johnson-worker--diagnostics-buffer-name)))
+    (with-current-buffer (get-buffer johnson-worker--diagnostics-buffer-name)
+      (should (string-match-p "command construction exploded"
                               (buffer-string))))
     (johnson-worker-start #'johnson-worker-test--record-message)
     (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
