@@ -602,6 +602,17 @@ exactly one protocol-error message."
          :message (error-message-string error)
          :diagnostics johnson-worker--diagnostics-buffer-name)))
 
+;;;###autoload
+(defun johnson-worker-show-diagnostics ()
+  "Pop to the buffer that collects retrieval worker diagnostics.
+The buffer records worker start failures, protocol errors with their
+offending frames, and any non-protocol line the worker child prints;
+the failure messages shown in the results buffer name it.  Create the
+buffer, empty, when nothing has been recorded yet."
+  (interactive)
+  (pop-to-buffer
+   (get-buffer-create johnson-worker--diagnostics-buffer-name)))
+
 (defun johnson-worker--append-diagnostic (text)
   "Append TEXT as one line to the worker diagnostics buffer."
   (with-current-buffer

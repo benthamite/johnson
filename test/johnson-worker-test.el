@@ -235,6 +235,29 @@ All processes, buffers, and timers are cleaned up even on failure."
     (johnson-worker-test--check-failure process)
     (should (= johnson-worker-test--messages-seen 1))))
 
+;;;; Diagnostics command
+
+(ert-deftest johnson-worker-test-show-diagnostics-displays-buffer ()
+  (unwind-protect
+      (save-window-excursion
+        (should (commandp #'johnson-worker-show-diagnostics))
+        (johnson-worker-show-diagnostics)
+        (should (equal (buffer-name (window-buffer (selected-window)))
+                       johnson-worker--diagnostics-buffer-name)))
+    (when (get-buffer johnson-worker--diagnostics-buffer-name)
+      (kill-buffer johnson-worker--diagnostics-buffer-name))))
+
+(ert-deftest johnson-worker-test-show-diagnostics-shows-recorded-lines ()
+  (unwind-protect
+      (save-window-excursion
+        (johnson-worker--append-diagnostic "recorded diagnostic line")
+        (johnson-worker-show-diagnostics)
+        (with-current-buffer (window-buffer (selected-window))
+          (should (string-match-p "recorded diagnostic line"
+                                  (buffer-string)))))
+    (when (get-buffer johnson-worker--diagnostics-buffer-name)
+      (kill-buffer johnson-worker--diagnostics-buffer-name))))
+
 ;;;; Child harness
 
 (defmacro johnson-worker-test--with-child (child &rest body)
