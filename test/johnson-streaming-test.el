@@ -1091,6 +1091,42 @@ blocked, display the lookup, and wait for the retrieving state."
                        (buffer-substring-no-properties messages-tail
                                                        (point-max)))))))))
 
+(ert-deftest johnson-streaming-test-worker-failure-preserves-queued-entries ()
+  "A worker failure renders queued entry units before the failure line."
+  (johnson-streaming-test--with-env
+    (johnson-streaming-test--register-local-format)
+    (setq johnson--dictionaries
+          (list (johnson-streaming-test--local-dict
+                 "Alpha" "/fixture/alpha" '(("house" "ALPHA-ENTRY")))))
+    (let ((submits nil))
+      (johnson-streaming-test--with-stubbed-worker submits
+        (save-window-excursion
+          (johnson-streaming-test--display "house")
+          (let ((lookup (johnson-streaming-test--lookup-id)))
+            (johnson-streaming-test--feed
+             (list :type 'dictionary-start :lookup lookup :dictionary 0
+                   :name "Alpha"))
+            (johnson-streaming-test--feed
+             (list :type 'entry :lookup lookup :dictionary 0 :entry 0
+                   :raw "ALPHA-ENTRY" :context nil))
+            (with-current-buffer "*johnson*"
+              (should johnson--render-queue))
+            (johnson-streaming-test--feed
+             (list :type 'worker-exit :status "killed"
+                   :diagnostics johnson-worker--diagnostics-buffer-name))
+            (johnson-streaming-test--drain-render-queue)
+            (let ((text (johnson-streaming-test--buffer-text)))
+              (should (string-match-p "ALPHA-ENTRY" text))
+              (should (string-match-p "Johnson retrieval worker exited"
+                                      text))
+              (should (< (string-match "ALPHA-ENTRY" text)
+                         (string-match "Johnson retrieval worker exited"
+                                       text)))
+              (should-not (string-match-p "Looking up" text))
+              (should-not (string-match-p "No results found" text)))
+            (with-current-buffer "*johnson*"
+              (should (null johnson--loading-marker)))))))))
+
 (ert-deftest johnson-streaming-test-worker-start-failure-shows-error ()
   "A worker start failure is visible and does not poison later lookups."
   (johnson-streaming-test--with-env

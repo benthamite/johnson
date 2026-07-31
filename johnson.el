@@ -1485,16 +1485,13 @@ unless they carry the buffer's current lookup generation."
              (johnson--handle-dictionary-terminal message t))))))))
 
 (defun johnson--handle-worker-failure (message)
-  "Replace the streamed lookup with the fatal failure MESSAGE.
-Cancel the queued render units of the active generation and their
-timer, then enqueue the single unit that replaces the loading line
-with MESSAGE's explicit failure text.  A buffer whose loading line is
+  "End the streamed lookup with the fatal failure MESSAGE.
+Keep the queued render units, so entries retrieved before the worker
+died still render, and enqueue the unit that replaces the loading line
+with MESSAGE's explicit failure text after them; enqueuing also arms
+the render timer when none is armed.  A buffer whose loading line is
 already gone is left untouched."
   (when johnson--loading-marker
-    (when (timerp johnson--render-timer)
-      (cancel-timer johnson--render-timer))
-    (setq johnson--render-timer nil)
-    (setq johnson--render-queue nil)
     (johnson--enqueue-render-unit
      (list :type 'lookup-failed :lookup johnson--lookup-id
            :message (johnson--worker-failure-text message)))))
