@@ -709,6 +709,10 @@ messages, each naming the diagnostics buffer that holds the details:
      [Johnson retrieval protocol failed: MESSAGE; see BUFFER]
      [Johnson retrieval worker failed to start: MESSAGE; see BUFFER]
 
+   The command ‘johnson-worker-show-diagnostics’ pops to that
+diagnostics buffer, whose space-prefixed name keeps it out of ordinary
+buffer switching.
+
    An error in a single dictionary does not abort the lookup: the
 failing dictionary renders as an error section and the remaining
 dictionaries continue streaming.
@@ -1342,6 +1346,15 @@ while rendering stays in the interactive Emacs:
 
    Formats that register none of these hooks keep the single-argument
 ‘:render-entry’ path and receive a default packet with a ‘nil’ context.
+
+   Worker-side execution requires the format's library to be loadable by
+the retrieval child Emacs.  Johnson's bundled formats are loaded
+automatically, because the child loads ‘johnson’ itself at startup.  A
+third-party format must extend ‘johnson-worker-command-function’ so that
+the command it returns also loads the format's library in the child.  A
+format the child cannot load does not abort the lookup: each of its
+dictionaries renders as an error section naming the format that is not
+registered in the worker.
 
    If a format with the same ‘:name’ is already registered, it is
 replaced.  This allows format backends to re-register themselves (e.g.,
@@ -2562,6 +2575,8 @@ File: johnson.info,  Node: Function index,  Next: Variable index,  Up: Indices
 * johnson-toggle-images:                 Toggling images.      (line  6)
 * johnson-toggle-section:                Navigating the results buffer.
                                                                (line  6)
+* johnson-worker-show-diagnostics:       Rendering performance.
+                                                               (line 45)
 
 
 File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
@@ -2572,57 +2587,63 @@ File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
  [index ]
 * Menu:
 
-* johnson-abbreviation-face:             Content type faces.    (line 6)
-* johnson-audio-button-face:             UI faces.              (line 6)
-* johnson-audio-external-players:        Audio playback.        (line 6)
-* johnson-audio-player:                  Audio playback.        (line 6)
-* johnson-bold-face:                     Text styling faces.    (line 6)
-* johnson-bookmarks-file:                Bookmarks.             (line 6)
-* johnson-cache-directory:               Cache directory.       (line 6)
-* johnson-color-blue-face:               Color faces.           (line 6)
-* johnson-color-brown-face:              Color faces.           (line 6)
-* johnson-color-default-face:            Color faces.           (line 6)
-* johnson-color-gray-face:               Color faces.           (line 6)
-* johnson-color-green-face:              Color faces.           (line 6)
-* johnson-color-orange-face:             Color faces.           (line 6)
-* johnson-color-red-face:                Color faces.           (line 6)
-* johnson-color-violet-face:             Color faces.           (line 6)
-* johnson-comment-face:                  Content type faces.    (line 6)
-* johnson-completion-min-chars:          Completion behavior.   (line 6)
+* johnson-abbreviation-face:             Content type faces.   (line  6)
+* johnson-audio-button-face:             UI faces.             (line  6)
+* johnson-audio-external-players:        Audio playback.       (line  6)
+* johnson-audio-player:                  Audio playback.       (line  6)
+* johnson-bold-face:                     Text styling faces.   (line  6)
+* johnson-bookmarks-file:                Bookmarks.            (line  6)
+* johnson-cache-directory:               Cache directory.      (line  6)
+* johnson-color-blue-face:               Color faces.          (line  6)
+* johnson-color-brown-face:              Color faces.          (line  6)
+* johnson-color-default-face:            Color faces.          (line  6)
+* johnson-color-gray-face:               Color faces.          (line  6)
+* johnson-color-green-face:              Color faces.          (line  6)
+* johnson-color-orange-face:             Color faces.          (line  6)
+* johnson-color-red-face:                Color faces.          (line  6)
+* johnson-color-violet-face:             Color faces.          (line  6)
+* johnson-comment-face:                  Content type faces.   (line  6)
+* johnson-completion-min-chars:          Completion behavior.  (line  6)
 * johnson-default-search-scope:          Search scope and groups.
-                                                                (line 6)
-* johnson-dict-enabled:                  DICT protocol.         (line 6)
-* johnson-dict-servers:                  DICT protocol.         (line 6)
-* johnson-dictionary-directories:        Dictionary discovery.  (line 6)
+                                                               (line  6)
+* johnson-dict-enabled:                  DICT protocol.        (line  6)
+* johnson-dict-servers:                  DICT protocol.        (line  6)
+* johnson-dictionary-directories:        Dictionary discovery. (line  6)
 * johnson-dictionary-groups:             Search scope and groups.
-                                                                (line 6)
-* johnson-dictionary-priorities:         Display ordering.      (line 6)
-* johnson-display-images:                Images.                (line 6)
-* johnson-eldoc-max-length:              Eldoc integration.     (line 6)
-* johnson-example-face:                  Content type faces.    (line 6)
-* johnson-fts-enabled:                   Full-text search.      (line 6)
-* johnson-history:                       Lookup history.        (line 6)
-* johnson-history-file:                  History buffer.        (line 6)
-* johnson-history-max:                   Lookup history.        (line 6)
-* johnson-history-persist:               History buffer.        (line 6)
-* johnson-italic-face:                   Text styling faces.    (line 6)
-* johnson-optional-face:                 Content type faces.    (line 6)
-* johnson-ref-face:                      Link faces.            (line 6)
-* johnson-ref-scope:                     Cross-reference scope. (line 6)
-* johnson-render-batch-size:             Rendering performance. (line 6)
-* johnson-render-batch-time-budget:      Rendering performance. (line 6)
-* johnson-render-idle-delay:             Rendering performance. (line 6)
-* johnson-render-scheduling-delay:       Rendering performance. (line 6)
-* johnson-reorder-unmatched-face:        UI faces.              (line 6)
-* johnson-scan-idle-delay:               Scan-popup mode.       (line 6)
-* johnson-scan-popup-duration:           Scan-popup mode.       (line 6)
-* johnson-scan-trigger:                  Scan-popup mode.       (line 6)
-* johnson-section-header-face:           Section header face.   (line 6)
-* johnson-stress-face:                   Text styling faces.    (line 6)
-* johnson-toc-face:                      UI faces.              (line 6)
-* johnson-underline-face:                Text styling faces.    (line 6)
-* johnson-url-face:                      Link faces.            (line 6)
-* johnson-wildcard-max-results:          Wildcard search.       (line 6)
+                                                               (line  6)
+* johnson-dictionary-priorities:         Display ordering.     (line  6)
+* johnson-display-images:                Images.               (line  6)
+* johnson-eldoc-max-length:              Eldoc integration.    (line  6)
+* johnson-example-face:                  Content type faces.   (line  6)
+* johnson-fts-enabled:                   Full-text search.     (line  6)
+* johnson-history:                       Lookup history.       (line  6)
+* johnson-history-file:                  History buffer.       (line  6)
+* johnson-history-max:                   Lookup history.       (line  6)
+* johnson-history-persist:               History buffer.       (line  6)
+* johnson-italic-face:                   Text styling faces.   (line  6)
+* johnson-optional-face:                 Content type faces.   (line  6)
+* johnson-ref-face:                      Link faces.           (line  6)
+* johnson-ref-scope:                     Cross-reference scope.
+                                                               (line  6)
+* johnson-render-batch-size:             Rendering performance.
+                                                               (line  6)
+* johnson-render-batch-time-budget:      Rendering performance.
+                                                               (line  6)
+* johnson-render-idle-delay:             Rendering performance.
+                                                               (line  6)
+* johnson-render-scheduling-delay:       Rendering performance.
+                                                               (line  6)
+* johnson-reorder-unmatched-face:        UI faces.             (line  6)
+* johnson-scan-idle-delay:               Scan-popup mode.      (line  6)
+* johnson-scan-popup-duration:           Scan-popup mode.      (line  6)
+* johnson-scan-trigger:                  Scan-popup mode.      (line  6)
+* johnson-section-header-face:           Section header face.  (line  6)
+* johnson-stress-face:                   Text styling faces.   (line  6)
+* johnson-toc-face:                      UI faces.             (line  6)
+* johnson-underline-face:                Text styling faces.   (line  6)
+* johnson-url-face:                      Link faces.           (line  6)
+* johnson-wildcard-max-results:          Wildcard search.      (line  6)
+* johnson-worker-command-function:       Format registration.  (line 48)
 
 
 Tag Table:
@@ -2648,75 +2669,75 @@ Node: Bookmarks22248
 Node: History buffer22858
 Node: Completion behavior23696
 Node: Rendering performance24394
-Node: Commands26953
-Node: Looking up words27581
-Node: Indexing dictionaries29865
-Node: Managing groups and scope31542
-Node: Navigating the results buffer32632
-Node: Following cross-references35014
-Node: Navigation history35923
-Node: Copying entries37331
-Node: Dictionary list38583
-Node: Cache management39994
-Node: Toggling images41720
-Node: Searching definitions42226
-Node: Eldoc integration commands42957
-Node: Scan-popup mode commands43862
-Node: Managing bookmarks44639
-Node: Browsing history45784
-Node: Browsing dictionary files46714
-Node: Clearing the index47260
-Node: Reordering dictionaries47956
-Node: Importing GoldenDict order49119
-Node: Transient menu49966
-Node: Functions50826
-Node: Format registration51529
-Node: Completion at point54571
-Node: Database lifecycle55474
-Node: Metadata storage56373
-Node: Headword normalization57544
-Node: Entry insertion58381
-Node: Querying entries59393
-Node: Staleness detection and reset60703
-Node: Wildcard and full-text search queries62133
-Node: Completion index63491
-Node: DSL format detection64803
-Node: DSL metadata parsing65766
-Node: DSL index building66777
-Node: DSL entry retrieval68805
-Node: DSL entry rendering69711
-Node: StarDict backend71914
-Node: MDict backend73641
-Node: BGL backend75238
-Node: DICT protocol backend76427
-Node: Dictzip backend77856
-Node: HTML rendering78870
-Node: RIPEMD-128 hashing80425
-Node: Audio playback functions81194
-Node: EPWING backend82020
-Node: EBZIP backend83779
-Node: Faces84725
-Node: Text styling faces85241
-Node: Content type faces85945
-Node: Link faces87206
-Node: Section header face87865
-Node: Color faces88453
-Node: UI faces89857
-Node: Tips90556
-Node: Looking up words in PDF documents90694
-Node: Roadmap92291
-Node: Version 01 --- DSL92882
-Node: Version 02 --- StarDict and compressed DSL93882
-Node: Version 03 --- MDict and DSL abbreviations95175
-Node: Version 04 --- BGL DICT and more95673
-Node: Version 05 --- EPWING97024
-Node: Version 06 (current) --- EPWING improvements and audits97826
-Node: Future features98305
-Node: Contributing98624
-Node: Running the test suite99164
-Node: Indices99524
-Node: Function index99662
-Node: Variable index111567
+Node: Commands27109
+Node: Looking up words27737
+Node: Indexing dictionaries30021
+Node: Managing groups and scope31698
+Node: Navigating the results buffer32788
+Node: Following cross-references35170
+Node: Navigation history36079
+Node: Copying entries37487
+Node: Dictionary list38739
+Node: Cache management40150
+Node: Toggling images41876
+Node: Searching definitions42382
+Node: Eldoc integration commands43113
+Node: Scan-popup mode commands44018
+Node: Managing bookmarks44795
+Node: Browsing history45940
+Node: Browsing dictionary files46870
+Node: Clearing the index47416
+Node: Reordering dictionaries48112
+Node: Importing GoldenDict order49275
+Node: Transient menu50122
+Node: Functions50982
+Node: Format registration51685
+Node: Completion at point55255
+Node: Database lifecycle56158
+Node: Metadata storage57057
+Node: Headword normalization58228
+Node: Entry insertion59065
+Node: Querying entries60077
+Node: Staleness detection and reset61387
+Node: Wildcard and full-text search queries62817
+Node: Completion index64175
+Node: DSL format detection65487
+Node: DSL metadata parsing66450
+Node: DSL index building67461
+Node: DSL entry retrieval69489
+Node: DSL entry rendering70395
+Node: StarDict backend72598
+Node: MDict backend74325
+Node: BGL backend75922
+Node: DICT protocol backend77111
+Node: Dictzip backend78540
+Node: HTML rendering79554
+Node: RIPEMD-128 hashing81109
+Node: Audio playback functions81878
+Node: EPWING backend82704
+Node: EBZIP backend84463
+Node: Faces85409
+Node: Text styling faces85925
+Node: Content type faces86629
+Node: Link faces87890
+Node: Section header face88549
+Node: Color faces89137
+Node: UI faces90541
+Node: Tips91240
+Node: Looking up words in PDF documents91378
+Node: Roadmap92975
+Node: Version 01 --- DSL93566
+Node: Version 02 --- StarDict and compressed DSL94566
+Node: Version 03 --- MDict and DSL abbreviations95859
+Node: Version 04 --- BGL DICT and more96357
+Node: Version 05 --- EPWING97708
+Node: Version 06 (current) --- EPWING improvements and audits98510
+Node: Future features98989
+Node: Contributing99308
+Node: Running the test suite99848
+Node: Indices100208
+Node: Function index100346
+Node: Variable index112388
 
 End Tag Table
 

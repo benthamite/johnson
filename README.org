@@ -633,6 +633,11 @@ naming the diagnostics buffer that holds the details:
 [Johnson retrieval worker failed to start: MESSAGE; see BUFFER]
 #+end_example
 
+#+findex: johnson-worker-show-diagnostics
+The command ~johnson-worker-show-diagnostics~ pops to that diagnostics
+buffer, whose space-prefixed name keeps it out of ordinary buffer
+switching.
+
 An error in a single dictionary does not abort the lookup: the failing
 dictionary renders as an error section and the remaining dictionaries
 continue streaming.
@@ -1265,6 +1270,16 @@ stays in the interactive Emacs:
 Formats that register none of these hooks keep the single-argument
 ~:render-entry~ path and receive a default packet with a ~nil~
 context.
+
+#+vindex: johnson-worker-command-function
+Worker-side execution requires the format's library to be loadable by
+the retrieval child Emacs.  Johnson's bundled formats are loaded
+automatically, because the child loads =johnson= itself at startup.  A
+third-party format must extend ~johnson-worker-command-function~ so
+that the command it returns also loads the format's library in the
+child.  A format the child cannot load does not abort the lookup: each
+of its dictionaries renders as an error section naming the format that
+is not registered in the worker.
 
 If a format with the same ~:name~ is already registered, it is replaced.
 This allows format backends to re-register themselves (e.g., after

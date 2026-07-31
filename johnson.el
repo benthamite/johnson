@@ -5,7 +5,7 @@
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
 ;; Maintainer: Pablo Stafforini <pablostafforini@gmail.com>
 ;; URL: https://github.com/benthamite/johnson
-;; Version: 0.6.0
+;; Version: 0.7.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: dictionaries, i18n
 
