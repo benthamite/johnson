@@ -195,7 +195,10 @@ of other lookups; dispatch happens once the worker is ready."
     (johnson-worker--dispatch-next)))
 
 (defun johnson-worker--dispatch-next ()
-  "Send the next queued request when the worker is ready."
+  "Send the next queued request when the worker is ready.
+A request whose encoded frame exceeds the protocol bound takes the
+protocol-failure path on every dispatch entry point, instead of
+leaving the client stuck retrieving a request the child never saw."
   (when (and (eq johnson-worker--state 'ready)
              johnson-worker--pending-requests
              (process-live-p johnson-worker--process))
@@ -210,7 +213,14 @@ of other lookups; dispatch happens once the worker is ready."
                   :entry nil
                   :chunk nil))
       (setq johnson-worker--state 'retrieving)
-      (johnson-worker--send (append (list :type 'request) request)))))
+      (condition-case err
+          (johnson-worker--send (append (list :type 'request) request))
+        (johnson-protocol-error
+         (johnson-worker--fail-protocol
+          (format "outgoing request (lookup %s, dictionary %s)"
+                  (plist-get request :lookup)
+                  (plist-get request :dictionary))
+          err))))))
 
 (defun johnson-worker-stop ()
   "Stop the retrieval worker immediately, without waiting.
@@ -608,19 +618,27 @@ exactly one protocol-error message."
 The buffer records worker start failures, protocol errors with their
 offending frames, and any non-protocol line the worker child prints;
 the failure messages shown in the results buffer name it.  Create the
-buffer, empty, when nothing has been recorded yet."
+buffer, empty, when nothing has been recorded yet, and put it in
+`special-mode' for a read-only view."
   (interactive)
-  (pop-to-buffer
-   (get-buffer-create johnson-worker--diagnostics-buffer-name)))
+  (let ((buffer (get-buffer-create johnson-worker--diagnostics-buffer-name)))
+    (with-current-buffer buffer
+      (unless (derived-mode-p 'special-mode)
+        (special-mode)))
+    (pop-to-buffer buffer)))
 
 (defun johnson-worker--append-diagnostic (text)
-  "Append TEXT as one line to the worker diagnostics buffer."
+  "Append TEXT as one line to the worker diagnostics buffer.
+The buffer may be read-only from `johnson-worker-show-diagnostics'
+having put it in `special-mode', so the insertion binds
+`inhibit-read-only'."
   (with-current-buffer
       (get-buffer-create johnson-worker--diagnostics-buffer-name)
-    (goto-char (point-max))
-    (insert text)
-    (unless (bolp)
-      (insert "\n"))))
+    (let ((inhibit-read-only t))
+      (goto-char (point-max))
+      (insert text)
+      (unless (bolp)
+        (insert "\n")))))
 
 ;;;; Child command loop
 
@@ -647,10 +665,11 @@ command plist must start with `:type'."
         (while (not done)
           (pcase (johnson-worker--read-command)
             (:eof (setq done t))
-            (:invalid
+            (`(:invalid . ,err)
              (johnson-worker--emit
-              '(:type protocol-error
-                :message "malformed worker command frame")))
+              (list :type 'protocol-error
+                    :message (format "malformed worker command frame: %s"
+                                     (error-message-string err)))))
             (`(:type shutdown . ,_) (setq done t))
             ((and message `(:type configure . ,_))
              (johnson-worker--apply-configuration message)
@@ -687,14 +706,14 @@ command plist must start with `:type'."
   (princ (johnson-protocol-encode message)))
 
 (defun johnson-worker--read-command ()
-  "Read and decode one command, or return `:eof' or `:invalid'.
-Return `:eof' when standard input is exhausted and `:invalid' when the
-line is not a well-formed protocol frame, so a garbage line never
-kills the command loop."
-  (condition-case nil
+  "Read and decode one command, or report exhausted or invalid input.
+Return `:eof' when standard input is exhausted and `(:invalid . ERROR)'
+with the signaled ERROR condition when the line is not a well-formed
+protocol frame, so a garbage line never kills the command loop."
+  (condition-case err
       (johnson-protocol-decode (read-from-minibuffer ""))
     (end-of-file :eof)
-    (johnson-protocol-error :invalid)))
+    (johnson-protocol-error (cons :invalid err))))
 
 (defun johnson-worker--apply-configuration (message)
   "Apply the `configure' command MESSAGE to this worker process.

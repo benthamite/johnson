@@ -243,7 +243,10 @@ All processes, buffers, and timers are cleaned up even on failure."
         (should (commandp #'johnson-worker-show-diagnostics))
         (johnson-worker-show-diagnostics)
         (should (equal (buffer-name (window-buffer (selected-window)))
-                       johnson-worker--diagnostics-buffer-name)))
+                       johnson-worker--diagnostics-buffer-name))
+        (with-current-buffer (window-buffer (selected-window))
+          (should (derived-mode-p 'special-mode))
+          (should buffer-read-only)))
     (when (get-buffer johnson-worker--diagnostics-buffer-name)
       (kill-buffer johnson-worker--diagnostics-buffer-name))))
 
@@ -252,8 +255,11 @@ All processes, buffers, and timers are cleaned up even on failure."
       (save-window-excursion
         (johnson-worker--append-diagnostic "recorded diagnostic line")
         (johnson-worker-show-diagnostics)
+        (johnson-worker--append-diagnostic "appended after display")
         (with-current-buffer (window-buffer (selected-window))
           (should (string-match-p "recorded diagnostic line"
+                                  (buffer-string)))
+          (should (string-match-p "appended after display"
                                   (buffer-string)))))
     (when (get-buffer johnson-worker--diagnostics-buffer-name)
       (kill-buffer johnson-worker--diagnostics-buffer-name))))
@@ -464,8 +470,10 @@ Each element of OFFSETS becomes one match behavior string."
                                   (eq (plist-get message :type)
                                       'protocol-error))
                                 messages)))
-      (should (equal (plist-get rejection :message)
-                     "malformed worker command frame")))
+      (should (string-match-p "\\`malformed worker command frame: "
+                              (plist-get rejection :message)))
+      (should (string-match-p "missing frame prefix"
+                              (plist-get rejection :message))))
     (should (process-live-p child))
     (johnson-worker-test--request child 1 0 '("hello"))
     (johnson-worker-test--wait-for-message child 'dictionary-complete)
@@ -784,6 +792,50 @@ buffers, and timers are cleaned up even on failure."
         (should-not written)
         (johnson-worker--send '(:type shutdown))
         (should (= (length written) 1))))))
+
+(ert-deftest johnson-worker-test-oversized-submit-fails-protocol ()
+  (johnson-worker-test--with-live-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))
+    (let ((process johnson-worker--process))
+      (johnson-worker-submit
+       (johnson-worker-test--request-plist
+        1 0 (list (make-string 200000 ?x))))
+      (johnson-worker-test--check-failure process))
+    (should (null johnson-worker--active-request))
+    (should (null johnson-worker--pending-requests))
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
+                                           johnson-worker--process))
+    (johnson-worker-submit
+     (johnson-worker-test--request-plist 2 0 '("hello")))
+    (should (johnson-test-support-wait-for
+             (lambda ()
+               (johnson-worker-test--core-messages-of-type
+                'dictionary-complete))
+             10 johnson-worker--process))))
+
+(ert-deftest johnson-worker-test-oversized-queued-dispatch-fails-protocol ()
+  (johnson-worker-test--with-stepped-client
+    (johnson-worker-start #'johnson-worker-test--record-message)
+    (johnson-worker-test--pump-frame)
+    (johnson-worker-test--pump-frame)
+    (should (johnson-worker-ready-p))
+    (johnson-worker-submit
+     (johnson-worker-test--request-plist 1 0 '("hello")))
+    (should (eq johnson-worker--state 'retrieving))
+    (johnson-worker-submit
+     (johnson-worker-test--request-plist
+      1 1 (list (make-string 200000 ?x))))
+    (should (= (length johnson-worker--pending-requests) 1))
+    (let ((process johnson-worker--process))
+      (johnson-worker-test--pump-frame)
+      (johnson-worker-test--pump-frame)
+      (johnson-worker-test--pump-frame)
+      (johnson-worker-test--check-failure process))
+    (should (null johnson-worker--pending-requests))
+    (should (null johnson-worker--active-request))))
 
 ;;;; Entry chunk assembly
 
