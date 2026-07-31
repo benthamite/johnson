@@ -1168,27 +1168,6 @@ Returns a list of (DICT-PLIST . MATCHES) sorted by priority."
             (< (or (plist-get (car a) :priority) 0)
                (or (plist-get (car b) :priority) 0))))))
 
-(defun johnson--query-dict-exact (dict-name word)
-  "Query the dictionary named DICT-NAME for exact matches on WORD.
-Returns a list of (DICT-PLIST . MATCHES), like `johnson--query-all-exact'
-but restricted to a single dictionary."
-  (let ((dict (cl-find dict-name johnson--dictionaries
-                       :key (lambda (d) (plist-get d :name))
-                       :test #'equal)))
-    (when dict
-      (condition-case nil
-          (let* ((path (plist-get dict :path))
-                 (format-name (plist-get dict :format-name))
-                 (fmt (johnson--get-format format-name))
-                 (query-fn (and fmt (plist-get fmt :query-exact))))
-            (if query-fn
-                (let ((matches (funcall query-fn path word)))
-                  (when matches (list (cons dict matches))))
-              (let* ((db (johnson--get-db path))
-                     (matches (johnson-db-query-exact db word)))
-                (when matches (list (cons dict matches))))))
-        (error nil)))))
-
 (defun johnson--history-push (word)
   "Add WORD to `johnson-history', capping at `johnson-history-max'."
   (unless (equal word (car johnson-history))
