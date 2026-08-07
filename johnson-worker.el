@@ -664,6 +664,8 @@ command plist must start with `:type'."
     (unwind-protect
         (while (not done)
           (pcase (johnson-worker--read-command)
+            (:interrupted
+             (princ "Worker input interrupted; continuing\n"))
             (:eof (setq done t))
             (`(:invalid . ,err)
              (johnson-worker--emit
@@ -706,12 +708,13 @@ command plist must start with `:type'."
   (princ (johnson-protocol-encode message)))
 
 (defun johnson-worker--read-command ()
-  "Read and decode one command, or report exhausted or invalid input.
-Return `:eof' when standard input is exhausted and `(:invalid . ERROR)'
-with the signaled ERROR condition when the line is not a well-formed
-protocol frame, so a garbage line never kills the command loop."
+  "Read and decode one command, or report why none was available.
+Return `:eof' when standard input is exhausted, `:interrupted' when an
+idle read receives `quit', and `(:invalid . ERROR)' when the line is
+not a well-formed protocol frame."
   (condition-case err
       (johnson-protocol-decode (read-from-minibuffer ""))
+    (quit :interrupted)
     (end-of-file :eof)
     (johnson-protocol-error (cons :invalid err))))
 

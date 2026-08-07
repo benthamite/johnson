@@ -633,6 +633,12 @@ naming the diagnostics buffer that holds the details:
 [Johnson retrieval worker failed to start: MESSAGE; see BUFFER]
 #+end_example
 
+An interrupt received while the worker is idle waiting for its next
+command is recorded in the diagnostics buffer and does not terminate
+the worker.  Interrupts during configuration or retrieval retain the
+failure behavior above because partially completed work cannot be
+resumed safely.
+
 #+findex: johnson-worker-show-diagnostics
 The command ~johnson-worker-show-diagnostics~ pops to that diagnostics
 buffer, whose space-prefixed name keeps it out of ordinary buffer

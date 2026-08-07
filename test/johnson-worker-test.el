@@ -278,12 +278,13 @@ the cache directory are cleaned up even when BODY fails."
            (progn ,@body)
          (johnson-worker-test--cleanup-child ,child)))))
 
-(defun johnson-worker-test--start-child ()
-  "Start and return a real worker child Emacs over the fixture format."
+(defun johnson-worker-test--start-child (&optional setup-form)
+  "Start and return a real worker child Emacs over the fixture format.
+Evaluate SETUP-FORM before entering `johnson-worker-main' when non-nil."
   (let* ((stderr (generate-new-buffer " *johnson-worker-child-stderr*"))
          (process (make-process
                    :name "johnson-worker-child"
-                   :command (johnson-worker-test--child-command)
+                   :command (johnson-worker-test--child-command setup-form)
                    :connection-type 'pipe
                    :coding 'binary
                    :noquery t
@@ -293,14 +294,17 @@ the cache directory are cleaned up even when BODY fails."
     (process-put process 'stderr-buffer stderr)
     process))
 
-(defun johnson-worker-test--child-command ()
-  "Return the command list that spawns the worker child Emacs."
-  (list (expand-file-name invocation-name invocation-directory)
-        "-Q" "--batch"
-        "-L" johnson-test-support-source-directory
-        "-L" johnson-test-support-directory
-        "-l" "johnson" "-l" "johnson-worker-fixture"
-        "--funcall" "johnson-worker-main"))
+(defun johnson-worker-test--child-command (&optional setup-form)
+  "Return the command list that spawns the worker child Emacs.
+Evaluate SETUP-FORM before entering `johnson-worker-main' when non-nil."
+  (append
+   (list (expand-file-name invocation-name invocation-directory)
+         "-Q" "--batch"
+         "-L" johnson-test-support-source-directory
+         "-L" johnson-test-support-directory
+         "-l" "johnson" "-l" "johnson-worker-fixture")
+   (when setup-form (list "--eval" setup-form))
+   (list "--funcall" "johnson-worker-main")))
 
 (defun johnson-worker-test--child-filter (process output)
   "Append child OUTPUT to the accumulated output of PROCESS."
@@ -443,6 +447,43 @@ Each element of OFFSETS becomes one match behavior string."
       (should (equal (process-id child) pid))
       (should (equal (johnson-worker-test--entry-raws child)
                      (list "1" "2" (number-to-string pid)))))))
+
+(ert-deftest johnson-worker-test-child-survives-idle-quit ()
+  "An idle interrupt leaves the same child ready for the next request."
+  (johnson-test-support-with-temp-cache-dir
+    (let ((child
+           (johnson-worker-test--start-child
+            "(progn
+               (setq johnson-worker-test--reads 0)
+               (defun johnson-worker-test--quit-second-read
+                   (read &rest args)
+                 (if (= (cl-incf johnson-worker-test--reads) 2)
+                     (signal 'quit nil)
+                   (apply read args)))
+               (advice-add 'read-from-minibuffer :around
+                           #'johnson-worker-test--quit-second-read))")))
+      (unwind-protect
+          (progn
+            (johnson-worker-test--wait-for-message child 'ready)
+            (johnson-worker-test--configure child)
+            (let ((pid (process-id child)))
+              (should
+               (johnson-test-support-wait-for
+                (lambda ()
+                  (or (not (process-live-p child))
+                      (string-match-p "Worker input interrupted; continuing"
+                                      (process-get child 'output))))
+                10 child))
+              (should (process-live-p child))
+              (should (equal (process-id child) pid))
+              (johnson-worker-test--request child 1 0 '("hello"))
+              (johnson-worker-test--wait-for-message
+               child 'dictionary-complete)
+              (should (process-live-p child))
+              (should (equal (process-id child) pid))
+              (should (equal (johnson-worker-test--entry-raws child)
+                             '("hello")))))
+        (johnson-worker-test--cleanup-child child)))))
 
 (ert-deftest johnson-worker-test-child-rejects-request-before-configure ()
   (johnson-worker-test--with-child child
