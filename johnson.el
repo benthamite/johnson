@@ -1478,18 +1478,21 @@ already gone is left untouched."
 (defun johnson--worker-failure-text (message)
   "Return the visible failure line for the fatal worker MESSAGE.
 MESSAGE is a `worker-exit', `protocol-error', or `worker-start-error'
-core message naming its diagnostics buffer."
-  (let ((diagnostics (plist-get message :diagnostics)))
+core message.  Each line points at `johnson-worker-show-diagnostics',
+the command that pops to the diagnostics buffer, because the buffer
+MESSAGE's `:diagnostics' key names has a space-prefixed name that
+ordinary buffer switching does not offer."
+  (let ((remedy "run M-x johnson-worker-show-diagnostics"))
     (pcase (plist-get message :type)
       ('worker-exit
-       (format "[Johnson retrieval worker exited with status %s; see %s]"
-               (plist-get message :status) diagnostics))
+       (format "[Johnson retrieval worker exited with status %s; %s]"
+               (plist-get message :status) remedy))
       ('protocol-error
-       (format "[Johnson retrieval protocol failed: %s; see %s]"
-               (plist-get message :message) diagnostics))
+       (format "[Johnson retrieval protocol failed: %s; %s]"
+               (plist-get message :message) remedy))
       ('worker-start-error
-       (format "[Johnson retrieval worker failed to start: %s; see %s]"
-               (plist-get message :message) diagnostics)))))
+       (format "[Johnson retrieval worker failed to start: %s; %s]"
+               (plist-get message :message) remedy)))))
 
 (defun johnson--handle-dictionary-start (message)
   "Record and enqueue the matching section announced by MESSAGE."

@@ -1044,7 +1044,7 @@ blocked, display the lookup, and wait for the retrieving state."
         (should (johnson-test-support-wait-for
                  (lambda ()
                    (string-match-p
-                    "\\[Johnson retrieval worker exited with status .+; see  \\*johnson-worker-diagnostics\\*\\]"
+                    "\\[Johnson retrieval worker exited with status .+; run M-x johnson-worker-show-diagnostics\\]"
                     (johnson-streaming-test--buffer-text)))
                  10))
         (let ((text (johnson-streaming-test--buffer-text)))
@@ -1069,7 +1069,7 @@ blocked, display the lookup, and wait for the retrieving state."
         (should (johnson-test-support-wait-for
                  (lambda ()
                    (string-match-p
-                    "\\[Johnson retrieval protocol failed: .+; see  \\*johnson-worker-diagnostics\\*\\]"
+                    "\\[Johnson retrieval protocol failed: .+; run M-x johnson-worker-show-diagnostics\\]"
                     (johnson-streaming-test--buffer-text)))
                  10))
         (should-not (process-live-p process))
@@ -1142,7 +1142,7 @@ blocked, display the lookup, and wait for the retrieving state."
       (should (johnson-test-support-wait-for
                (lambda ()
                  (string-match-p
-                  "\\[Johnson retrieval worker failed to start: .*/nonexistent/johnson-worker-emacs.*; see  \\*johnson-worker-diagnostics\\*\\]"
+                  "\\[Johnson retrieval worker failed to start: .*/nonexistent/johnson-worker-emacs.*; run M-x johnson-worker-show-diagnostics\\]"
                   (johnson-streaming-test--buffer-text)))
                10))
       (should-not (string-match-p "Looking up"

@@ -703,11 +703,12 @@ former name, ‘johnson-render-idle-delay’, is kept as an obsolete alias.
    When the retrieval child fails, the failure is explicit: Johnson
 never falls back to retrieving entries in the interactive Emacs
 silently.  The loading line is replaced with one of the following
-messages, each naming the diagnostics buffer that holds the details:
+messages, each naming the command that opens the diagnostics buffer
+holding the details:
 
-     [Johnson retrieval worker exited with status STATUS; see BUFFER]
-     [Johnson retrieval protocol failed: MESSAGE; see BUFFER]
-     [Johnson retrieval worker failed to start: MESSAGE; see BUFFER]
+     [Johnson retrieval worker exited with status STATUS; run M-x johnson-worker-show-diagnostics]
+     [Johnson retrieval protocol failed: MESSAGE; run M-x johnson-worker-show-diagnostics]
+     [Johnson retrieval worker failed to start: MESSAGE; run M-x johnson-worker-show-diagnostics]
 
    An interrupt received while the worker is idle waiting for its next
 command is recorded in the diagnostics buffer and does not terminate the
@@ -2588,7 +2589,7 @@ File: johnson.info,  Node: Function index,  Next: Variable index,  Up: Indices
 * johnson-toggle-section:                Navigating the results buffer.
                                                                (line  6)
 * johnson-worker-show-diagnostics:       Rendering performance.
-                                                               (line 57)
+                                                               (line 58)
 
 
 File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
@@ -2681,75 +2682,75 @@ Node: Bookmarks22248
 Node: History buffer22858
 Node: Completion behavior23696
 Node: Rendering performance24394
-Node: Commands27739
-Node: Looking up words28367
-Node: Indexing dictionaries30651
-Node: Managing groups and scope32328
-Node: Navigating the results buffer33418
-Node: Following cross-references35800
-Node: Navigation history36709
-Node: Copying entries38117
-Node: Dictionary list39369
-Node: Cache management40780
-Node: Toggling images42506
-Node: Searching definitions43012
-Node: Eldoc integration commands43743
-Node: Scan-popup mode commands44648
-Node: Managing bookmarks45425
-Node: Browsing history46570
-Node: Browsing dictionary files47500
-Node: Clearing the index48046
-Node: Reordering dictionaries48742
-Node: Importing GoldenDict order49905
-Node: Transient menu50752
-Node: Functions51612
-Node: Format registration52315
-Node: Completion at point55885
-Node: Database lifecycle56788
-Node: Metadata storage57687
-Node: Headword normalization58858
-Node: Entry insertion59695
-Node: Querying entries60707
-Node: Staleness detection and reset62017
-Node: Wildcard and full-text search queries63447
-Node: Completion index64805
-Node: DSL format detection66117
-Node: DSL metadata parsing67080
-Node: DSL index building68091
-Node: DSL entry retrieval70119
-Node: DSL entry rendering71025
-Node: StarDict backend73228
-Node: MDict backend74955
-Node: BGL backend76552
-Node: DICT protocol backend77741
-Node: Dictzip backend79170
-Node: HTML rendering80184
-Node: RIPEMD-128 hashing81739
-Node: Audio playback functions82508
-Node: EPWING backend83334
-Node: EBZIP backend85093
-Node: Faces86039
-Node: Text styling faces86555
-Node: Content type faces87259
-Node: Link faces88520
-Node: Section header face89179
-Node: Color faces89767
-Node: UI faces91171
-Node: Tips91870
-Node: Looking up words in PDF documents92008
-Node: Roadmap93605
-Node: Version 01 --- DSL94196
-Node: Version 02 --- StarDict and compressed DSL95196
-Node: Version 03 --- MDict and DSL abbreviations96489
-Node: Version 04 --- BGL DICT and more96987
-Node: Version 05 --- EPWING98338
-Node: Version 06 (current) --- EPWING improvements and audits99140
-Node: Future features99619
-Node: Contributing99938
-Node: Running the test suite100478
-Node: Indices100838
-Node: Function index100976
-Node: Variable index113018
+Node: Commands27846
+Node: Looking up words28474
+Node: Indexing dictionaries30758
+Node: Managing groups and scope32435
+Node: Navigating the results buffer33525
+Node: Following cross-references35907
+Node: Navigation history36816
+Node: Copying entries38224
+Node: Dictionary list39476
+Node: Cache management40887
+Node: Toggling images42613
+Node: Searching definitions43119
+Node: Eldoc integration commands43850
+Node: Scan-popup mode commands44755
+Node: Managing bookmarks45532
+Node: Browsing history46677
+Node: Browsing dictionary files47607
+Node: Clearing the index48153
+Node: Reordering dictionaries48849
+Node: Importing GoldenDict order50012
+Node: Transient menu50859
+Node: Functions51719
+Node: Format registration52422
+Node: Completion at point55992
+Node: Database lifecycle56895
+Node: Metadata storage57794
+Node: Headword normalization58965
+Node: Entry insertion59802
+Node: Querying entries60814
+Node: Staleness detection and reset62124
+Node: Wildcard and full-text search queries63554
+Node: Completion index64912
+Node: DSL format detection66224
+Node: DSL metadata parsing67187
+Node: DSL index building68198
+Node: DSL entry retrieval70226
+Node: DSL entry rendering71132
+Node: StarDict backend73335
+Node: MDict backend75062
+Node: BGL backend76659
+Node: DICT protocol backend77848
+Node: Dictzip backend79277
+Node: HTML rendering80291
+Node: RIPEMD-128 hashing81846
+Node: Audio playback functions82615
+Node: EPWING backend83441
+Node: EBZIP backend85200
+Node: Faces86146
+Node: Text styling faces86662
+Node: Content type faces87366
+Node: Link faces88627
+Node: Section header face89286
+Node: Color faces89874
+Node: UI faces91278
+Node: Tips91977
+Node: Looking up words in PDF documents92115
+Node: Roadmap93712
+Node: Version 01 --- DSL94303
+Node: Version 02 --- StarDict and compressed DSL95303
+Node: Version 03 --- MDict and DSL abbreviations96596
+Node: Version 04 --- BGL DICT and more97094
+Node: Version 05 --- EPWING98445
+Node: Version 06 (current) --- EPWING improvements and audits99247
+Node: Future features99726
+Node: Contributing100045
+Node: Running the test suite100585
+Node: Indices100945
+Node: Function index101083
+Node: Variable index113125
 
 End Tag Table
 

@@ -625,12 +625,13 @@ obsolete alias.
 When the retrieval child fails, the failure is explicit: Johnson never
 falls back to retrieving entries in the interactive Emacs silently.
 The loading line is replaced with one of the following messages, each
-naming the diagnostics buffer that holds the details:
+naming the command that opens the diagnostics buffer holding the
+details:
 
 #+begin_example
-[Johnson retrieval worker exited with status STATUS; see BUFFER]
-[Johnson retrieval protocol failed: MESSAGE; see BUFFER]
-[Johnson retrieval worker failed to start: MESSAGE; see BUFFER]
+[Johnson retrieval worker exited with status STATUS; run M-x johnson-worker-show-diagnostics]
+[Johnson retrieval protocol failed: MESSAGE; run M-x johnson-worker-show-diagnostics]
+[Johnson retrieval worker failed to start: MESSAGE; run M-x johnson-worker-show-diagnostics]
 #+end_example
 
 An interrupt received while the worker is idle waiting for its next
