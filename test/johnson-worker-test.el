@@ -485,6 +485,24 @@ Each element of OFFSETS becomes one match behavior string."
                              '("hello")))))
         (johnson-worker-test--cleanup-child child)))))
 
+(ert-deftest johnson-worker-test-child-survives-broadcast-sigusr2 ()
+  "A SIGUSR2 broadcast leaves the same child serving requests.
+`debug-on-event' defaults to `sigusr2', so a signal broadcast by
+process name at the interactive Emacs also reaches this child and,
+unhandled, would arm the batch debugger and exit the child with
+status 255 at its next activity."
+  (johnson-worker-test--with-child child
+    (johnson-worker-test--wait-for-message child 'ready)
+    (johnson-worker-test--configure child)
+    (let ((pid (process-id child)))
+      (signal-process child 'sigusr2)
+      (sleep-for 0.2)
+      (johnson-worker-test--request child 1 0 '("hello"))
+      (johnson-worker-test--wait-for-message child 'dictionary-complete)
+      (should (process-live-p child))
+      (should (equal (process-id child) pid))
+      (should (equal (johnson-worker-test--entry-raws child) '("hello"))))))
+
 (ert-deftest johnson-worker-test-child-rejects-request-before-configure ()
   (johnson-worker-test--with-child child
     (johnson-worker-test--wait-for-message child 'ready)

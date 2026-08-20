@@ -639,6 +639,12 @@ the worker.  Interrupts during configuration or retrieval retain the
 failure behavior above because partially completed work cannot be
 resumed safely.
 
+The worker also disables ~debug-on-event~, whose default ~sigusr2~
+value would otherwise arm the batch debugger: a =SIGUSR2= broadcast by
+process name at the interactive Emacs (for example =pkill -SIGUSR2
+Emacs=) also reaches the worker child, and an armed debugger would
+exit it with status 255 at its next activity.
+
 #+findex: johnson-worker-show-diagnostics
 The command ~johnson-worker-show-diagnostics~ pops to that diagnostics
 buffer, whose space-prefixed name keeps it out of ordinary buffer

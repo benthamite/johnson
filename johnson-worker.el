@@ -655,7 +655,15 @@ format's `:apply-worker-config' hook.  A `request' command carries
 `:path', and `:name' strings, the looked-up `:word', and `:matches', a
 list of (:word WORD :offset OFFSET :length LENGTH) plists used with
 `:retrieve-entry' when the format has no `:worker-query' hook.  Every
-command plist must start with `:type'."
+command plist must start with `:type'.
+
+Disable `debug-on-event' for the whole run: its default `sigusr2'
+value turns a SIGUSR2 into an armed debugger, and a broadcast signal
+aimed at the interactive Emacs (a pkill by process name also matches
+this child) would otherwise set `quit-flag', `debug-on-quit', and
+`debug-on-next-call', exiting the batch process with status 255 at its
+next activity."
+  (setq debug-on-event nil)
   (let ((coding-system-for-read 'binary)
         (coding-system-for-write 'binary)
         (configured nil)
