@@ -342,9 +342,20 @@ command falls back to a full lookup across all dictionaries.
 @vindex johnson-dictionary-priorities
 The user option @code{johnson-dictionary-priorities} controls the display
 order of dictionary sections in the results buffer.  It is an alist
-mapping dictionary names to integer priorities.  Lower numbers display
-first.  The default priority is 0, so dictionaries without an explicit
-priority entry are all treated equally and appear in discovery order.
+mapping keys to integer priorities.  Each key is matched first against
+the dictionary's metadata name (from the format-specific header), and
+then against each ancestor folder name of the dictionary file up to
+the configured @code{johnson-dictionary-directories} root, innermost first.
+Lower numbers display first.  The default priority is 0, so
+dictionaries without an explicit priority entry are all treated
+equally and appear in discovery order.
+
+The folder-name fallback means a stable, descriptive directory name
+(e.g., @samp{Oxford English Dictionary 2 (2009)}) is usually a more
+convenient key than the metadata name, which can vary by format and
+release.  Ancestor lookup also handles dictionaries stored one or more
+directories below their human-named folder (e.g., a @samp{.dsl} file under
+a @samp{dic/} subdirectory).
 
 For example, to make the ``Oxford English-Spanish'' dictionary always
 appear before ``Collins English-Spanish'', assign it a lower priority:

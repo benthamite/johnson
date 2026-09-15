@@ -77,8 +77,12 @@ When nil, groups are auto-detected from dictionary metadata."
   :group 'johnson)
 
 (defcustom johnson-dictionary-priorities nil
-  "Alist of (DICTIONARY-NAME . PRIORITY) for display ordering.
-Lower numbers display first.  Default priority is 0."
+  "Alist of (KEY . PRIORITY) for display ordering.
+KEY is matched first against the dictionary's metadata name (from the
+format-specific header), then against each ancestor folder name of
+the dictionary file up to (but not including) the configured
+`johnson-dictionary-directories' root, innermost first.  Lower
+numbers display first.  Default priority is 0."
   :type '(alist :key-type string :value-type integer)
   :group 'johnson)
 
@@ -511,7 +515,7 @@ context."
                                            (not (string-empty-p tgt)))
                                       (format "%s → %s" src tgt)
                                     "Unknown"))
-                           (priority (or (cdr (assoc name johnson-dictionary-priorities)) 0)))
+                           (priority (johnson--lookup-priority name file expanded)))
                       (push (list :path file
                                   :format-name (plist-get fmt :name)
                                   :name name
@@ -536,6 +540,32 @@ context."
            (message "johnson: discovery error for %s: %s"
                     (plist-get fmt :name)
                     (error-message-string err))))))))
+
+(defun johnson--lookup-priority (name file root)
+  "Return the priority for the dictionary at FILE.
+NAME is the dictionary's metadata name; FILE is the path of the
+dictionary file; ROOT is the configured `johnson-dictionary-directories'
+entry under which FILE was found.  The metadata name is tried first,
+then each ancestor folder name from FILE up to (but not including) ROOT
+\(innermost first).  Returns 0 when no entry matches."
+  (or (cdr (assoc name johnson-dictionary-priorities))
+      (cl-some (lambda (k)
+                 (cdr (assoc k johnson-dictionary-priorities)))
+               (johnson--ancestor-folder-names file root))
+      0))
+
+(defun johnson--ancestor-folder-names (file root)
+  "Return ancestor folder names of FILE under ROOT, innermost first.
+ROOT is excluded from the result."
+  (let* ((root* (file-name-as-directory (file-truename (expand-file-name root))))
+         (current (file-name-directory (file-truename file)))
+         (names nil))
+    (while (and current
+                (string-prefix-p root* current)
+                (not (string= current root*)))
+      (push (file-name-nondirectory (directory-file-name current)) names)
+      (setq current (file-name-directory (directory-file-name current))))
+    (nreverse names)))
 
 (defun johnson--ensure-dictionaries ()
   "Ensure dictionaries have been discovered."

@@ -328,9 +328,20 @@ File: johnson.info,  Node: Display ordering,  Next: Lookup history,  Prev: Cross
 
 The user option ‘johnson-dictionary-priorities’ controls the display
 order of dictionary sections in the results buffer.  It is an alist
-mapping dictionary names to integer priorities.  Lower numbers display
-first.  The default priority is 0, so dictionaries without an explicit
-priority entry are all treated equally and appear in discovery order.
+mapping keys to integer priorities.  Each key is matched first against
+the dictionary's metadata name (from the format-specific header), and
+then against each ancestor folder name of the dictionary file up to the
+configured ‘johnson-dictionary-directories’ root, innermost first.
+Lower numbers display first.  The default priority is 0, so dictionaries
+without an explicit priority entry are all treated equally and appear in
+discovery order.
+
+   The folder-name fallback means a stable, descriptive directory name
+(e.g., ‘Oxford English Dictionary 2 (2009)’) is usually a more
+convenient key than the metadata name, which can vary by format and
+release.  Ancestor lookup also handles dictionaries stored one or more
+directories below their human-named folder (e.g., a ‘.dsl’ file under a
+‘dic/’ subdirectory).
 
    For example, to make the "Oxford English-Spanish" dictionary always
 appear before "Collins English-Spanish", assign it a lower priority:
@@ -2667,90 +2678,90 @@ Node: Dictionary discovery7263
 Node: Search scope and groups8235
 Node: Cross-reference scope9957
 Node: Display ordering10668
-Node: Lookup history11467
-Node: Cache directory12260
-Node: Audio playback13205
-Node: Companion zip archives14616
-Node: DICT protocol15540
-Node: EPWING16614
-Node: Images18285
-Node: Wildcard search18959
-Node: Full-text search19775
-Node: Eldoc integration20501
-Node: Scan-popup mode21061
-Node: Bookmarks22248
-Node: History buffer22858
-Node: Completion behavior23696
-Node: Rendering performance24394
-Node: Commands27846
-Node: Looking up words28474
-Node: Indexing dictionaries30758
-Node: Managing groups and scope32435
-Node: Navigating the results buffer33525
-Node: Following cross-references35907
-Node: Navigation history36816
-Node: Copying entries38224
-Node: Dictionary list39476
-Node: Cache management40887
-Node: Toggling images42613
-Node: Searching definitions43119
-Node: Eldoc integration commands43850
-Node: Scan-popup mode commands44755
-Node: Managing bookmarks45532
-Node: Browsing history46677
-Node: Browsing dictionary files47607
-Node: Clearing the index48153
-Node: Reordering dictionaries48849
-Node: Importing GoldenDict order50012
-Node: Transient menu50859
-Node: Functions51719
-Node: Format registration52422
-Node: Completion at point55992
-Node: Database lifecycle56895
-Node: Metadata storage57794
-Node: Headword normalization58965
-Node: Entry insertion59802
-Node: Querying entries60814
-Node: Staleness detection and reset62124
-Node: Wildcard and full-text search queries63554
-Node: Completion index64912
-Node: DSL format detection66224
-Node: DSL metadata parsing67187
-Node: DSL index building68198
-Node: DSL entry retrieval70226
-Node: DSL entry rendering71132
-Node: StarDict backend73335
-Node: MDict backend75062
-Node: BGL backend76659
-Node: DICT protocol backend77848
-Node: Dictzip backend79277
-Node: HTML rendering80291
-Node: RIPEMD-128 hashing81846
-Node: Audio playback functions82615
-Node: EPWING backend83441
-Node: EBZIP backend85200
-Node: Faces86146
-Node: Text styling faces86662
-Node: Content type faces87366
-Node: Link faces88627
-Node: Section header face89286
-Node: Color faces89874
-Node: UI faces91278
-Node: Tips91977
-Node: Looking up words in PDF documents92115
-Node: Roadmap93712
-Node: Version 01 --- DSL94303
-Node: Version 02 --- StarDict and compressed DSL95303
-Node: Version 03 --- MDict and DSL abbreviations96596
-Node: Version 04 --- BGL DICT and more97094
-Node: Version 05 --- EPWING98445
-Node: Version 06 (current) --- EPWING improvements and audits99247
-Node: Future features99726
-Node: Contributing100045
-Node: Running the test suite100585
-Node: Indices100945
-Node: Function index101083
-Node: Variable index113125
+Node: Lookup history12082
+Node: Cache directory12875
+Node: Audio playback13820
+Node: Companion zip archives15231
+Node: DICT protocol16155
+Node: EPWING17229
+Node: Images18900
+Node: Wildcard search19574
+Node: Full-text search20390
+Node: Eldoc integration21116
+Node: Scan-popup mode21676
+Node: Bookmarks22863
+Node: History buffer23473
+Node: Completion behavior24311
+Node: Rendering performance25009
+Node: Commands28461
+Node: Looking up words29089
+Node: Indexing dictionaries31373
+Node: Managing groups and scope33050
+Node: Navigating the results buffer34140
+Node: Following cross-references36522
+Node: Navigation history37431
+Node: Copying entries38839
+Node: Dictionary list40091
+Node: Cache management41502
+Node: Toggling images43228
+Node: Searching definitions43734
+Node: Eldoc integration commands44465
+Node: Scan-popup mode commands45370
+Node: Managing bookmarks46147
+Node: Browsing history47292
+Node: Browsing dictionary files48222
+Node: Clearing the index48768
+Node: Reordering dictionaries49464
+Node: Importing GoldenDict order50627
+Node: Transient menu51474
+Node: Functions52334
+Node: Format registration53037
+Node: Completion at point56607
+Node: Database lifecycle57510
+Node: Metadata storage58409
+Node: Headword normalization59580
+Node: Entry insertion60417
+Node: Querying entries61429
+Node: Staleness detection and reset62739
+Node: Wildcard and full-text search queries64169
+Node: Completion index65527
+Node: DSL format detection66839
+Node: DSL metadata parsing67802
+Node: DSL index building68813
+Node: DSL entry retrieval70841
+Node: DSL entry rendering71747
+Node: StarDict backend73950
+Node: MDict backend75677
+Node: BGL backend77274
+Node: DICT protocol backend78463
+Node: Dictzip backend79892
+Node: HTML rendering80906
+Node: RIPEMD-128 hashing82461
+Node: Audio playback functions83230
+Node: EPWING backend84056
+Node: EBZIP backend85815
+Node: Faces86761
+Node: Text styling faces87277
+Node: Content type faces87981
+Node: Link faces89242
+Node: Section header face89901
+Node: Color faces90489
+Node: UI faces91893
+Node: Tips92592
+Node: Looking up words in PDF documents92730
+Node: Roadmap94327
+Node: Version 01 --- DSL94918
+Node: Version 02 --- StarDict and compressed DSL95918
+Node: Version 03 --- MDict and DSL abbreviations97211
+Node: Version 04 --- BGL DICT and more97709
+Node: Version 05 --- EPWING99060
+Node: Version 06 (current) --- EPWING improvements and audits99862
+Node: Future features100341
+Node: Contributing100660
+Node: Running the test suite101200
+Node: Indices101560
+Node: Function index101698
+Node: Variable index113740
 
 End Tag Table
 
