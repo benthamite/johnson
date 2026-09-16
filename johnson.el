@@ -43,6 +43,7 @@
 ;;; Code:
 
 (require 'johnson-db)
+(require 'johnson-html)
 (require 'johnson-worker)
 (require 'cl-lib)
 
@@ -789,8 +790,10 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
             (johnson-db-set-metadata db "source-path" path)
             (funcall (plist-get fmt :build-index) path
                      (lambda (headword offset length)
-                       (push (list headword offset length) entries)
-                       (cl-incf count)))
+                       ;; Store markup-free headwords; drop markup-only ones.
+                       (when-let* ((clean (johnson-html-clean-headword headword)))
+                         (push (list clean offset length) entries)
+                         (cl-incf count))))
             (johnson-db-insert-entries-batch db (nreverse entries))
             (johnson-db-set-metadata db "entry-count" (number-to-string count))
             (johnson-db-set-metadata db "mtime"
@@ -879,8 +882,9 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                       (johnson-db-set-metadata db \"source-path\" path)
                       (funcall (plist-get fmt :build-index) path
                         (lambda (headword offset length)
-                          (push (list headword offset length) entries)
-                          (cl-incf count)))
+                          (when-let* ((clean (johnson-html-clean-headword headword)))
+                            (push (list clean offset length) entries)
+                            (cl-incf count))))
                       (setq entries (nreverse entries))
                       (johnson-db-insert-entries-batch db entries)
                       (when (and johnson-fts-enabled

@@ -1574,6 +1574,16 @@ such as @samp{café}, @samp{CAFÉ}, and @samp{Café}.  Both user input and headw
 normalized with this function before storage and querying, ensuring
 consistent matching behavior.
 
+@findex johnson-html-clean-headword
+Before a headword reaches the database, the indexing path also passes it
+through @code{johnson-html-clean-headword}, which removes HTML markup for
+every format: digit-only superscripts, which mark homograph senses as in
+@samp{Belén<sup>1</sup>}, are dropped entirely; other tags are stripped with
+their text kept, so @samp{H<sub>2</sub>O} indexes as @samp{H2O}; entities are
+decoded; whitespace is collapsed and trimmed.  A headword consisting only
+of markup is not indexed.  DSL bracket tags are handled by the DSL
+backend before this point.
+
 If the input is @code{nil} or an empty string, the function returns an empty
 string.
 
@@ -2719,6 +2729,11 @@ DSL: body text that a converter left without indentation
 (recognisable by margin tags or excessive length) is kept inside its
 entry instead of being indexed as a multi-kilobyte headword;
 indexing reports how many such lines were reclassified.
+
+@item
+Headwords are stored without HTML markup for every format, so
+@samp{Belén<sup>1</sup>} indexes as @samp{Belén} and @samp{H<sub>2</sub>O} as
+@samp{H2O}, and markup-only keys are dropped.
 @end itemize
 
 @node Future features

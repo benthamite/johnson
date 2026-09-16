@@ -298,6 +298,31 @@ Handles named entities (`&amp;', `&lt;', `&gt;', `&nbsp;',
     (johnson-html--decode-entities (point-min) (point-max))
     (buffer-string)))
 
+(defun johnson-html-clean-headword (string)
+  "Return STRING with HTML markup removed, or nil when nothing remains.
+Drop digit-only <sup> elements entirely, strip the remaining tags,
+decode entities, collapse runs of whitespace to one space and trim.
+DSL bracket tags are left alone; DSL strips its own markup before
+headwords reach this point.  Used to store clean headwords in the
+index for every HTML-based format.
+
+A digit-only superscript on a headword is almost always a homograph
+sense number (\"Belén<sup>1</sup>\"), which nobody types, so it goes;
+keeping it would make the entry unreachable by exact lookup.  This
+sacrifices the rare exponent (\"cm<sup>2</sup>\" becomes \"cm\"): on
+the reference index the count was 3,402 homograph markers against 2
+exponents.  <sub> content and non-digit superscripts are kept."
+  (let ((clean (string-trim
+                (replace-regexp-in-string
+                 "[ \t\n\r]+" " "
+                 (johnson-html-decode-entities-string
+                  (replace-regexp-in-string
+                   "<[^<>]*>" ""
+                   (replace-regexp-in-string
+                    "<sup\\(?:\\s-[^<>]*\\)?>[0-9]+</sup>" "" string)))))))
+    (unless (string-empty-p clean)
+      clean)))
+
 ;;;; Region rendering
 
 (defun johnson-html-render-region (start end)

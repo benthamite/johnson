@@ -473,5 +473,35 @@ scan position rewound behind the current href and re-matched forever."
                            "[image: inside.png]"))))
       (delete-directory parent t))))
 
+;;;; Headword cleaning
+
+(ert-deftest johnson-html-test-clean-headword ()
+  "Headwords lose HTML tags and entities, keep DSL brackets, and may vanish.
+Digit-only superscripts are homograph markers and are dropped; <sub>
+content and non-digit superscripts are kept."
+  (should (equal (johnson-html-clean-headword "Belén<sup>1</sup>") "Belén"))
+  (should (equal (johnson-html-clean-headword "CAB<sup>2</sup> (foo)")
+                 "CAB (foo)"))
+  (should (equal (johnson-html-clean-headword
+                  "CAB<sup class=\"hom\">12</sup> (foo)")
+                 "CAB (foo)"))
+  (should (equal (johnson-html-clean-headword "Teflon<sup>TM</sup>")
+                 "TeflonTM"))
+  (should (equal (johnson-html-clean-headword "H<sub>2</sub>O") "H2O"))
+  (should (equal (johnson-html-clean-headword
+                  "<al>Adela Florence Nicolson</al>")
+                 "Adela Florence Nicolson"))
+  (should (equal (johnson-html-clean-headword "bossy <i> </i>") "bossy"))
+  (should (equal (johnson-html-clean-headword
+                  "H<sub>2</sub> Receptor  Antagonists")
+                 "H2 Receptor Antagonists"))
+  (should (equal (johnson-html-clean-headword "Tom &amp; Jerry &#233;")
+                 "Tom & Jerry é"))
+  (should (equal (johnson-html-clean-headword "  spaced\n\tout ") "spaced out"))
+  (should (equal (johnson-html-clean-headword "[b]dsl[/b]") "[b]dsl[/b]"))
+  (should-not (johnson-html-clean-headword "<div class=\"calibre1\">"))
+  (should-not (johnson-html-clean-headword "  <br/> "))
+  (should-not (johnson-html-clean-headword "")))
+
 (provide 'johnson-html-test)
 ;;; johnson-html-test.el ends here

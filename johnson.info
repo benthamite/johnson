@@ -1501,6 +1501,15 @@ headwords such as ‘café’, ‘CAFÉ’, and ‘Café’.  Both user input an
 headwords are normalized with this function before storage and querying,
 ensuring consistent matching behavior.
 
+   Before a headword reaches the database, the indexing path also passes
+it through ‘johnson-html-clean-headword’, which removes HTML markup for
+every format: digit-only superscripts, which mark homograph senses as in
+‘Belén<sup>1</sup>’, are dropped entirely; other tags are stripped with
+their text kept, so ‘H<sub>2</sub>O’ indexes as ‘H2O’; entities are
+decoded; whitespace is collapsed and trimmed.  A headword consisting
+only of markup is not indexed.  DSL bracket tags are handled by the DSL
+backend before this point.
+
    If the input is ‘nil’ or an empty string, the function returns an
 empty string.
 
@@ -2555,6 +2564,10 @@ interface layers.  The fixes below each carry a regression test.
      its entry instead of being indexed as a multi-kilobyte headword;
      indexing reports how many such lines were reclassified.
 
+   • Headwords are stored without HTML markup for every format, so
+     ‘Belén<sup>1</sup>’ indexes as ‘Belén’ and ‘H<sub>2</sub>O’ as
+     ‘H2O’, and markup-only keys are dropped.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2730,6 +2743,8 @@ File: johnson.info,  Node: Function index,  Next: Variable index,  Up: Indices
 * johnson-history-forward:               Navigation history.   (line  6)
 * johnson-history-list:                  Browsing history.     (line  6)
 * johnson-history-list-goto:             Browsing history.     (line  6)
+* johnson-html-clean-headword:           Headword normalization.
+                                                               (line 17)
 * johnson-html-color-to-face:            HTML rendering.       (line  6)
 * johnson-html-decode-entities-string:   HTML rendering.       (line  6)
 * johnson-html-render-region:            HTML rendering.       (line  6)
@@ -2913,51 +2928,51 @@ Node: Completion at point58444
 Node: Database lifecycle59347
 Node: Metadata storage60246
 Node: Headword normalization61417
-Node: Entry insertion62254
-Node: Querying entries63395
-Node: Staleness detection and reset64705
-Node: Wildcard and full-text search queries66727
-Node: Completion index68085
-Node: DSL format detection69397
-Node: DSL metadata parsing70360
-Node: DSL index building71371
-Node: DSL entry retrieval73399
-Node: DSL entry rendering74305
-Node: StarDict backend76508
-Node: MDict backend78235
-Node: BGL backend79832
-Node: DICT protocol backend81021
-Node: Dictzip backend82450
-Node: HTML rendering83464
-Node: RIPEMD-128 hashing85019
-Node: Audio playback functions85788
-Node: EPWING backend86614
-Node: EBZIP backend88373
-Node: Faces89319
-Node: Text styling faces89835
-Node: Content type faces90539
-Node: Link faces91800
-Node: Section header face92459
-Node: Color faces93047
-Node: UI faces94451
-Node: Tips95150
-Node: Looking up words in PDF documents95288
-Node: Roadmap96885
-Node: Version 01 --- DSL97622
-Node: Version 02 --- StarDict and compressed DSL98622
-Node: Version 03 --- MDict and DSL abbreviations99915
-Node: Version 04 --- BGL DICT and more100413
-Node: Version 05 --- EPWING101764
-Node: Version 06 --- EPWING improvements and audits102556
-Node: Version 07 --- Progressive rendering103026
-Node: Version 08 (current) --- Robustness fixes104113
-Node: Future features110757
-Node: Contributing111062
-Node: AI assistance111493
-Node: Running the test suite111998
-Node: Indices112380
-Node: Function index112518
-Node: Variable index124560
+Node: Entry insertion62798
+Node: Querying entries63939
+Node: Staleness detection and reset65249
+Node: Wildcard and full-text search queries67271
+Node: Completion index68629
+Node: DSL format detection69941
+Node: DSL metadata parsing70904
+Node: DSL index building71915
+Node: DSL entry retrieval73943
+Node: DSL entry rendering74849
+Node: StarDict backend77052
+Node: MDict backend78779
+Node: BGL backend80376
+Node: DICT protocol backend81565
+Node: Dictzip backend82994
+Node: HTML rendering84008
+Node: RIPEMD-128 hashing85563
+Node: Audio playback functions86332
+Node: EPWING backend87158
+Node: EBZIP backend88917
+Node: Faces89863
+Node: Text styling faces90379
+Node: Content type faces91083
+Node: Link faces92344
+Node: Section header face93003
+Node: Color faces93591
+Node: UI faces94995
+Node: Tips95694
+Node: Looking up words in PDF documents95832
+Node: Roadmap97429
+Node: Version 01 --- DSL98166
+Node: Version 02 --- StarDict and compressed DSL99166
+Node: Version 03 --- MDict and DSL abbreviations100459
+Node: Version 04 --- BGL DICT and more100957
+Node: Version 05 --- EPWING102308
+Node: Version 06 --- EPWING improvements and audits103100
+Node: Version 07 --- Progressive rendering103570
+Node: Version 08 (current) --- Robustness fixes104657
+Node: Future features111503
+Node: Contributing111808
+Node: AI assistance112239
+Node: Running the test suite112744
+Node: Indices113126
+Node: Function index113264
+Node: Variable index125444
 
 End Tag Table
 

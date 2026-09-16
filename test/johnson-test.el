@@ -899,5 +899,36 @@ The write leaves no temporary file behind."
     (johnson--history-log-push "a" 1)
     (should-not johnson--history-log)))
 
+;;;; Indexing cleans headwords
+
+(ert-deftest johnson-test-index-cleans-headwords ()
+  "Indexing strips HTML from headwords and drops markup-only ones.
+Offsets and lengths are stored unchanged."
+  (johnson-test--with-env
+    (let* ((path (expand-file-name "clean-test.fake" temp-cache))
+           (dict (list :path path :name "Fake" :format-name "fake"
+                       :source-lang "" :target-lang "")))
+      (with-temp-file path (insert "x"))
+      (johnson-register-format
+       :name "fake"
+       :extensions '("fake")
+       :detect #'ignore
+       :build-index (lambda (_path callback)
+                      (funcall callback "H<sub>2</sub>O" 10 5)
+                      (funcall callback "<div class=\"x\">" 20 6)
+                      (funcall callback "plain" 30 7)))
+      (with-temp-buffer
+        (should (johnson--index-one-dict-sync dict (current-buffer)))
+        (should (string-match-p "done (2 entries)" (buffer-string))))
+      (let ((db (johnson--get-db path)))
+        (should (equal (sqlite-select
+                        db "SELECT headword, byte_offset, byte_length
+                            FROM entries ORDER BY byte_offset")
+                       '(("H2O" 10 5) ("plain" 30 7))))
+        (should (equal (johnson-db-get-metadata db "entry-count") "2")))
+      ;; The child indexing script applies the same cleaner.
+      (should (string-match-p "johnson-html-clean-headword"
+                              (johnson--index-subprocess-script))))))
+
 (provide 'johnson-test)
 ;;; johnson-test.el ends here

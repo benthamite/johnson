@@ -1433,6 +1433,16 @@ such as =café=, =CAFÉ=, and =Café=.  Both user input and headwords are
 normalized with this function before storage and querying, ensuring
 consistent matching behavior.
 
+#+findex: johnson-html-clean-headword
+Before a headword reaches the database, the indexing path also passes it
+through ~johnson-html-clean-headword~, which removes HTML markup for
+every format: digit-only superscripts, which mark homograph senses as in
+=Belén<sup>1</sup>=, are dropped entirely; other tags are stripped with
+their text kept, so =H<sub>2</sub>O= indexes as =H2O=; entities are
+decoded; whitespace is collapsed and trimmed.  A headword consisting only
+of markup is not indexed.  DSL bracket tags are handled by the DSL
+backend before this point.
+
 If the input is ~nil~ or an empty string, the function returns an empty
 string.
 
@@ -2511,6 +2521,10 @@ interface layers.  The fixes below each carry a regression test.
   (recognisable by margin tags or excessive length) is kept inside its
   entry instead of being indexed as a multi-kilobyte headword;
   indexing reports how many such lines were reclassified.
+
+- [X] Headwords are stored without HTML markup for every format, so
+  =Belén<sup>1</sup>= indexes as =Belén= and =H<sub>2</sub>O= as
+  =H2O=, and markup-only keys are dropped.
 
 ** Future features
 :PROPERTIES:
