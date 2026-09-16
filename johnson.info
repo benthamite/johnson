@@ -691,7 +691,10 @@ of characters you must type before completion candidates are fetched
 from the headword index.  Shorter inputs return no candidates, avoiding
 expensive prefix queries against the full index.  Candidates are matched
 case- and accent-insensitively, so typing ‘cafe’ offers ‘Café’ and ‘café
-au lait’.
+au lait’.  Forms of one headword that differ only in case or accents, as
+when one dictionary stores ‘LEXICOGRAPHER’ and another ‘lexicographer’,
+appear as a single candidate: the form most dictionaries use, or the
+least capitalized one when they tie.
 
    The default value is ‘3’ (type: ‘natnum’).  You may want to lower
 this for small dictionary collections where prefix queries are fast, or
@@ -2854,79 +2857,79 @@ Node: Scan-popup mode22865
 Node: Bookmarks24052
 Node: History buffer24767
 Node: Completion behavior25605
-Node: Rendering performance26424
-Node: Commands29876
-Node: Looking up words30504
-Node: Indexing dictionaries32788
-Node: Managing groups and scope34465
-Node: Navigating the results buffer35555
-Node: Following cross-references37937
-Node: Navigation history38846
-Node: Copying entries40254
-Node: Dictionary list41506
-Node: Cache management42917
-Node: Toggling images44643
-Node: Searching definitions45149
-Node: Eldoc integration commands45880
-Node: Scan-popup mode commands46785
-Node: Managing bookmarks47562
-Node: Browsing history48880
-Node: Browsing dictionary files49810
-Node: Clearing the index50356
-Node: Reordering dictionaries51052
-Node: Importing GoldenDict order52215
-Node: Transient menu53062
-Node: Functions53922
-Node: Format registration54625
-Node: Completion at point58195
-Node: Database lifecycle59098
-Node: Metadata storage59997
-Node: Headword normalization61168
-Node: Entry insertion62005
-Node: Querying entries63017
-Node: Staleness detection and reset64327
-Node: Wildcard and full-text search queries65757
-Node: Completion index67115
-Node: DSL format detection68427
-Node: DSL metadata parsing69390
-Node: DSL index building70401
-Node: DSL entry retrieval72429
-Node: DSL entry rendering73335
-Node: StarDict backend75538
-Node: MDict backend77265
-Node: BGL backend78862
-Node: DICT protocol backend80051
-Node: Dictzip backend81480
-Node: HTML rendering82494
-Node: RIPEMD-128 hashing84049
-Node: Audio playback functions84818
-Node: EPWING backend85644
-Node: EBZIP backend87403
-Node: Faces88349
-Node: Text styling faces88865
-Node: Content type faces89569
-Node: Link faces90830
-Node: Section header face91489
-Node: Color faces92077
-Node: UI faces93481
-Node: Tips94180
-Node: Looking up words in PDF documents94318
-Node: Roadmap95915
-Node: Version 01 --- DSL96652
-Node: Version 02 --- StarDict and compressed DSL97652
-Node: Version 03 --- MDict and DSL abbreviations98945
-Node: Version 04 --- BGL DICT and more99443
-Node: Version 05 --- EPWING100794
-Node: Version 06 --- EPWING improvements and audits101586
-Node: Version 07 --- Progressive rendering102056
-Node: Version 08 (current) --- Robustness fixes103143
-Node: Future features108841
-Node: Contributing109146
-Node: AI assistance109577
-Node: Running the test suite110082
-Node: Indices110464
-Node: Function index110602
-Node: Variable index122644
+Node: Rendering performance26673
+Node: Commands30125
+Node: Looking up words30753
+Node: Indexing dictionaries33037
+Node: Managing groups and scope34714
+Node: Navigating the results buffer35804
+Node: Following cross-references38186
+Node: Navigation history39095
+Node: Copying entries40503
+Node: Dictionary list41755
+Node: Cache management43166
+Node: Toggling images44892
+Node: Searching definitions45398
+Node: Eldoc integration commands46129
+Node: Scan-popup mode commands47034
+Node: Managing bookmarks47811
+Node: Browsing history49129
+Node: Browsing dictionary files50059
+Node: Clearing the index50605
+Node: Reordering dictionaries51301
+Node: Importing GoldenDict order52464
+Node: Transient menu53311
+Node: Functions54171
+Node: Format registration54874
+Node: Completion at point58444
+Node: Database lifecycle59347
+Node: Metadata storage60246
+Node: Headword normalization61417
+Node: Entry insertion62254
+Node: Querying entries63266
+Node: Staleness detection and reset64576
+Node: Wildcard and full-text search queries66006
+Node: Completion index67364
+Node: DSL format detection68676
+Node: DSL metadata parsing69639
+Node: DSL index building70650
+Node: DSL entry retrieval72678
+Node: DSL entry rendering73584
+Node: StarDict backend75787
+Node: MDict backend77514
+Node: BGL backend79111
+Node: DICT protocol backend80300
+Node: Dictzip backend81729
+Node: HTML rendering82743
+Node: RIPEMD-128 hashing84298
+Node: Audio playback functions85067
+Node: EPWING backend85893
+Node: EBZIP backend87652
+Node: Faces88598
+Node: Text styling faces89114
+Node: Content type faces89818
+Node: Link faces91079
+Node: Section header face91738
+Node: Color faces92326
+Node: UI faces93730
+Node: Tips94429
+Node: Looking up words in PDF documents94567
+Node: Roadmap96164
+Node: Version 01 --- DSL96901
+Node: Version 02 --- StarDict and compressed DSL97901
+Node: Version 03 --- MDict and DSL abbreviations99194
+Node: Version 04 --- BGL DICT and more99692
+Node: Version 05 --- EPWING101043
+Node: Version 06 --- EPWING improvements and audits101835
+Node: Version 07 --- Progressive rendering102305
+Node: Version 08 (current) --- Robustness fixes103392
+Node: Future features109090
+Node: Contributing109395
+Node: AI assistance109826
+Node: Running the test suite110331
+Node: Indices110713
+Node: Function index110851
+Node: Variable index122893
 
 End Tag Table
 

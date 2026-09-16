@@ -530,6 +530,40 @@ not drop those rows again with a raw-string prefix filter."
             (should-not (funcall table "cafe" nil 'lambda)))
         (johnson-db-close-completion-db)))))
 
+(ert-deftest johnson-test-completion-collapses-case-variants ()
+  "Forms of one headword differing only in case appear as one candidate."
+  (johnson-test--with-env
+    (let* ((dict-path (expand-file-name "completion-case-test.dsl"
+                                        temp-cache))
+           (johnson-db--completion-db nil)
+           (johnson-completion-min-chars 3))
+      (with-temp-file dict-path (insert "x"))
+      (let ((db (johnson-db-open dict-path)))
+        (johnson-db-insert-entries-batch
+         db '(("lexicographer" 0 1) ("LEXICOGRAPHER" 2 1)
+              ("Lexicographer" 3 1) ("lexicon" 4 1)))
+        (johnson-db-close db))
+      (johnson-db-rebuild-completion-index (list dict-path))
+      (unwind-protect
+          (let* ((table (johnson--completion-table))
+                 (all (funcall table "lexico" nil t)))
+            (should (equal (sort (copy-sequence all) #'string<)
+                           '("lexicographer" "lexicon"))))
+        (johnson-db-close-completion-db)))))
+
+(ert-deftest johnson-test-collapse-headword-variants-prefers-common-form ()
+  "The form most dictionaries use wins; ties go to the least capitalized."
+  (let ((counts (make-hash-table :test #'equal)))
+    (dolist (pair '(("Paris" . 3) ("paris" . 1) ("PARIS" . 1)
+                    ("café" . 2) ("Café" . 2) ("zebra" . 1)))
+      (puthash (car pair) (cdr pair) counts))
+    (let ((kept (johnson--collapse-headword-variants
+                 '("paris" "PARIS" "Paris" "Café" "café" "zebra") counts)))
+      (should (equal (sort kept #'string<) '("Paris" "café" "zebra")))
+      ;; The kept form carries the group's highest count.
+      (should (= (gethash "Paris" counts) 3))
+      (should (= (gethash "café" counts) 2)))))
+
 ;;;; Plain-text conversion
 
 (ert-deftest johnson-test-plain-text-ignores-oversized-entity ()

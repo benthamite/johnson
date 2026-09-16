@@ -1222,10 +1222,50 @@ database queries across all dictionaries."
                       (error
                        (message "johnson: completion query error: %s"
                                 (error-message-string err)))))))
-              (setq last-candidates (delete-dups candidates))
-              (setq last-truncated
-                    (>= (length last-candidates) query-limit)))))
+              (setq last-truncated (>= (length candidates) query-limit))
+              (setq last-candidates
+                    (johnson--collapse-headword-variants
+                     (delete-dups candidates) last-counts)))))
         (johnson--complete-normalized action last-candidates string pred)))))
+
+(defun johnson--collapse-headword-variants (candidates counts)
+  "Return CANDIDATES with forms of one headword collapsed into a single one.
+Dictionaries spell the same headword in different cases, and lookup
+is case- and accent-insensitive, so candidates that are equal after
+`johnson-db-normalize' would all lead to the same result.  Keep one
+per group: the form found in most dictionaries according to COUNTS, a
+hash table from candidate to dictionary count, then the form with the
+fewest uppercase letters, then the lexicographically first.  Give the
+kept form the highest count of its group in COUNTS."
+  (let ((groups (make-hash-table :test #'equal)))
+    (dolist (candidate candidates)
+      (let* ((key (johnson-db-normalize candidate))
+             (kept (gethash key groups))
+             (count (max (gethash candidate counts 0)
+                         (if kept (gethash kept counts 0) 0))))
+        (when (or (null kept)
+                  (johnson--preferred-headword-form-p candidate kept counts))
+          (puthash key candidate groups)
+          (setq kept candidate))
+        (puthash kept count counts)))
+    (hash-table-values groups)))
+
+(defun johnson--preferred-headword-form-p (a b counts)
+  "Return non-nil when headword form A should be shown rather than B.
+A wins with a higher dictionary count in COUNTS, then with fewer
+uppercase letters, then by sorting first."
+  (let ((count-a (gethash a counts 0))
+        (count-b (gethash b counts 0)))
+    (or (> count-a count-b)
+        (and (= count-a count-b)
+             (let ((upper-a (johnson--uppercase-count a))
+                   (upper-b (johnson--uppercase-count b)))
+               (or (< upper-a upper-b)
+                   (and (= upper-a upper-b) (string< a b))))))))
+
+(defun johnson--uppercase-count (string)
+  "Return the number of uppercase letters in STRING."
+  (cl-count-if (lambda (char) (/= char (downcase char))) string))
 
 (defun johnson--complete-normalized (action candidates string pred)
   "Perform completion ACTION on CANDIDATES for STRING, matching normalized.

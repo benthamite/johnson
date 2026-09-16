@@ -603,7 +603,10 @@ of characters you must type before completion candidates are fetched
 from the headword index.  Shorter inputs return no candidates, avoiding
 expensive prefix queries against the full index.  Candidates are
 matched case- and accent-insensitively, so typing =cafe= offers =Café=
-and =café au lait=.
+and =café au lait=.  Forms of one headword that differ only in case or
+accents, as when one dictionary stores =LEXICOGRAPHER= and another
+=lexicographer=, appear as a single candidate: the form most
+dictionaries use, or the least capitalized one when they tie.
 
 The default value is ~3~ (type: ~natnum~).  You may want to lower this
 for small dictionary collections where prefix queries are fast, or
