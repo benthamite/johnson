@@ -2336,12 +2336,35 @@ under the mouse cursor and passes it to ~johnson-lookup~:
   =.ebz= files).
 - [X] Cross-reference buttons navigating via =johnson-lookup=.
 
-** Version 0.6 (current) --- EPWING improvements and audits
+** Version 0.6 --- EPWING improvements and audits
 
 - [X] EBZIP decompression improvements and caching.
 - [X] Interpretability audit: improved code readability and intent
   transparency.
 - [X] Checkdoc and byte-compile cleanups across all backends.
+
+** Version 0.7 --- Progressive rendering
+
+- [X] Results load progressively without blocking Emacs: a persistent
+  child Emacs retrieves and prepares entries while the interactive
+  session inserts them in bounded slices that yield to input.
+- [X] Remote dictionary sections appear in the table of contents as
+  they report matches.
+- [X] Worker failures are reported in the results buffer; the command
+  ~johnson-worker-show-diagnostics~ opens the worker's diagnostics.
+- [X] Formats can participate in worker-side retrieval through new
+  ~johnson-register-format~ hooks.
+- [X] ~johnson-render-scheduling-delay~ controls insertion pacing.
+- [X] Transient menu reorganized into domain-oriented groups with
+  source and target language infixes.
+- [X] Minimum Emacs version lowered to 29.1; continuous integration
+  added.
+
+** Version 0.8 (current) --- Robustness fixes
+
+A code audit of every backend and of the worker, protocol and user
+interface layers.  The fixes below each carry a regression test.
+
 
 ** Future features
 :PROPERTIES:

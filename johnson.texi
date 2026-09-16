@@ -135,7 +135,9 @@ Roadmap
 * Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations. 
 * Version 0.4 --- BGL, DICT, and more: Version 04 --- BGL DICT and more. 
 * Version 0.5 --- EPWING: Version 05 --- EPWING. 
-* Version 0.6 (current) --- EPWING improvements and audits: Version 06 (current) --- EPWING improvements and audits. 
+* Version 0.6 --- EPWING improvements and audits: Version 06 --- EPWING improvements and audits. 
+* Version 0.7 --- Progressive rendering: Version 07 --- Progressive rendering. 
+* Version 0.8 (current) --- Robustness fixes: Version 08 (current) --- Robustness fixes. 
 * Future features::
 
 Contributing
@@ -2350,7 +2352,9 @@ under the mouse cursor and passes it to @code{johnson-lookup}:
 * Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations. 
 * Version 0.4 --- BGL, DICT, and more: Version 04 --- BGL DICT and more. 
 * Version 0.5 --- EPWING: Version 05 --- EPWING. 
-* Version 0.6 (current) --- EPWING improvements and audits: Version 06 (current) --- EPWING improvements and audits. 
+* Version 0.6 --- EPWING improvements and audits: Version 06 --- EPWING improvements and audits. 
+* Version 0.7 --- Progressive rendering: Version 07 --- Progressive rendering. 
+* Version 0.8 (current) --- Robustness fixes: Version 08 (current) --- Robustness fixes. 
 * Future features::
 @end menu
 
@@ -2487,8 +2491,8 @@ sub/superscript, indentation, and newlines.
 Cross-reference buttons navigating via @samp{johnson-lookup}.
 @end itemize
 
-@node Version 06 (current) --- EPWING improvements and audits
-@section Version 0.6 (current) --- EPWING improvements and audits
+@node Version 06 --- EPWING improvements and audits
+@section Version 0.6 --- EPWING improvements and audits
 
 @itemize
 @item
@@ -2499,6 +2503,39 @@ transparency.
 @item
 Checkdoc and byte-compile cleanups across all backends.
 @end itemize
+
+@node Version 07 --- Progressive rendering
+@section Version 0.7 --- Progressive rendering
+
+@itemize
+@item
+Results load progressively without blocking Emacs: a persistent
+child Emacs retrieves and prepares entries while the interactive
+session inserts them in bounded slices that yield to input.
+@item
+Remote dictionary sections appear in the table of contents as
+they report matches.
+@item
+Worker failures are reported in the results buffer; the command
+@code{johnson-worker-show-diagnostics} opens the worker's diagnostics.
+@item
+Formats can participate in worker-side retrieval through new
+@code{johnson-register-format} hooks.
+@item
+@code{johnson-render-scheduling-delay} controls insertion pacing.
+@item
+Transient menu reorganized into domain-oriented groups with
+source and target language infixes.
+@item
+Minimum Emacs version lowered to 29.1; continuous integration
+added.
+@end itemize
+
+@node Version 08 (current) --- Robustness fixes
+@section Version 0.8 (current) --- Robustness fixes
+
+A code audit of every backend and of the worker, protocol and user
+interface layers.  The fixes below each carry a regression test.
 
 @node Future features
 @section Future features

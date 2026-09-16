@@ -122,7 +122,9 @@ Roadmap
 * Version 0.3 -- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
 * Version 0.4 -- BGL, DICT, and more: Version 04 --- BGL DICT and more.
 * Version 0.5 -- EPWING: Version 05 --- EPWING.
-* Version 0.6 (current) -- EPWING improvements and audits: Version 06 (current) --- EPWING improvements and audits.
+* Version 0.6 -- EPWING improvements and audits: Version 06 --- EPWING improvements and audits.
+* Version 0.7 -- Progressive rendering: Version 07 --- Progressive rendering.
+* Version 0.8 (current) -- Robustness fixes: Version 08 (current) --- Robustness fixes.
 * Future features::
 
 Contributing
@@ -2260,7 +2262,9 @@ File: johnson.info,  Node: Roadmap,  Next: Contributing,  Prev: Tips,  Up: Top
 * Version 0.3 -- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations.
 * Version 0.4 -- BGL, DICT, and more: Version 04 --- BGL DICT and more.
 * Version 0.5 -- EPWING: Version 05 --- EPWING.
-* Version 0.6 (current) -- EPWING improvements and audits: Version 06 (current) --- EPWING improvements and audits.
+* Version 0.6 -- EPWING improvements and audits: Version 06 --- EPWING improvements and audits.
+* Version 0.7 -- Progressive rendering: Version 07 --- Progressive rendering.
+* Version 0.8 (current) -- Robustness fixes: Version 08 (current) --- Robustness fixes.
 * Future features::
 
 
@@ -2348,7 +2352,7 @@ File: johnson.info,  Node: Version 04 --- BGL DICT and more,  Next: Version 05 -
      (incomplete dictionary distribution).
 
 
-File: johnson.info,  Node: Version 05 --- EPWING,  Next: Version 06 (current) --- EPWING improvements and audits,  Prev: Version 04 --- BGL DICT and more,  Up: Roadmap
+File: johnson.info,  Node: Version 05 --- EPWING,  Next: Version 06 --- EPWING improvements and audits,  Prev: Version 04 --- BGL DICT and more,  Up: Roadmap
 
 7.5 Version 0.5 -- EPWING
 =========================
@@ -2365,10 +2369,10 @@ File: johnson.info,  Node: Version 05 --- EPWING,  Next: Version 06 (current) --
    • Cross-reference buttons navigating via ‘johnson-lookup’.
 
 
-File: johnson.info,  Node: Version 06 (current) --- EPWING improvements and audits,  Next: Future features,  Prev: Version 05 --- EPWING,  Up: Roadmap
+File: johnson.info,  Node: Version 06 --- EPWING improvements and audits,  Next: Version 07 --- Progressive rendering,  Prev: Version 05 --- EPWING,  Up: Roadmap
 
-7.6 Version 0.6 (current) -- EPWING improvements and audits
-===========================================================
+7.6 Version 0.6 -- EPWING improvements and audits
+=================================================
 
    • EBZIP decompression improvements and caching.
    • Interpretability audit: improved code readability and intent
@@ -2376,9 +2380,39 @@ File: johnson.info,  Node: Version 06 (current) --- EPWING improvements and audi
    • Checkdoc and byte-compile cleanups across all backends.
 
 
-File: johnson.info,  Node: Future features,  Prev: Version 06 (current) --- EPWING improvements and audits,  Up: Roadmap
+File: johnson.info,  Node: Version 07 --- Progressive rendering,  Next: Version 08 (current) --- Robustness fixes,  Prev: Version 06 --- EPWING improvements and audits,  Up: Roadmap
 
-7.7 Future features
+7.7 Version 0.7 -- Progressive rendering
+========================================
+
+   • Results load progressively without blocking Emacs: a persistent
+     child Emacs retrieves and prepares entries while the interactive
+     session inserts them in bounded slices that yield to input.
+   • Remote dictionary sections appear in the table of contents as they
+     report matches.
+   • Worker failures are reported in the results buffer; the command
+     ‘johnson-worker-show-diagnostics’ opens the worker's diagnostics.
+   • Formats can participate in worker-side retrieval through new
+     ‘johnson-register-format’ hooks.
+   • ‘johnson-render-scheduling-delay’ controls insertion pacing.
+   • Transient menu reorganized into domain-oriented groups with source
+     and target language infixes.
+   • Minimum Emacs version lowered to 29.1; continuous integration
+     added.
+
+
+File: johnson.info,  Node: Version 08 (current) --- Robustness fixes,  Next: Future features,  Prev: Version 07 --- Progressive rendering,  Up: Roadmap
+
+7.8 Version 0.8 (current) -- Robustness fixes
+=============================================
+
+A code audit of every backend and of the worker, protocol and user
+interface layers.  The fixes below each carry a regression test.
+
+
+File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
+
+7.9 Future features
 ===================
 
 The following features are planned but not yet scheduled for a specific
@@ -2685,97 +2719,99 @@ File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
 
 Tag Table:
 Node: Top215
-Node: Overview2846
-Node: User options6789
-Node: Dictionary discovery7281
-Node: Search scope and groups8253
-Node: Cross-reference scope9975
-Node: Display ordering10686
-Node: Lookup history12100
-Node: Cache directory12893
-Node: Audio playback13838
-Node: Companion zip archives15249
-Node: DICT protocol16173
-Node: EPWING17247
-Node: Images18918
-Node: Wildcard search19592
-Node: Full-text search20408
-Node: Eldoc integration21134
-Node: Scan-popup mode21694
-Node: Bookmarks22881
-Node: History buffer23491
-Node: Completion behavior24329
-Node: Rendering performance25027
-Node: Commands28479
-Node: Looking up words29107
-Node: Indexing dictionaries31391
-Node: Managing groups and scope33068
-Node: Navigating the results buffer34158
-Node: Following cross-references36540
-Node: Navigation history37449
-Node: Copying entries38857
-Node: Dictionary list40109
-Node: Cache management41520
-Node: Toggling images43246
-Node: Searching definitions43752
-Node: Eldoc integration commands44483
-Node: Scan-popup mode commands45388
-Node: Managing bookmarks46165
-Node: Browsing history47310
-Node: Browsing dictionary files48240
-Node: Clearing the index48786
-Node: Reordering dictionaries49482
-Node: Importing GoldenDict order50645
-Node: Transient menu51492
-Node: Functions52352
-Node: Format registration53055
-Node: Completion at point56625
-Node: Database lifecycle57528
-Node: Metadata storage58427
-Node: Headword normalization59598
-Node: Entry insertion60435
-Node: Querying entries61447
-Node: Staleness detection and reset62757
-Node: Wildcard and full-text search queries64187
-Node: Completion index65545
-Node: DSL format detection66857
-Node: DSL metadata parsing67820
-Node: DSL index building68831
-Node: DSL entry retrieval70859
-Node: DSL entry rendering71765
-Node: StarDict backend73968
-Node: MDict backend75695
-Node: BGL backend77292
-Node: DICT protocol backend78481
-Node: Dictzip backend79910
-Node: HTML rendering80924
-Node: RIPEMD-128 hashing82479
-Node: Audio playback functions83248
-Node: EPWING backend84074
-Node: EBZIP backend85833
-Node: Faces86779
-Node: Text styling faces87295
-Node: Content type faces87999
-Node: Link faces89260
-Node: Section header face89919
-Node: Color faces90507
-Node: UI faces91911
-Node: Tips92610
-Node: Looking up words in PDF documents92748
-Node: Roadmap94345
-Node: Version 01 --- DSL94936
-Node: Version 02 --- StarDict and compressed DSL95936
-Node: Version 03 --- MDict and DSL abbreviations97229
-Node: Version 04 --- BGL DICT and more97727
-Node: Version 05 --- EPWING99078
-Node: Version 06 (current) --- EPWING improvements and audits99880
-Node: Future features100359
-Node: Contributing100678
-Node: AI assistance101109
-Node: Running the test suite101614
-Node: Indices101996
-Node: Function index102134
-Node: Variable index114176
+Node: Overview2992
+Node: User options6935
+Node: Dictionary discovery7427
+Node: Search scope and groups8399
+Node: Cross-reference scope10121
+Node: Display ordering10832
+Node: Lookup history12246
+Node: Cache directory13039
+Node: Audio playback13984
+Node: Companion zip archives15395
+Node: DICT protocol16319
+Node: EPWING17393
+Node: Images19064
+Node: Wildcard search19738
+Node: Full-text search20554
+Node: Eldoc integration21280
+Node: Scan-popup mode21840
+Node: Bookmarks23027
+Node: History buffer23637
+Node: Completion behavior24475
+Node: Rendering performance25173
+Node: Commands28625
+Node: Looking up words29253
+Node: Indexing dictionaries31537
+Node: Managing groups and scope33214
+Node: Navigating the results buffer34304
+Node: Following cross-references36686
+Node: Navigation history37595
+Node: Copying entries39003
+Node: Dictionary list40255
+Node: Cache management41666
+Node: Toggling images43392
+Node: Searching definitions43898
+Node: Eldoc integration commands44629
+Node: Scan-popup mode commands45534
+Node: Managing bookmarks46311
+Node: Browsing history47456
+Node: Browsing dictionary files48386
+Node: Clearing the index48932
+Node: Reordering dictionaries49628
+Node: Importing GoldenDict order50791
+Node: Transient menu51638
+Node: Functions52498
+Node: Format registration53201
+Node: Completion at point56771
+Node: Database lifecycle57674
+Node: Metadata storage58573
+Node: Headword normalization59744
+Node: Entry insertion60581
+Node: Querying entries61593
+Node: Staleness detection and reset62903
+Node: Wildcard and full-text search queries64333
+Node: Completion index65691
+Node: DSL format detection67003
+Node: DSL metadata parsing67966
+Node: DSL index building68977
+Node: DSL entry retrieval71005
+Node: DSL entry rendering71911
+Node: StarDict backend74114
+Node: MDict backend75841
+Node: BGL backend77438
+Node: DICT protocol backend78627
+Node: Dictzip backend80056
+Node: HTML rendering81070
+Node: RIPEMD-128 hashing82625
+Node: Audio playback functions83394
+Node: EPWING backend84220
+Node: EBZIP backend85979
+Node: Faces86925
+Node: Text styling faces87441
+Node: Content type faces88145
+Node: Link faces89406
+Node: Section header face90065
+Node: Color faces90653
+Node: UI faces92057
+Node: Tips92756
+Node: Looking up words in PDF documents92894
+Node: Roadmap94491
+Node: Version 01 --- DSL95228
+Node: Version 02 --- StarDict and compressed DSL96228
+Node: Version 03 --- MDict and DSL abbreviations97521
+Node: Version 04 --- BGL DICT and more98019
+Node: Version 05 --- EPWING99370
+Node: Version 06 --- EPWING improvements and audits100162
+Node: Version 07 --- Progressive rendering100632
+Node: Version 08 (current) --- Robustness fixes101719
+Node: Future features102100
+Node: Contributing102405
+Node: AI assistance102836
+Node: Running the test suite103341
+Node: Indices103723
+Node: Function index103861
+Node: Variable index115903
 
 End Tag Table
 
