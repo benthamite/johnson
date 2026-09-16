@@ -2480,6 +2480,11 @@ interface layers.  The fixes below each carry a regression test.
      files, whose checksum is always zero, load without any message;
      lookups no longer copy the whole decompressed dictionary.
 
+   • MDict: images and sounds with the same file name in different
+     folders of the resource archive, whether written with slashes or
+     Windows-style backslashes, no longer overwrite each other in the
+     cache, so each entry shows the correct file.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2876,13 +2881,13 @@ Node: Version 05 --- EPWING99491
 Node: Version 06 --- EPWING improvements and audits100283
 Node: Version 07 --- Progressive rendering100753
 Node: Version 08 (current) --- Robustness fixes101840
-Node: Future features106275
-Node: Contributing106580
-Node: AI assistance107011
-Node: Running the test suite107516
-Node: Indices107898
-Node: Function index108036
-Node: Variable index120078
+Node: Future features106535
+Node: Contributing106840
+Node: AI assistance107271
+Node: Running the test suite107776
+Node: Indices108158
+Node: Function index108296
+Node: Variable index120338
 
 End Tag Table
 

@@ -2631,6 +2631,12 @@ BGL: a truncated dictionary file produces a warning naming the
 file instead of silently dropping its last entry, while ordinary
 Babylon files, whose checksum is always zero, load without any
 message; lookups no longer copy the whole decompressed dictionary.
+
+@item
+MDict: images and sounds with the same file name in different
+folders of the resource archive, whether written with slashes or
+Windows-style backslashes, no longer overwrite each other in the
+cache, so each entry shows the correct file.
 @end itemize
 
 @node Future features

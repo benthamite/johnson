@@ -981,14 +981,26 @@ MDD hit.  Returns the local file path or nil."
                                  (md5 mdx-path)
                                  (expand-file-name
                                   "resources" johnson-cache-directory)))
-                     (safe-name (file-name-nondirectory resource-name))
-                     (cached (expand-file-name safe-name cache-dir)))
+                     (cached (expand-file-name
+                              (johnson-mdict--resource-cache-name resource-name)
+                              cache-dir)))
                 (make-directory (file-name-directory cached) t)
                 (let ((coding-system-for-write 'no-conversion))
                   (with-temp-file cached
                     (set-buffer-multibyte nil)
                     (insert data)))
                 cached))))))))
+
+(defun johnson-mdict--resource-cache-name (resource-name)
+  "Return the cache file name for the MDD resource RESOURCE-NAME.
+The name is the MD5 of the normalized resource key followed by the
+original base name, so resources sharing a base name in different
+folders get distinct files while the extension still identifies the
+media type."
+  (let ((normalized (subst-char-in-string ?\\ ?/ resource-name)))
+    (concat (md5 (downcase normalized))
+            "-"
+            (file-name-nondirectory normalized))))
 
 (defun johnson-mdict--local-resource-path (resource-name dir)
   "Return RESOURCE-NAME expanded under the dictionary directory DIR.

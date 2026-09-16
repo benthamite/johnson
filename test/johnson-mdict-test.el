@@ -525,5 +525,38 @@
           (should-not (johnson-mdict--resolve-resource mdx "~/secret.png")))
       (delete-directory dir t))))
 
+(ert-deftest johnson-mdict-test-resource-cache-names-do-not-collide ()
+  "Same-named MDD resources in different folders get distinct cache files."
+  (let* ((cache-dir (file-name-as-directory
+                     (make-temp-file "johnson-mdict-test-" t)))
+         (johnson-cache-directory cache-dir)
+         (mdx (expand-file-name "dict/test.mdx" cache-dir)))
+    (cl-letf (((symbol-function 'johnson-mdict--mdd-path)
+               (lambda (_mdx) "fake.mdd"))
+              ((symbol-function 'johnson-mdict--mdd-lookup)
+               (lambda (_mdd name)
+                 (encode-coding-string (concat "data:" name) 'utf-8))))
+      (unwind-protect
+          (let ((a (johnson-mdict--resolve-resource mdx "a/x.png"))
+                (b (johnson-mdict--resolve-resource mdx "b/x.png")))
+            (should-not (equal a b))
+            (should (equal (file-name-extension a) "png"))
+            (should (equal (file-name-extension b) "png"))
+            (should (equal (with-temp-buffer
+                             (insert-file-contents-literally a)
+                             (buffer-string))
+                           "data:a/x.png"))
+            (should (equal (with-temp-buffer
+                             (insert-file-contents-literally b)
+                             (buffer-string))
+                           "data:b/x.png")))
+        (delete-directory cache-dir t)))))
+
+(ert-deftest johnson-mdict-test-resource-cache-name-normalizes-backslashes ()
+  "A backslash-separated MDD path yields the bare base name after the hash."
+  (let ((name (johnson-mdict--resource-cache-name "\\img\\x.png")))
+    (should (string-suffix-p "-x.png" name))
+    (should (equal name (johnson-mdict--resource-cache-name "/img/x.png")))))
+
 (provide 'johnson-mdict-test)
 ;;; johnson-mdict-test.el ends here
