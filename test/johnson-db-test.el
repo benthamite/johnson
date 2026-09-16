@@ -149,6 +149,34 @@ Also binds `dict-path' to a dummy path.  Cleans up afterwards."
     (should (= (length (johnson-db-query-exact db "banana")) 1))
     (should (= (length (johnson-db-query-exact db "cherry")) 1))))
 
+(ert-deftest johnson-db-test-insert-entries-batch-trims-headwords ()
+  "Batch insertion trims headword whitespace and skips blank headwords."
+  (johnson-db-test--with-temp-db
+    (johnson-db-insert-entries-batch
+     db '((" word " 100 5) ("word" 200 5) ("\t" 300 1)
+          (" nbsp " 400 4)))
+    (should (= (johnson-db-entry-count db) 3))
+    (should (equal (sort (mapcar #'car
+                                 (sqlite-select
+                                  db "SELECT DISTINCT headword FROM entries"))
+                         #'string<)
+                   '("nbsp" "word")))
+    (let ((results (johnson-db-query-exact db "word")))
+      (should (equal (mapcar #'car results) '("word" "word")))
+      (should (equal (sort (mapcar #'cadr results) #'<) '(100 200))))
+    (should (equal (johnson-db-query-prefix db "wor") '("word")))
+    (should (= (length (johnson-db-query-exact db "nbsp")) 1))))
+
+(ert-deftest johnson-db-test-insert-entry-trims-headword ()
+  "Single insertion trims headword whitespace and skips a blank headword."
+  (johnson-db-test--with-temp-db
+    (johnson-db-insert-entry db "  apple\t" 100 50)
+    (should-not (johnson-db-insert-entry db "  " 200 10))
+    (should (= (johnson-db-entry-count db) 1))
+    (let ((results (johnson-db-query-exact db "apple")))
+      (should (= (length results) 1))
+      (should (equal (car (nth 0 results)) "apple")))))
+
 (ert-deftest johnson-db-test-query-exact-normalized ()
   "Exact query normalizes the search term."
   (johnson-db-test--with-temp-db
@@ -247,6 +275,72 @@ Also binds `dict-path' to a dummy path.  Cleans up afterwards."
               (johnson-db-set-metadata db "mtime" actual-mtime)
               (johnson-db-close db)
               (should-not (johnson-db-stale-p dict-file))))
+        (delete-file dict-file)))))
+
+(defun johnson-db-test--build-fresh-index (dict-file)
+  "Open the index for DICT-FILE, give it one entry and a matching mtime.
+Return the open database; the caller closes it.  Such an index is fresh
+unless the caller changes something."
+  (let ((db (johnson-db-open dict-file)))
+    (johnson-db-insert-entry db "test" 0 4)
+    (johnson-db-set-metadata db "mtime"
+                             (format-time-string
+                              "%s"
+                              (file-attribute-modification-time
+                               (file-attributes dict-file))))
+    db))
+
+(ert-deftest johnson-db-test-fresh-index-records-current-version ()
+  "Writing the mtime stamps the current index version, and the index is fresh."
+  (johnson-db-test--with-temp-cache
+    (let* ((dict-file (make-temp-file "johnson-stale-test-" nil ".dsl"))
+           (db (johnson-db-test--build-fresh-index dict-file)))
+      (unwind-protect
+          (progn
+            (should (equal (johnson-db-get-metadata db "index-version")
+                           (number-to-string johnson-db-index-version)))
+            (johnson-db-close db)
+            (should-not (johnson-db-stale-p dict-file)))
+        (delete-file dict-file)))))
+
+(ert-deftest johnson-db-test-stale-missing-index-version ()
+  "An index built before versions were recorded is stale."
+  (johnson-db-test--with-temp-cache
+    (let* ((dict-file (make-temp-file "johnson-stale-test-" nil ".dsl"))
+           (db (johnson-db-test--build-fresh-index dict-file)))
+      (unwind-protect
+          (progn
+            (sqlite-execute db "DELETE FROM metadata WHERE key = 'index-version'")
+            (johnson-db-close db)
+            (should (johnson-db-stale-p dict-file)))
+        (delete-file dict-file)))))
+
+(ert-deftest johnson-db-test-stale-older-index-version ()
+  "An index recorded under an older version number is stale."
+  (johnson-db-test--with-temp-cache
+    (let* ((dict-file (make-temp-file "johnson-stale-test-" nil ".dsl"))
+           (db (johnson-db-test--build-fresh-index dict-file)))
+      (unwind-protect
+          (progn
+            (johnson-db-set-metadata db "index-version" "1")
+            (johnson-db-close db)
+            (should (johnson-db-stale-p dict-file)))
+        (delete-file dict-file)))))
+
+(ert-deftest johnson-db-test-stale-quick-requires-version-marker ()
+  "The quick check reports stale until a full run records the current version."
+  (johnson-db-test--with-temp-cache
+    (let ((dict-file (make-temp-file "johnson-stale-test-" nil ".dsl")))
+      (unwind-protect
+          (progn
+            (johnson-db-close (johnson-db-test--build-fresh-index dict-file))
+            ;; Fresh mtimes, but no cache-wide version marker yet.
+            (should (johnson-db-stale-quick-p dict-file))
+            (johnson-db-rebuild-completion-index (list dict-file))
+            (should-not (johnson-db-stale-quick-p dict-file))
+            (with-temp-file (johnson-db--index-version-marker-path)
+              (insert "1"))
+            (should (johnson-db-stale-quick-p dict-file)))
         (delete-file dict-file)))))
 
 (defmacro johnson-db-test--with-damaged-index (dict-path content &rest body)

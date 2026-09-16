@@ -1448,7 +1448,9 @@ The function ~johnson-db-insert-entry~ inserts a single headword entry
 into the database.  It takes the original HEADWORD text, a BYTE-OFFSET
 (or character offset, depending on the format backend), and an
 ENTRY-LENGTH specifying the entry's extent in the dictionary file.  The
-headword is automatically normalized via ~johnson-db-normalize~
+headword is stored with surrounding whitespace (including tabs and
+no-break spaces) removed, and nothing is inserted when it is blank; it
+is automatically normalized via ~johnson-db-normalize~
 ([[#h:headword-normalization][Headword normalization]]) before insertion.
 
 For bulk insertion during indexing, the function
@@ -1500,8 +1502,12 @@ buffer ([[#h:dictionary-list][Dictionary list]]) and in indexing progress messag
 The function ~johnson-db-stale-p~ checks whether the index for a
 dictionary file is stale or does not exist.  It compares the file
 modification time stored in the database metadata (under the key
-="mtime"=) against the actual file's modification time.  If the sqlite
-database file does not exist at all, the function returns non-nil.  This
+="mtime"=) against the actual file's modification time, and the stored
+="index-version"= against the constant ~johnson-db-index-version~,
+which is bumped whenever a change alters the entries an index stores.
+An index built under another version, or one that sqlite cannot open,
+is stale and gets rebuilt.  If the sqlite database file does not exist
+at all, the function returns non-nil.  This
 function is called during the indexing flow
 ([[#h:indexing-dictionaries][Indexing dictionaries]]) to determine which
 dictionaries need re-indexing.
@@ -1514,10 +1520,15 @@ is zero and new entries can be inserted via
 
 The function ~johnson-db-stale-quick-p~ performs a fast,
 filesystem-only staleness check.  Unlike ~johnson-db-stale-p~, it never
-opens a sqlite database; it simply checks whether the index file exists
-and whether the dictionary file's modification time is newer than the
-index file's.  This makes it suitable for rapid scanning during
-discovery without the overhead of opening every database.
+opens a sqlite database; it checks whether the index file exists,
+whether the dictionary file's modification time is newer than the index
+file's, and whether the cache-wide marker file =index-version= in
+~johnson-cache-directory~ records the running ~johnson-db-index-version~.
+That marker is written at the end of every full indexing run, so after
+an upgrade that bumps the version every dictionary is reported stale
+once and rebuilt through the usual indexing prompt.  This makes the
+check suitable for rapid scanning during discovery without the overhead
+of opening every database.
 
 ** Wildcard and full-text search queries
 :PROPERTIES:
@@ -2483,6 +2494,14 @@ interface layers.  The fixes below each carry a regression test.
 - [X] Audio and image files extracted from companion =.dsl.files.zip=
   archives no longer overwrite each other when two members share a
   file name in different folders.
+
+- [X] Headwords are stored with surrounding whitespace removed and blank
+  headwords dropped, so padded variants such as =Lexicography = no
+  longer appear as separate completion candidates.
+- [X] Indexes carry a format version; indexes built by an earlier
+  version are detected on first use and rebuilt through the usual
+  indexing prompt, so fixes that change what gets indexed apply
+  without manual reindexing.
 
 ** Future features
 :PROPERTIES:

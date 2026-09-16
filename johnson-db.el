@@ -31,6 +31,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 (require 'ucs-normalize)
 
 ;;;; User options
@@ -45,6 +46,15 @@ Each dictionary gets its own sqlite database file in this directory,
 named by the MD5 hash of the dictionary file's absolute path."
   :type 'directory
   :group 'johnson)
+
+(defconst johnson-db-index-version 2
+  "Version of the entries an index build stores.
+Bump this whenever a change alters the stored entries of existing
+dictionaries, such as different headword trimming or tag stripping.
+Every completed build records it in the index metadata and in the
+cache-wide marker file, and `johnson-db-stale-p' and
+`johnson-db-stale-quick-p' report indexes built under another version
+as stale, so they are rebuilt automatically.")
 
 ;;;; Internal helpers
 
@@ -123,7 +133,17 @@ not qualify, so a valid index is never deleted over them."
 ;;;; Metadata
 
 (defun johnson-db-set-metadata (db key value)
-  "Set metadata KEY to VALUE in database DB."
+  "Set metadata KEY to VALUE in database DB.
+Setting \"mtime\" marks a completed index build, so it also records
+`johnson-db-index-version' under \"index-version\", which
+`johnson-db-stale-p' compares against the running version."
+  (johnson-db--set-metadata-row db key value)
+  (when (equal key "mtime")
+    (johnson-db--set-metadata-row db "index-version"
+                                  (number-to-string johnson-db-index-version))))
+
+(defun johnson-db--set-metadata-row (db key value)
+  "Store VALUE under KEY in the metadata table of DB, replacing any old value."
   (sqlite-execute db
                   "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)"
                   (list key value)))
@@ -166,33 +186,55 @@ that does not begin with PREFIX in binary sort order."
 
 (defun johnson-db-insert-entry (db headword byte-offset entry-length)
   "Insert a single entry into DB.
-HEADWORD is the original headword text.  BYTE-OFFSET and ENTRY-LENGTH
-specify the entry's location in the dictionary file."
-  (let ((normalized (johnson-db-normalize headword)))
-    (sqlite-execute db
-                    "INSERT INTO entries (headword, headword_normalized, byte_offset, byte_length)
-                     VALUES (?, ?, ?, ?)"
-                    (list headword normalized byte-offset entry-length))))
+HEADWORD is the original headword text; it is stored with surrounding
+whitespace trimmed, and nothing is inserted when it is blank.
+BYTE-OFFSET and ENTRY-LENGTH specify the entry's location in the
+dictionary file.  Return non-nil when a row was inserted."
+  (johnson-db--insert-trimmed-entry db headword byte-offset entry-length))
 
 (defun johnson-db-insert-entries-batch (db entries)
   "Insert ENTRIES into DB in a single transaction for performance.
-ENTRIES is a list of (HEADWORD BYTE-OFFSET BYTE-LENGTH) triples."
+ENTRIES is a list of (HEADWORD BYTE-OFFSET BYTE-LENGTH) triples.  Each
+headword is stored with surrounding whitespace trimmed, and entries
+whose headword is blank are skipped."
   (sqlite-execute db "BEGIN TRANSACTION")
   (condition-case err
       (progn
         (dolist (entry entries)
-          (let* ((headword (nth 0 entry))
-                 (offset (nth 1 entry))
-                 (len (nth 2 entry))
-                 (normalized (johnson-db-normalize headword)))
-            (sqlite-execute db
-                            "INSERT INTO entries (headword, headword_normalized, byte_offset, byte_length)
-                             VALUES (?, ?, ?, ?)"
-                            (list headword normalized offset len))))
+          (johnson-db--insert-trimmed-entry
+           db (nth 0 entry) (nth 1 entry) (nth 2 entry)))
         (sqlite-execute db "COMMIT"))
     (error
      (ignore-errors (sqlite-execute db "ROLLBACK"))
      (signal (car err) (cdr err)))))
+
+(defun johnson-db--insert-trimmed-entry (db headword byte-offset entry-length)
+  "Insert HEADWORD at BYTE-OFFSET and ENTRY-LENGTH into DB, trimmed.
+Trim leading and trailing whitespace from HEADWORD with
+`johnson-db--trim-headword' before normalizing and storing it, so
+padded variants of a headword do not become distinct headwords.  Do
+nothing and return nil when the trimmed headword is empty; otherwise
+return non-nil."
+  (let ((trimmed (johnson-db--trim-headword headword)))
+    (unless (string-empty-p trimmed)
+      (sqlite-execute db
+                      "INSERT INTO entries (headword, headword_normalized, byte_offset, byte_length)
+                       VALUES (?, ?, ?, ?)"
+                      (list trimmed (johnson-db-normalize trimmed)
+                            byte-offset entry-length))
+      t)))
+
+(defconst johnson-db--headword-whitespace "[ \t\n\r\f ]+"
+  "Regexp matching the whitespace trimmed from headwords.
+Covers spaces, tabs, line breaks, form feeds, and no-break spaces.")
+
+(defun johnson-db--trim-headword (headword)
+  "Return HEADWORD without leading and trailing whitespace.
+A nil HEADWORD yields the empty string."
+  (if headword
+      (string-trim headword johnson-db--headword-whitespace
+                   johnson-db--headword-whitespace)
+    ""))
 
 ;;;; Queries
 
@@ -249,10 +291,12 @@ Returns a list of distinct headword strings.  LIMIT defaults to 200."
 (defun johnson-db-stale-p (dict-path)
   "Return non-nil if the index for DICT-PATH is stale or does not exist.
 Compares the stored modification time in the database metadata against
-the actual file modification time.  An index file that sqlite cannot
-open or read metadata from, such as a zero-byte file left by an
-interrupted open or a corrupt file, is stale as well, so it gets
-rebuilt instead of failing every lookup."
+the actual file modification time, and the stored \"index-version\"
+against `johnson-db-index-version'; a missing or different version
+means the index was built by code that stored entries differently.  An
+index file that sqlite cannot open or read metadata from, such as a
+zero-byte file left by an interrupted open or a corrupt file, is stale
+as well, so it gets rebuilt instead of failing every lookup."
   (let ((index-path (johnson-db--index-path dict-path)))
     (if (not (file-exists-p index-path))
         t
@@ -269,6 +313,8 @@ rebuilt instead of failing every lookup."
                                         (file-attribute-modification-time
                                          (file-attributes dict-path)))))
                     (or (not (equal stored-mtime actual-mtime))
+                        (not (equal (johnson-db-get-metadata db "index-version")
+                                    (number-to-string johnson-db-index-version)))
                         ;; Treat databases with zero entries as stale -- they
                         ;; were likely created by a broken parser version.
                         (zerop (johnson-db-entry-count db))))
@@ -277,15 +323,42 @@ rebuilt instead of failing every lookup."
 
 (defun johnson-db-stale-quick-p (dict-path)
   "Fast filesystem-only staleness check for DICT-PATH.
-Returns non-nil if the index file does not exist or the dictionary
-file has been modified after the index was last written.  Unlike
-`johnson-db-stale-p', this never opens a sqlite database."
+Returns non-nil if the index file does not exist, the dictionary file
+has been modified after the index was last written, or the cache-wide
+marker file does not record `johnson-db-index-version', which happens
+after a version bump until a full indexing run completes.  Unlike
+`johnson-db-stale-p', this never opens a sqlite database, so it only
+compares mtimes and the marker; the full check also covers the version
+and entry count recorded inside each index."
   (let ((index-path (johnson-db--index-path dict-path)))
     (or (not (file-exists-p index-path))
         (time-less-p (file-attribute-modification-time
                       (file-attributes index-path))
                      (file-attribute-modification-time
-                      (file-attributes dict-path))))))
+                      (file-attributes dict-path)))
+        (not (johnson-db--index-version-marker-current-p)))))
+
+(defun johnson-db--index-version-marker-path ()
+  "Return the path of the cache-wide index version marker file.
+`johnson-db-rebuild-completion-index' records `johnson-db-index-version'
+there at the end of every full indexing run, so the filesystem-only
+staleness check can tell that a version bump requires a rebuild without
+opening any database."
+  (expand-file-name "index-version" johnson-cache-directory))
+
+(defun johnson-db--index-version-marker-current-p ()
+  "Return non-nil when the marker file records the running index version."
+  (let ((path (johnson-db--index-version-marker-path)))
+    (and (file-readable-p path)
+         (equal (string-trim (with-temp-buffer
+                               (insert-file-contents path)
+                               (buffer-string)))
+                (number-to-string johnson-db-index-version)))))
+
+(defun johnson-db--write-index-version-marker ()
+  "Record `johnson-db-index-version' in the cache-wide marker file."
+  (with-temp-file (johnson-db--index-version-marker-path)
+    (insert (number-to-string johnson-db-index-version) "\n")))
 
 ;;;; Reset
 
@@ -325,7 +398,10 @@ Returns nil if the completion index file does not exist."
 (defun johnson-db-rebuild-completion-index (dict-paths)
   "Rebuild the unified completion index from per-dictionary databases.
 DICT-PATHS is a list of dictionary file paths whose sqlite indexes
-should be aggregated.  Returns the total number of unique headwords."
+should be aggregated.  This runs at the end of every full indexing run,
+so on success it also records `johnson-db-index-version' in the
+cache-wide marker file read by `johnson-db-stale-quick-p'.  Returns the
+total number of unique headwords."
   (johnson-db--ensure-cache-directory)
   (johnson-db-close-completion-db)
   (let ((norm-count (make-hash-table :test #'equal))
@@ -377,6 +453,7 @@ should be aggregated.  Returns the total number of unique headwords."
             (error
              (ignore-errors (sqlite-execute db "ROLLBACK"))
              (signal (car err) (cdr err))))
+          (johnson-db--write-index-version-marker)
           (hash-table-count all-headwords))
       (sqlite-close db))))
 

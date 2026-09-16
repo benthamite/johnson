@@ -1514,8 +1514,10 @@ The function ‘johnson-db-insert-entry’ inserts a single headword entry
 into the database.  It takes the original HEADWORD text, a BYTE-OFFSET
 (or character offset, depending on the format backend), and an
 ENTRY-LENGTH specifying the entry's extent in the dictionary file.  The
-headword is automatically normalized via ‘johnson-db-normalize’ (*note
-Headword normalization::) before insertion.
+headword is stored with surrounding whitespace (including tabs and
+no-break spaces) removed, and nothing is inserted when it is blank; it
+is automatically normalized via ‘johnson-db-normalize’ (*note Headword
+normalization::) before insertion.
 
    For bulk insertion during indexing, the function
 ‘johnson-db-insert-entries-batch’ inserts a list of entries in a single
@@ -1560,10 +1562,14 @@ File: johnson.info,  Node: Staleness detection and reset,  Next: Wildcard and fu
 The function ‘johnson-db-stale-p’ checks whether the index for a
 dictionary file is stale or does not exist.  It compares the file
 modification time stored in the database metadata (under the key
-‘"mtime"’) against the actual file's modification time.  If the sqlite
-database file does not exist at all, the function returns non-nil.  This
-function is called during the indexing flow (*note Indexing
-dictionaries::) to determine which dictionaries need re-indexing.
+‘"mtime"’) against the actual file's modification time, and the stored
+‘"index-version"’ against the constant ‘johnson-db-index-version’, which
+is bumped whenever a change alters the entries an index stores.  An
+index built under another version, or one that sqlite cannot open, is
+stale and gets rebuilt.  If the sqlite database file does not exist at
+all, the function returns non-nil.  This function is called during the
+indexing flow (*note Indexing dictionaries::) to determine which
+dictionaries need re-indexing.
 
    The function ‘johnson-db-reset’ deletes all entries from a database
 in preparation for re-indexing.  It issues ‘DELETE FROM entries’ but
@@ -1573,9 +1579,14 @@ count is zero and new entries can be inserted via
 
    The function ‘johnson-db-stale-quick-p’ performs a fast,
 filesystem-only staleness check.  Unlike ‘johnson-db-stale-p’, it never
-opens a sqlite database; it simply checks whether the index file exists
-and whether the dictionary file's modification time is newer than the
-index file's.  This makes it suitable for rapid scanning during
+opens a sqlite database; it checks whether the index file exists,
+whether the dictionary file's modification time is newer than the index
+file's, and whether the cache-wide marker file ‘index-version’ in
+‘johnson-cache-directory’ records the running
+‘johnson-db-index-version’.  That marker is written at the end of every
+full indexing run, so after an upgrade that bumps the version every
+dictionary is reported stale once and rebuilt through the usual indexing
+prompt.  This makes the check suitable for rapid scanning during
 discovery without the overhead of opening every database.
 
 
@@ -2527,6 +2538,14 @@ interface layers.  The fixes below each carry a regression test.
      archives no longer overwrite each other when two members share a
      file name in different folders.
 
+   • Headwords are stored with surrounding whitespace removed and blank
+     headwords dropped, so padded variants such as =Lexicography = no
+     longer appear as separate completion candidates.
+   • Indexes carry a format version; indexes built by an earlier version
+     are detected on first use and rebuilt through the usual indexing
+     prompt, so fixes that change what gets indexed apply without manual
+     reindexing.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2886,50 +2905,50 @@ Node: Database lifecycle59347
 Node: Metadata storage60246
 Node: Headword normalization61417
 Node: Entry insertion62254
-Node: Querying entries63266
-Node: Staleness detection and reset64576
-Node: Wildcard and full-text search queries66006
-Node: Completion index67364
-Node: DSL format detection68676
-Node: DSL metadata parsing69639
-Node: DSL index building70650
-Node: DSL entry retrieval72678
-Node: DSL entry rendering73584
-Node: StarDict backend75787
-Node: MDict backend77514
-Node: BGL backend79111
-Node: DICT protocol backend80300
-Node: Dictzip backend81729
-Node: HTML rendering82743
-Node: RIPEMD-128 hashing84298
-Node: Audio playback functions85067
-Node: EPWING backend85893
-Node: EBZIP backend87652
-Node: Faces88598
-Node: Text styling faces89114
-Node: Content type faces89818
-Node: Link faces91079
-Node: Section header face91738
-Node: Color faces92326
-Node: UI faces93730
-Node: Tips94429
-Node: Looking up words in PDF documents94567
-Node: Roadmap96164
-Node: Version 01 --- DSL96901
-Node: Version 02 --- StarDict and compressed DSL97901
-Node: Version 03 --- MDict and DSL abbreviations99194
-Node: Version 04 --- BGL DICT and more99692
-Node: Version 05 --- EPWING101043
-Node: Version 06 --- EPWING improvements and audits101835
-Node: Version 07 --- Progressive rendering102305
-Node: Version 08 (current) --- Robustness fixes103392
-Node: Future features109090
-Node: Contributing109395
-Node: AI assistance109826
-Node: Running the test suite110331
-Node: Indices110713
-Node: Function index110851
-Node: Variable index122893
+Node: Querying entries63395
+Node: Staleness detection and reset64705
+Node: Wildcard and full-text search queries66727
+Node: Completion index68085
+Node: DSL format detection69397
+Node: DSL metadata parsing70360
+Node: DSL index building71371
+Node: DSL entry retrieval73399
+Node: DSL entry rendering74305
+Node: StarDict backend76508
+Node: MDict backend78235
+Node: BGL backend79832
+Node: DICT protocol backend81021
+Node: Dictzip backend82450
+Node: HTML rendering83464
+Node: RIPEMD-128 hashing85019
+Node: Audio playback functions85788
+Node: EPWING backend86614
+Node: EBZIP backend88373
+Node: Faces89319
+Node: Text styling faces89835
+Node: Content type faces90539
+Node: Link faces91800
+Node: Section header face92459
+Node: Color faces93047
+Node: UI faces94451
+Node: Tips95150
+Node: Looking up words in PDF documents95288
+Node: Roadmap96885
+Node: Version 01 --- DSL97622
+Node: Version 02 --- StarDict and compressed DSL98622
+Node: Version 03 --- MDict and DSL abbreviations99915
+Node: Version 04 --- BGL DICT and more100413
+Node: Version 05 --- EPWING101764
+Node: Version 06 --- EPWING improvements and audits102556
+Node: Version 07 --- Progressive rendering103026
+Node: Version 08 (current) --- Robustness fixes104113
+Node: Future features110245
+Node: Contributing110550
+Node: AI assistance110981
+Node: Running the test suite111486
+Node: Indices111868
+Node: Function index112006
+Node: Variable index124048
 
 End Tag Table
 
