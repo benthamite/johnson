@@ -107,15 +107,23 @@ The buffer contains the raw decompressed gzip stream as unibyte data."
             buf)))))
 
 (defun johnson-bgl--create-cache-buffer (path buf-name)
-  "Create and populate a cache buffer named BUF-NAME for BGL file at PATH."
-  (with-current-buffer (generate-new-buffer buf-name)
-    (buffer-disable-undo)
-    (fundamental-mode)
-    (set-buffer-multibyte nil)
-    (let ((inhibit-read-only t))
-      (johnson-bgl--decompress-into-buffer path))
-    (setq buffer-read-only t)
-    (current-buffer)))
+  "Create and populate a cache buffer named BUF-NAME for BGL file at PATH.
+Kill the buffer again when decompression fails, so that a later attempt
+does not mistake the empty buffer for a populated cache."
+  (let ((buf (generate-new-buffer buf-name))
+        (populated nil))
+    (unwind-protect
+        (with-current-buffer buf
+          (buffer-disable-undo)
+          (fundamental-mode)
+          (set-buffer-multibyte nil)
+          (let ((inhibit-read-only t))
+            (johnson-bgl--decompress-into-buffer path))
+          (setq buffer-read-only t)
+          (setq populated t)
+          (current-buffer))
+      (unless populated
+        (kill-buffer buf)))))
 
 (defun johnson-bgl--decompress-into-buffer (path)
   "Decompress the gzip stream from BGL file PATH into the current buffer.
@@ -224,31 +232,34 @@ Returns a plist with :name, :source-lang, :target-lang,
       (let ((btype (nth 0 block))
             (payload-start (nth 1 block))
             (payload-length (nth 2 block)))
-        ;; Type 3 blocks: byte 0 is the property ID and the value
-        ;; follows from byte 1 onward.
-        (when (and (= btype 3) (>= payload-length 1))
-          (let ((prop-id (aref data payload-start)))
+        ;; Type 3 blocks: bytes 0-1 are the big-endian property ID and
+        ;; the value follows from byte 2 onward.  Language values are
+        ;; 4-byte big-endian integers whose code sits in the last byte.
+        (when (and (= btype 3) (>= payload-length 2))
+          (let ((prop-id (johnson-binary-u16be data payload-start))
+                (value-start (+ payload-start 2))
+                (value-length (- payload-length 2)))
             (pcase prop-id
               (#x01 ; title (keep raw bytes; decode after charset is known)
-               (when (> payload-length 1)
-                 (setq name-raw (substring data (+ payload-start 1)
+               (when (> value-length 0)
+                 (setq name-raw (substring data value-start
                                            (+ payload-start payload-length)))))
               (#x07 ; source language
-               (when (>= payload-length 2)
+               (when (>= value-length 4)
                  (setq source-lang
                        (johnson-bgl--language-name
-                        (aref data (+ payload-start 1))))))
+                        (aref data (+ value-start 3))))))
               (#x08 ; target language
-               (when (>= payload-length 2)
+               (when (>= value-length 4)
                  (setq target-lang
                        (johnson-bgl--language-name
-                        (aref data (+ payload-start 1))))))
+                        (aref data (+ value-start 3))))))
               (#x1A ; source charset
-               (when (>= payload-length 2)
-                 (setq source-charset (aref data (+ payload-start 1)))))
+               (when (>= value-length 1)
+                 (setq source-charset (aref data value-start))))
               (#x1B ; target charset
-               (when (>= payload-length 2)
-                 (setq target-charset (aref data (+ payload-start 1))))))))))
+               (when (>= value-length 1)
+                 (setq target-charset (aref data value-start)))))))))
     (list :name (if name-raw
                     (decode-coding-string
                      name-raw
@@ -266,11 +277,14 @@ Returns a plist with :name, :source-lang, :target-lang,
   "Return non-nil if BTYPE is a BGL entry block type."
   (memq btype '(1 7 10 13)))
 
-(cl-defun johnson-bgl--parse-entry-block (data payload-start payload-length)
+(cl-defun johnson-bgl--parse-entry-block (data payload-start payload-length
+                                               &optional (coding 'utf-8))
   "Parse an entry block from DATA at PAYLOAD-START with PAYLOAD-LENGTH.
 Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples.
 DEFINITION-OFFSET and DEFINITION-LENGTH are byte positions in DATA.
-Multiple triples are returned when alternate headwords are present."
+Multiple triples are returned when alternate headwords are present.
+CODING is the coding system of the headwords, normally the source
+charset declared by the dictionary properties."
   (when (< payload-length 4)
     (cl-return-from johnson-bgl--parse-entry-block nil))
   (let* ((hw-len (aref data payload-start))
@@ -281,7 +295,7 @@ Multiple triples are returned when alternate headwords are present."
       (cl-return-from johnson-bgl--parse-entry-block nil))
     (let* ((headword (decode-coding-string
                       (substring data hw-start hw-end)
-                      'utf-8))
+                      coding))
            (def-len-pos hw-end))
       ;; Need at least 2 bytes for definition length.
       (when (> (+ def-len-pos 2) (+ payload-start payload-length))
@@ -304,15 +318,19 @@ Multiple triples are returned when alternate headwords are present."
                 (unless (> alt-end block-end)
                   (let ((alt-hw (decode-coding-string
                                  (substring data alt-start alt-end)
-                                 'utf-8)))
+                                 coding)))
                     (push (list alt-hw def-start def-len) results))
                   (setq alt-pos alt-end)))))
           (nreverse results))))))
 
-(cl-defun johnson-bgl--parse-entry-block-type-11 (data payload-start payload-length)
+(cl-defun johnson-bgl--parse-entry-block-type-11 (data payload-start
+                                                       payload-length
+                                                       &optional (coding 'utf-8))
   "Parse a type 11 entry block from DATA at PAYLOAD-START with PAYLOAD-LENGTH.
 Type 11 has 4-byte length fields instead of 1/2-byte.
-Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
+Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples.
+CODING is the coding system of the headwords, normally the source
+charset declared by the dictionary properties."
   (when (< payload-length 10)
     (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
   (let* ((block-end (+ payload-start payload-length))
@@ -325,7 +343,7 @@ Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
       (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
     (let ((headword (decode-coding-string
                      (substring data hw-start hw-end)
-                     'utf-8))
+                     coding))
           (pos hw-end)
           (results nil))
       ;; Alternates count: 4 bytes.
@@ -343,7 +361,7 @@ Returns a list of (HEADWORD DEFINITION-OFFSET DEFINITION-LENGTH) triples."
               (cl-return-from johnson-bgl--parse-entry-block-type-11 nil))
             (let ((alt-hw (decode-coding-string
                            (substring data pos (+ pos alt-len))
-                           'utf-8)))
+                           coding)))
               (push alt-hw results))
             (setq pos (+ pos alt-len))))
         ;; Definition: 4 bytes length + data.
@@ -408,7 +426,10 @@ where byte-offset and `byte-length' reference positions in the decompressed
 stream (cached in a unibyte buffer)."
   (let* ((buf (johnson-bgl--get-buffer path))
          (data (with-current-buffer buf (buffer-string)))
-         (blocks (johnson-bgl--parse-blocks data)))
+         (blocks (johnson-bgl--parse-blocks data))
+         (meta (johnson-bgl--parse-metadata-from-blocks data blocks))
+         (coding (johnson-bgl--charset-coding-system
+                  (plist-get meta :source-charset))))
     (dolist (block blocks)
       (let ((btype (nth 0 block))
             (payload-start (nth 1 block))
@@ -416,12 +437,12 @@ stream (cached in a unibyte buffer)."
         (cond
          ((johnson-bgl--entry-block-p btype)
           (let ((entries (johnson-bgl--parse-entry-block
-                          data payload-start payload-length)))
+                          data payload-start payload-length coding)))
             (dolist (entry entries)
               (funcall callback (nth 0 entry) (nth 1 entry) (nth 2 entry)))))
          ((= btype 11)
           (let ((entries (johnson-bgl--parse-entry-block-type-11
-                          data payload-start payload-length)))
+                          data payload-start payload-length coding)))
             (dolist (entry entries)
               (funcall callback (nth 0 entry) (nth 1 entry) (nth 2 entry))))))))))
 

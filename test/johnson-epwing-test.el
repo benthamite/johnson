@@ -320,5 +320,52 @@
                 (should (> (buffer-size) 0)))))))
     (johnson-epwing-test--cleanup)))
 
+;;;; Control flow (regression: cl-return outside a block signalled no-catch)
+
+(ert-deftest johnson-epwing-test-traverse-page-revisit-returns ()
+  "Revisiting a page or page 0 returns instead of signalling."
+  (let ((visited (make-hash-table)))
+    (puthash 5 t visited)
+    (should-not (johnson-epwing--traverse-page "/nonexistent" 5 'jis
+                                               #'ignore visited))
+    (should-not (johnson-epwing--traverse-page "/nonexistent" 0 'jis
+                                               #'ignore visited))))
+
+(ert-deftest johnson-epwing-test-leaf-count-overrun-stops ()
+  "A leaf page whose declared count overruns the page stops cleanly."
+  (let ((page (make-string 2048 0))
+        (calls 0))
+    (aset page 0 #x80)
+    (aset page 1 4)
+    (johnson-epwing--process-leaf-entries page 4 65535 'iso-8859-1
+                                          (lambda (&rest _) (cl-incf calls)))
+    (should (= calls 0))))
+
+(ert-deftest johnson-epwing-test-render-stop-code-stops ()
+  "Rendering stops cleanly at an embedded 1F 03 stop code."
+  (with-temp-buffer
+    (johnson-epwing-render-entry (string ?a ?b 31 3 ?c))
+    (should (equal (buffer-string) "ab"))))
+
+(ert-deftest johnson-epwing-test-entry-end-across-chunk-boundary ()
+  "A stop code straddling a 32 KB read boundary ends the entry."
+  (let ((path (make-temp-file "johnson-epwing-honmon-")))
+    (unwind-protect
+        (progn
+          (with-temp-file path
+            (set-buffer-multibyte nil)
+            (insert (make-string 32767 ?a) (unibyte-string #x1F #x03) "zzz"))
+          (should (= (length (johnson-epwing--read-text-raw path 0)) 32767)))
+      (delete-file path))))
+
+;;;; Gaiji (regression: 0xA1-0xFE bytes overflowed the JIS shift)
+
+(ert-deftest johnson-epwing-test-gaiji-placeholder ()
+  "Gaiji codes inside JIS text become a placeholder instead of raw bytes."
+  (let ((raw (unibyte-string #x24 #x22 #xA1 #xA1 #x24 #x22)))
+    (should (equal (johnson-epwing--decode-text-segment raw 0 6 'jis)
+                   "あ〓あ"))
+    (should (equal (johnson-epwing--decode-search-key raw 'jis) "あ〓あ"))))
+
 (provide 'johnson-epwing-test)
 ;;; johnson-epwing-test.el ends here

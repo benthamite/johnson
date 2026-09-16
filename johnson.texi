@@ -2537,6 +2537,33 @@ added.
 A code audit of every backend and of the worker, protocol and user
 interface layers.  The fixes below each carry a regression test.
 
+
+@itemize
+@item
+BGL: dictionary title, languages and character sets are read
+from the real Babylon property layout, and headwords are decoded
+with the dictionary's source charset, so non-Latin and accented
+headwords index and match correctly.
+@item
+BGL: a failed decompression no longer leaves an empty cache
+buffer that later attempts mistake for a populated one.
+@item
+EPWING: corrupt or revisited index pages no longer abort
+indexing with a @code{no-catch} error, and an entry ending exactly on a
+read boundary is no longer merged with the next entry.
+@item
+EPWING: gaiji (book-specific characters) render as 〓 instead of
+corrupting the surrounding text or dropping the headword.
+@item
+DSL: headword expansion is bounded during expansion, so a
+headword with many optional or alternative parts cannot hang
+indexing; lines inside multi-line @samp{@{@{ ... @}@}} comment blocks are no
+longer indexed as headwords.
+@item
+StarDict: a truncated @samp{.syn} file no longer prevents indexing,
+and a short read from a @samp{.dict.dz} file reports a clear error.
+@end itemize
+
 @node Future features
 @section Future features
 

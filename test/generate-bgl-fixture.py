@@ -3,6 +3,7 @@
 
 Creates:
   - test-bgl.bgl: 3 entries (apple, cat, hello), standard format
+  - test-bgl-cp1251.bgl: 2 Russian entries encoded in cp1251 (charset 0x44)
 
 Uses only Python stdlib.
 """
@@ -17,6 +18,12 @@ import struct
 # ---------------------------------------------------------------------------
 
 LANG_ENGLISH = 0x00
+LANG_RUSSIAN = 0x07
+
+# BGL charset codes (subset) and their Python codec names.
+CHARSET_DEFAULT = 0x41   # cp1252
+CHARSET_CYRILLIC = 0x44  # cp1251
+CHARSET_CODECS = {CHARSET_DEFAULT: "cp1252", CHARSET_CYRILLIC: "cp1251"}
 
 
 # ---------------------------------------------------------------------------
@@ -55,28 +62,38 @@ def encode_block(block_type, payload):
 
 
 def make_metadata_block(subtype, value_bytes):
-    """Build a type 3 (metadata) block with the given subtype and value."""
-    payload = bytes([subtype]) + value_bytes
+    """Build a type 3 (metadata) block with the given subtype and value.
+
+    Real Babylon files store the property ID as a 2-byte big-endian
+    integer followed by the value (see stardict-tools babylon.cpp and
+    pyglossary, which read block.data[1] as the ID and block.data[2:] as
+    the value).
+    """
+    payload = struct.pack(">H", subtype) + value_bytes
     return encode_block(3, payload)
 
 
-def make_entry_block(headword, definition, alternates=None):
+def make_entry_block(headword, definition, alternates=None,
+                     source_codec="cp1252", target_codec="cp1252"):
     """Build a type 1 (entry) block.
 
     Format:
       1-byte headword length + headword bytes
       2-byte BE definition length + definition bytes
       Then for each alternate: 1-byte length + alternate bytes
+
+    Headwords and alternates are encoded with SOURCE_CODEC, definitions
+    with TARGET_CODEC, mirroring the source/target charset properties.
     """
-    hw_bytes = headword.encode("utf-8")
-    def_bytes = definition.encode("utf-8")
+    hw_bytes = headword.encode(source_codec)
+    def_bytes = definition.encode(target_codec)
 
     payload = bytes([len(hw_bytes)]) + hw_bytes
     payload += struct.pack(">H", len(def_bytes)) + def_bytes
 
     if alternates:
         for alt in alternates:
-            alt_bytes = alt.encode("utf-8")
+            alt_bytes = alt.encode(source_codec)
             payload += bytes([len(alt_bytes)]) + alt_bytes
 
     return encode_block(1, payload)
@@ -87,33 +104,38 @@ def make_entry_block(headword, definition, alternates=None):
 # ---------------------------------------------------------------------------
 
 def build_bgl(entries, title="Test BGL Dictionary",
-              source_lang=LANG_ENGLISH, target_lang=LANG_ENGLISH):
+              source_lang=LANG_ENGLISH, target_lang=LANG_ENGLISH,
+              source_charset=CHARSET_DEFAULT, target_charset=CHARSET_DEFAULT):
     """Build a complete BGL file.
 
     entries: list of (headword, definition_html) tuples.
             Each definition may contain HTML tags.
     """
+    source_codec = CHARSET_CODECS[source_charset]
+    target_codec = CHARSET_CODECS[target_charset]
+
     # Build the decompressed stream: metadata blocks + entry blocks.
     stream = b""
 
-    # Metadata: title (subtype 0x01)
-    stream += make_metadata_block(0x01, title.encode("utf-8"))
+    # Metadata: title (property 0x01), encoded in the source charset.
+    stream += make_metadata_block(0x01, title.encode(source_codec))
 
-    # Metadata: source language (subtype 0x07)
-    stream += make_metadata_block(0x07, bytes([source_lang]))
+    # Metadata: source language (property 0x07), 4-byte BE value.
+    stream += make_metadata_block(0x07, struct.pack(">I", source_lang))
 
-    # Metadata: target language (subtype 0x08)
-    stream += make_metadata_block(0x08, bytes([target_lang]))
+    # Metadata: target language (property 0x08), 4-byte BE value.
+    stream += make_metadata_block(0x08, struct.pack(">I", target_lang))
 
-    # Metadata: source charset (subtype 0x1A) — cp1252 = 0x41
-    stream += make_metadata_block(0x1A, bytes([0x41]))
+    # Metadata: source charset (property 0x1A), 1-byte value.
+    stream += make_metadata_block(0x1A, bytes([source_charset]))
 
-    # Metadata: target charset (subtype 0x1B) — cp1252 = 0x41
-    stream += make_metadata_block(0x1B, bytes([0x41]))
+    # Metadata: target charset (property 0x1B), 1-byte value.
+    stream += make_metadata_block(0x1B, bytes([target_charset]))
 
     # Entry blocks (type 1)
     for hw, defn in entries:
-        stream += make_entry_block(hw, defn)
+        stream += make_entry_block(hw, defn, source_codec=source_codec,
+                                   target_codec=target_codec)
 
     # Gzip compress the stream.
     compressed = gzip.compress(stream)
@@ -149,6 +171,24 @@ def main():
         f.write(bgl)
     print(f"Created {path} ({len(bgl)} bytes)")
 
+    # Russian-English dictionary in cp1251: non-Latin headwords and a
+    # Latin-1 definition prove that headwords use the source charset and
+    # definitions the target charset.
+    cyrillic_entries = [
+        ("\u044f\u0431\u043b\u043e\u043a\u043e",
+         "<b>apple</b> - a fruit; caf\u00e9 word for testing"),
+        ("\u043a\u043e\u0448\u043a\u0430", "<b>cat</b> - a feline"),
+    ]
+    cp1251 = build_bgl(cyrillic_entries,
+                       title="\u0422\u0435\u0441\u0442\u043e\u0432\u044b\u0439",
+                       source_lang=LANG_RUSSIAN, target_lang=LANG_ENGLISH,
+                       source_charset=CHARSET_CYRILLIC,
+                       target_charset=CHARSET_DEFAULT)
+    cp1251_path = os.path.join(fixtures_dir, "test-bgl-cp1251.bgl")
+    with open(cp1251_path, "wb") as f:
+        f.write(cp1251)
+    print(f"Created {cp1251_path} ({len(cp1251)} bytes)")
+
     # Verify the file can be read back.
     with open(path, "rb") as f:
         data = f.read()
@@ -179,19 +219,19 @@ def main():
         block_count += 1
 
         if btype == 3:
-            subtype = payload[0]
-            value = payload[1:]
+            subtype = struct.unpack(">H", payload[:2])[0]
+            value = payload[2:]
             if subtype == 0x01:
-                print(f"  Metadata: title = {value.decode('utf-8')}")
+                print(f"  Metadata: title = {value.decode('cp1252')}")
             elif subtype == 0x07:
-                print(f"  Metadata: source_lang = {value[0]}")
+                print(f"  Metadata: source_lang = {value[3]}")
             elif subtype == 0x08:
-                print(f"  Metadata: target_lang = {value[0]}")
+                print(f"  Metadata: target_lang = {value[3]}")
         elif btype in (1, 7, 10, 11, 13):
             hw_len = payload[0]
-            hw = payload[1:1 + hw_len].decode("utf-8")
+            hw = payload[1:1 + hw_len].decode("cp1252")
             def_len = struct.unpack(">H", payload[1 + hw_len:3 + hw_len])[0]
-            defn = payload[3 + hw_len:3 + hw_len + def_len].decode("utf-8")
+            defn = payload[3 + hw_len:3 + hw_len + def_len].decode("cp1252")
             entry_count += 1
             print(f"  Entry: {hw!r} => {defn[:50]!r}...")
 

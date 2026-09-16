@@ -608,5 +608,35 @@ position rewound behind the current tag and re-matched forever."
     (should (eq (plist-get fmt :render-entry-with-context)
                 #'johnson-dsl-render-entry-with-context))))
 
+;;;; Headword expansion bound (regression: exponential expansion)
+
+(ert-deftest johnson-dsl-test-expand-headword-bounded ()
+  "Expanding a headword with many optional groups is bounded in time and size."
+  (let* ((headword (concat "w" (apply #'concat (make-list 20 "(a)"))))
+         (start (float-time))
+         (result (johnson-dsl--expand-headword headword)))
+    (should (< (- (float-time) start) 1.0))
+    (should (<= (length result) johnson-dsl--max-headword-variants))
+    (should (member "w" result))))
+
+;;;; Multi-line comments (regression: comment lines indexed as headwords)
+
+(ert-deftest johnson-dsl-test-build-index-skips-multiline-comment ()
+  "Lines inside a column-0 {{ ... }} comment block are not headwords."
+  (johnson-dsl-test--kill-cache-buffers)
+  (let ((path (make-temp-file "johnson-dsl-comment-" nil ".dsl")))
+    (unwind-protect
+        (let ((headwords nil))
+          (with-temp-file path
+            (insert "#NAME \"Comment\"\n#INDEX_LANGUAGE \"English\"\n"
+                    "#CONTENTS_LANGUAGE \"English\"\n\n"
+                    "{{\nCopyright 2005 Someone\nAll rights reserved\n}}\n"
+                    "apple\n\tfruit\n"))
+          (johnson-dsl-build-index path (lambda (hw _offset _length)
+                                          (push hw headwords)))
+          (should (equal headwords '("apple"))))
+      (johnson-dsl-test--kill-cache-buffers)
+      (delete-file path))))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here

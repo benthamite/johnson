@@ -2409,6 +2409,24 @@ File: johnson.info,  Node: Version 08 (current) --- Robustness fixes,  Next: Fut
 A code audit of every backend and of the worker, protocol and user
 interface layers.  The fixes below each carry a regression test.
 
+   • BGL: dictionary title, languages and character sets are read from
+     the real Babylon property layout, and headwords are decoded with
+     the dictionary's source charset, so non-Latin and accented
+     headwords index and match correctly.
+   • BGL: a failed decompression no longer leaves an empty cache buffer
+     that later attempts mistake for a populated one.
+   • EPWING: corrupt or revisited index pages no longer abort indexing
+     with a ‘no-catch’ error, and an entry ending exactly on a read
+     boundary is no longer merged with the next entry.
+   • EPWING: gaiji (book-specific characters) render as 〓 instead of
+     corrupting the surrounding text or dropping the headword.
+   • DSL: headword expansion is bounded during expansion, so a headword
+     with many optional or alternative parts cannot hang indexing; lines
+     inside multi-line ‘{{ ... }}’ comment blocks are no longer indexed
+     as headwords.
+   • StarDict: a truncated ‘.syn’ file no longer prevents indexing, and
+     a short read from a ‘.dict.dz’ file reports a clear error.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2805,13 +2823,13 @@ Node: Version 05 --- EPWING99370
 Node: Version 06 --- EPWING improvements and audits100162
 Node: Version 07 --- Progressive rendering100632
 Node: Version 08 (current) --- Robustness fixes101719
-Node: Future features102100
-Node: Contributing102405
-Node: AI assistance102836
-Node: Running the test suite103341
-Node: Indices103723
-Node: Function index103861
-Node: Variable index115903
+Node: Future features103202
+Node: Contributing103507
+Node: AI assistance103938
+Node: Running the test suite104443
+Node: Indices104825
+Node: Function index104963
+Node: Variable index117005
 
 End Tag Table
 

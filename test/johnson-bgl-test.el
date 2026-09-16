@@ -290,5 +290,47 @@
             ;; No HTML tags remaining.
             (should-not (string-match-p "<b>" text))))))))
 
+;;;; Charset handling (regression: property layout and headword charset)
+
+(ert-deftest johnson-bgl-test-parse-metadata-cp1251 ()
+  "Reads title, languages and charsets from real-layout property blocks."
+  (johnson-bgl-test--cleanup)
+  (let ((meta (johnson-bgl-parse-metadata
+               (johnson-bgl-test--fixture "test-bgl-cp1251.bgl"))))
+    (should (equal (plist-get meta :name) "Тестовый"))
+    (should (equal (plist-get meta :source-lang) "Russian"))
+    (should (equal (plist-get meta :target-lang) "English"))))
+
+(ert-deftest johnson-bgl-test-cp1251-headwords-and-definitions ()
+  "Decodes headwords with the source charset and definitions with the target."
+  (johnson-bgl-test--cleanup)
+  (let ((path (johnson-bgl-test--fixture "test-bgl-cp1251.bgl"))
+        (entries nil))
+    (johnson-bgl-build-index path (lambda (hw offset size)
+                                    (push (list hw offset size) entries)))
+    (should (member "яблоко" (mapcar #'car entries)))
+    (should (member "кошка" (mapcar #'car entries)))
+    (let* ((entry (cl-find "яблоко" entries :key #'car :test #'equal))
+           (text (johnson-bgl-retrieve-entry path (nth 1 entry) (nth 2 entry))))
+      (should (string-match-p "café" text)))))
+
+;;;; Cache buffer lifecycle (regression: failed load left an empty cache)
+
+(ert-deftest johnson-bgl-test-failed-load-leaves-no-cache-buffer ()
+  "A failed decompression does not leave an empty cache buffer behind."
+  (johnson-bgl-test--cleanup)
+  (let ((path (make-temp-file "johnson-bgl-short-" nil ".bgl")))
+    (unwind-protect
+        (progn
+          (with-temp-file path
+            (set-buffer-multibyte nil)
+            (insert (unibyte-string #x12 #x34 #x00 #x01)))
+          (should-error (johnson-bgl--get-buffer path))
+          (should-not (get-buffer (johnson-bgl--cache-buffer-name path)))
+          ;; A retry must fail again rather than return an empty cache.
+          (should-error (johnson-bgl--get-buffer path)))
+      (johnson-bgl-test--cleanup)
+      (delete-file path))))
+
 (provide 'johnson-bgl-test)
 ;;; johnson-bgl-test.el ends here

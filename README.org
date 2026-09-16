@@ -2366,6 +2366,24 @@ A code audit of every backend and of the worker, protocol and user
 interface layers.  The fixes below each carry a regression test.
 
 
+- [X] BGL: dictionary title, languages and character sets are read
+  from the real Babylon property layout, and headwords are decoded
+  with the dictionary's source charset, so non-Latin and accented
+  headwords index and match correctly.
+- [X] BGL: a failed decompression no longer leaves an empty cache
+  buffer that later attempts mistake for a populated one.
+- [X] EPWING: corrupt or revisited index pages no longer abort
+  indexing with a ~no-catch~ error, and an entry ending exactly on a
+  read boundary is no longer merged with the next entry.
+- [X] EPWING: gaiji (book-specific characters) render as 〓 instead of
+  corrupting the surrounding text or dropping the headword.
+- [X] DSL: headword expansion is bounded during expansion, so a
+  headword with many optional or alternative parts cannot hang
+  indexing; lines inside multi-line ={{ ... }}= comment blocks are no
+  longer indexed as headwords.
+- [X] StarDict: a truncated =.syn= file no longer prevents indexing,
+  and a short read from a =.dict.dz= file reports a clear error.
+
 ** Future features
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-future

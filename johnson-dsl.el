@@ -364,6 +364,10 @@ Handles \\[, \\], \\{, \\}, \\(, \\)."
   (replace-regexp-in-string
    "\\\\\\([][{}()]\\)" "\\1" headword))
 
+(defconst johnson-dsl--max-headword-variants 64
+  "Maximum number of expanded variants per headword.
+Limits combinatorial blowup from malformed data.")
+
 (defun johnson-dsl--expand-alternations (headword)
   "Expand alternation and unsorted-part syntax in HEADWORD.
 Alternation: \"pre{a/b}suf\" => (\"preasuf\" \"prebsuf\").
@@ -404,8 +408,16 @@ Handles escaped braces.  Returns a list of expanded headwords."
                     (setq changed t)))))
             (unless found
               (push hw new-result))))
-        (setq result (nreverse new-result))))
+        (setq result (johnson-dsl--cap-variants (nreverse new-result)))))
     result))
+
+(defun johnson-dsl--cap-variants (variants)
+  "Return VARIANTS truncated to `johnson-dsl--max-headword-variants'.
+Applied after every expansion pass so that the number of headwords in
+flight, and hence the cost of the next pass, stays bounded."
+  (if (> (length variants) johnson-dsl--max-headword-variants)
+      (seq-take variants johnson-dsl--max-headword-variants)
+    variants))
 
 (defun johnson-dsl--expand-optionals (headword)
   "Expand optional parts in HEADWORD.
@@ -434,7 +446,7 @@ Handles escaped parens.  Returns a list of expanded headwords."
                 (setq changed t)))
             (unless found
               (push hw new-result))))
-        (setq result (nreverse new-result))))
+        (setq result (johnson-dsl--cap-variants (nreverse new-result)))))
     result))
 
 (defun johnson-dsl--split-on-slash (headword)
@@ -449,10 +461,6 @@ If no `{/}' is found, returns (HEADWORD)."
             (push part result)))
         (or (nreverse result) (list headword)))
     (list headword)))
-
-(defconst johnson-dsl--max-headword-variants 64
-  "Maximum number of expanded variants per headword.
-Limits combinatorial blowup from malformed data.")
 
 (defun johnson-dsl--expand-headword (headword)
   "Expand HEADWORD into a list of all variant headwords.
@@ -492,9 +500,16 @@ buffer (1-based offset, suitable for `buffer-substring-no-properties')."
           (forward-line 1))
         ;; Parse entries.
         (let ((headwords nil)
-              (body-start nil))
+              (body-start nil)
+              (in-comment nil))
           (while (not (eobp))
             (cond
+             ;; Inside a multi-line {{ ... }} comment block: skip until
+             ;; the line that closes it.
+             (in-comment
+              (when (looking-at ".*}}")
+                (setq in-comment nil))
+              (forward-line 1))
              ;; Blank line: skip.
              ((looking-at "^[ \t]*$")
               (forward-line 1))
@@ -540,12 +555,19 @@ buffer (1-based offset, suitable for `buffer-substring-no-properties')."
                 ;; Strip carriage return if present.
                 (when (string-suffix-p "\r" hw)
                   (setq hw (substring hw 0 -1)))
-                (unless (string-empty-p hw)
-                  (push hw headwords)))
+                (if (johnson-dsl--opens-comment-p hw)
+                    (setq in-comment t)
+                  (unless (string-empty-p hw)
+                    (push hw headwords))))
               (forward-line 1)))))))
     (when (> skipped 0)
       (message "johnson-dsl: %d entries skipped due to parse errors" skipped))
     nil))
+
+(defun johnson-dsl--opens-comment-p (line)
+  "Return non-nil when LINE opens a {{ ... }} comment that it does not close."
+  (string-match-p "{{" (replace-regexp-in-string
+                        "{{\\(?:[^}]\\|}[^}]\\)*}}" "" line)))
 
 ;;;; Entry retrieval
 

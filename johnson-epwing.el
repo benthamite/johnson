@@ -147,12 +147,24 @@ Returns the full path or nil."
 
 (defun johnson-epwing--jis-to-euc (data &optional start end)
   "Convert raw JIS bytes in DATA to EUC-JP by adding 0x80 to each byte.
-Operates on the range from START to END (defaults to full string)."
+Operates on the range from START to END (defaults to full string).
+Byte pairs in the 0xA1-0xFE range encode gaiji, book-specific external
+characters with no EUC-JP equivalent; they are replaced by the geta mark
+placeholder rather than shifted out of the byte range."
   (let* ((s (or start 0))
-         (e (or end (length data)))
-         (result (make-string (- e s) 0)))
-    (dotimes (i (- e s))
-      (aset result i (+ (aref data (+ s i)) #x80)))
+         (n (- (or end (length data)) s))
+         (result (make-string n 0))
+         (i 0))
+    (while (< i n)
+      (let ((b1 (aref data (+ s i)))
+            (b2 (and (< (1+ i) n) (aref data (+ s i 1)))))
+        (if (and b2 (<= #xA1 b1 #xFE) (<= #xA1 b2 #xFE))
+            (progn
+              (aset result i #xA2)
+              (aset result (1+ i) #xAE)
+              (setq i (+ i 2)))
+          (aset result i (if (< b1 #x80) (+ b1 #x80) b1))
+          (setq i (1+ i)))))
     result))
 
 ;;;; Character encoding detection
@@ -328,19 +340,18 @@ CALLBACK with (HEADWORD TEXT-POSITION 0) for each leaf entry."
 PATH is the HONMON file.  CODING is the character encoding.
 CALLBACK receives (HEADWORD TEXT-POSITION 0).  VISITED tracks
 pages already processed."
-  (when (or (<= page-num 0) (gethash page-num visited))
-    (cl-return-from johnson-epwing--traverse-page))
-  (puthash page-num t visited)
-  (let* ((data (johnson-epwing--read-page path page-num))
-         (flags (aref data 0))
-         (entry-len (aref data 1))
-         (count (johnson-binary-u16be data 2))
-         (leaf-p (not (zerop (logand flags #x80)))))
-    (if leaf-p
-        (johnson-epwing--process-leaf-entries
-         data entry-len count coding callback)
-      (johnson-epwing--process-internal-entries
-       data entry-len count path coding callback visited))))
+  (unless (or (<= page-num 0) (gethash page-num visited))
+    (puthash page-num t visited)
+    (let* ((data (johnson-epwing--read-page path page-num))
+           (flags (aref data 0))
+           (entry-len (aref data 1))
+           (count (johnson-binary-u16be data 2))
+           (leaf-p (not (zerop (logand flags #x80)))))
+      (if leaf-p
+          (johnson-epwing--process-leaf-entries
+           data entry-len count coding callback)
+        (johnson-epwing--process-internal-entries
+         data entry-len count path coding callback visited)))))
 
 (defun johnson-epwing--process-leaf-entries (data entry-len count coding
                                                   callback)
@@ -348,7 +359,7 @@ pages already processed."
 ENTRY-LEN is the fixed key length (0 for variable).  COUNT is
 the number of entries.  CODING is the character encoding."
   (let ((pos 4))
-    (dotimes (_ count)
+    (cl-dotimes (_ count)
       (when (>= pos (- (length data) 12))
         (cl-return))
       (let* ((key-len (if (zerop entry-len)
@@ -373,7 +384,7 @@ ENTRY-LEN is the fixed key length (0 for variable).  COUNT is
 the number of entries.  PATH is the HONMON file.  CODING is the
 character encoding.  CALLBACK and VISITED are forwarded."
   (let ((pos 4))
-    (dotimes (_ count)
+    (cl-dotimes (_ count)
       (when (>= pos (- (length data) 4))
         (cl-return))
       (let ((key-len (if (zerop entry-len)
@@ -436,33 +447,54 @@ Reads until the stop code (0x1F 0x03) or end of file."
          (chunk-size (* 16 johnson-epwing--page-size))
          (result nil)
          (pos offset)
-         (done nil))
+         (done nil)
+         (keyword-count 0)
+         (carry ""))
     (while (and (not done) (< pos file-size))
       (let* ((read-len (min chunk-size (- file-size pos)))
-             (chunk (johnson-epwing--read-bytes path pos read-len))
-             (stop (johnson-epwing--find-entry-end chunk)))
-        (if stop
-            (progn
-              (push (substring chunk 0 stop) result)
-              (setq done t))
+             (chunk (concat carry
+                            (johnson-epwing--read-bytes path pos read-len)))
+             (scan (johnson-epwing--scan-entry-end chunk keyword-count))
+             (stop (car scan)))
+        (setq keyword-count (cdr scan))
+        (cond
+         (stop
+          (push (substring chunk 0 stop) result)
+          (setq done t))
+         ;; A trailing escape byte may start a stop code whose command
+         ;; byte is in the next chunk; carry it over to the next scan.
+         ((and (> (length chunk) 0)
+               (= (aref chunk (1- (length chunk))) johnson-epwing--escape-byte))
+          (push (substring chunk 0 -1) result)
+          (setq carry (substring chunk -1)))
+         (t
           (push chunk result)
-          (cl-incf pos read-len))))
+          (setq carry "")))
+        (cl-incf pos read-len)))
+    (unless done
+      (push carry result))
     (apply #'concat (nreverse result))))
 
-(defun johnson-epwing--find-entry-end (data)
-  "Find the end of the current entry in unibyte DATA.
-Stops at 0x1F 0x03 (end text body) or the second occurrence of
-0x1F 0x41 (next keyword marker, i.e. next entry).  Returns the
-byte position or nil."
+(defun johnson-epwing--scan-entry-end (data keyword-count)
+  "Scan unibyte DATA for the end of the current entry.
+The entry ends at 0x1F 0x03 (end text body) or at the second occurrence
+of 0x1F 0x41 (next keyword marker, i.e. next entry).  KEYWORD-COUNT is
+the number of keyword markers already seen in earlier chunks of the same
+entry.  Return a cons (POS . COUNT) where POS is the byte position of the
+end or nil when DATA holds no end, and COUNT the updated keyword count."
   (let ((limit (1- (length data)))
-        (keyword-count 0))
-    (cl-loop for i from 0 below limit
-             when (= (aref data i) #x1F)
-             do (let ((cmd (aref data (1+ i))))
-                  (when (= cmd #x03) (cl-return i))
-                  (when (= cmd #x41)
-                    (cl-incf keyword-count)
-                    (when (>= keyword-count 2) (cl-return i)))))))
+        (i 0)
+        (end nil))
+    (while (and (not end) (< i limit))
+      (when (= (aref data i) johnson-epwing--escape-byte)
+        (let ((cmd (aref data (1+ i))))
+          (cond
+           ((= cmd #x03) (setq end i))
+           ((= cmd #x41)
+            (cl-incf keyword-count)
+            (when (>= keyword-count 2) (setq end i))))))
+      (cl-incf i))
+    (cons end keyword-count)))
 
 ;;;; Entry decoding
 
@@ -650,7 +682,7 @@ character-31 markers."
             (let ((cmd (and (< (1+ pos) len) (aref data (1+ pos)))))
               (pcase cmd
                 (#x02 (cl-incf pos 2))
-                (#x03 (cl-return))
+                (#x03 (setq pos len))
                 (#x04 (cl-incf pos 2))
                 (#x05 (cl-incf pos 2))
                 (#x06 (setq sub-start (point)) (cl-incf pos 2))

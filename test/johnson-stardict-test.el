@@ -770,5 +770,50 @@
                         :type 'error))
       (delete-directory temp-dir t))))
 
+;;;; Damaged companion files (regressions)
+
+(ert-deftest johnson-stardict-test-truncated-syn-keeps-idx-entries ()
+  "A truncated .syn file does not abort indexing of the .idx entries."
+  (johnson-stardict-test--cleanup)
+  (let ((temp-dir (make-temp-file "johnson-test-" t)))
+    (unwind-protect
+        (let ((headwords nil))
+          (dolist (ext '("ifo" "idx" "dict"))
+            (copy-file (johnson-stardict-test--fixture
+                        (concat "test-stardict." ext))
+                       (expand-file-name (concat "trunc." ext) temp-dir)))
+          (let ((syn (with-temp-buffer
+                       (set-buffer-multibyte nil)
+                       (insert-file-contents-literally
+                        (johnson-stardict-test--fixture "test-stardict.syn"))
+                       (buffer-string))))
+            (with-temp-file (expand-file-name "trunc.syn" temp-dir)
+              (set-buffer-multibyte nil)
+              (insert (substring syn 0 -2))))
+          (johnson-stardict-build-index
+           (expand-file-name "trunc.ifo" temp-dir)
+           (lambda (hw _offset _size) (push hw headwords)))
+          (should (member "hello" headwords)))
+      (delete-directory temp-dir t))))
+
+(ert-deftest johnson-stardict-test-dz-short-read-signals-clear-error ()
+  "A short read from a .dict.dz file signals a descriptive error."
+  (johnson-stardict-test--cleanup)
+  (let ((temp-dir (make-temp-file "johnson-test-" t)))
+    (unwind-protect
+        (let ((ifo-path (expand-file-name "short.ifo" temp-dir)))
+          (with-temp-file ifo-path
+            (insert "StarDict's dict ifo file\nversion=2.4.2\n"
+                    "wordcount=1\nidxfilesize=10\nbookname=Short\n"))
+          (let ((jka-compr-inhibit t))
+            (with-temp-file (expand-file-name "short.dict.dz" temp-dir)))
+          (cl-letf (((symbol-function 'johnson-dictzip-read)
+                     (lambda (&rest _) "ab")))
+            (let ((err (should-error
+                        (johnson-stardict-retrieve-entry ifo-path 0 10))))
+              (should (string-match-p "expected 10 bytes"
+                                      (error-message-string err))))))
+      (delete-directory temp-dir t))))
+
 (provide 'johnson-stardict-test)
 ;;; johnson-stardict-test.el ends here

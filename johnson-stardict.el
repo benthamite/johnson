@@ -276,13 +276,20 @@ Returns a list of (SYNONYM-WORD OFFSET SIZE) triples."
         (while (< pos (length data))
           (let* ((str-result (johnson-stardict--read-null-terminated-string data pos))
                  (synonym (car str-result))
-                 (cur-pos (cdr str-result))
-                 (idx (johnson-binary-u32be data cur-pos)))
-            (when (< idx (length idx-entries))
-              (let ((main-entry (aref idx-entries idx)))
-                (push (list synonym (nth 1 main-entry) (nth 2 main-entry))
-                      result)))
-            (setq pos (+ cur-pos 4))))
+                 (cur-pos (cdr str-result)))
+            (if (> (+ cur-pos 4) (length data))
+                ;; Truncated trailing record: keep what was parsed so far
+                ;; rather than failing the whole dictionary.
+                (progn
+                  (message "johnson-stardict: ignoring truncated record in %s"
+                           syn-path)
+                  (setq pos (length data)))
+              (let ((idx (johnson-binary-u32be data cur-pos)))
+                (when (< idx (length idx-entries))
+                  (let ((main-entry (aref idx-entries idx)))
+                    (push (list synonym (nth 1 main-entry) (nth 2 main-entry))
+                          result))))
+              (setq pos (+ cur-pos 4)))))
         (nreverse result)))))
 
 ;;;; Index building
@@ -314,7 +321,12 @@ for use by the renderer."
          (_ (unless (file-exists-p dict-path)
               (error "Missing .dict file: %s (dictionary is incomplete)" dict-path)))
          (raw (if (string-suffix-p ".dict.dz" dict-path)
-                  (johnson-dictzip-read dict-path byte-offset byte-size)
+                  (let ((data (johnson-dictzip-read dict-path byte-offset
+                                                    byte-size)))
+                    (unless (= (length data) byte-size)
+                      (error "StarDict .dict.dz: expected %d bytes at offset %d, got %d"
+                             byte-size byte-offset (length data)))
+                    data)
                 (with-temp-buffer
                   (set-buffer-multibyte nil)
                   (insert-file-contents-literally dict-path nil
