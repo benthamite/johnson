@@ -2470,6 +2470,16 @@ interface layers.  The fixes below each carry a regression test.
      files outside the dictionary's folder, and companion-zip resource
      names are passed to ‘unzip’ literally.
 
+   • DSL: dictionaries saved as UTF-16 without a byte-order mark are
+     recognised and indexed correctly instead of being accepted as
+     empty.
+   • StarDict: a dictionary whose ‘.ifo’ declares the wrong word count
+     is indexed instead of rejected, with a message noting the mismatch.
+   • BGL: a truncated dictionary file produces a warning naming the file
+     instead of silently dropping its last entry, while ordinary Babylon
+     files, whose checksum is always zero, load without any message;
+     lookups no longer copy the whole decompressed dictionary.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2866,13 +2876,13 @@ Node: Version 05 --- EPWING99491
 Node: Version 06 --- EPWING improvements and audits100283
 Node: Version 07 --- Progressive rendering100753
 Node: Version 08 (current) --- Robustness fixes101840
-Node: Future features105694
-Node: Contributing105999
-Node: AI assistance106430
-Node: Running the test suite106935
-Node: Indices107317
-Node: Function index107455
-Node: Variable index119497
+Node: Future features106275
+Node: Contributing106580
+Node: AI assistance107011
+Node: Running the test suite107516
+Node: Indices107898
+Node: Function index108036
+Node: Variable index120078
 
 End Tag Table
 

@@ -2427,6 +2427,15 @@ interface layers.  The fixes below each carry a regression test.
   reference files outside the dictionary's folder, and companion-zip
   resource names are passed to =unzip= literally.
 
+- [X] DSL: dictionaries saved as UTF-16 without a byte-order mark are
+  recognised and indexed correctly instead of being accepted as empty.
+- [X] StarDict: a dictionary whose =.ifo= declares the wrong word count
+  is indexed instead of rejected, with a message noting the mismatch.
+- [X] BGL: a truncated dictionary file produces a warning naming the
+  file instead of silently dropping its last entry, while ordinary
+  Babylon files, whose checksum is always zero, load without any
+  message; lookups no longer copy the whole decompressed dictionary.
+
 ** Future features
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-future

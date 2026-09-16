@@ -114,23 +114,66 @@ context built by `johnson-dsl-worker-prepare-entry'.")
 
 ;;;; Encoding detection
 
+(defconst johnson-dsl--encoding-sample-bytes 512
+  "Number of leading bytes examined when detecting a BOM-less encoding.")
+
 (defun johnson-dsl--detect-encoding (path)
   "Detect the encoding of the DSL file at PATH.
 Handles both plain and dictzip-compressed (.dsl.dz) files.
-Returns a symbol: `utf-16-le', `utf-16-be', `utf-8-with-signature', or `utf-8'."
-  (with-temp-buffer
-    (set-buffer-multibyte nil)
-    (if (johnson-dsl--dictzip-p path)
-        (insert (johnson-dictzip-read path 0 4))
-      (insert-file-contents-literally path nil 0 4))
-    (let ((b1 (and (> (point-max) 1) (char-after 1)))
-          (b2 (and (> (point-max) 2) (char-after 2)))
-          (b3 (and (> (point-max) 3) (char-after 3))))
-      (cond
-       ((and b1 b2 (= b1 #xff) (= b2 #xfe)) 'utf-16-le)
-       ((and b1 b2 (= b1 #xfe) (= b2 #xff)) 'utf-16-be)
-       ((and b1 b2 b3 (= b1 #xef) (= b2 #xbb) (= b3 #xbf)) 'utf-8-with-signature)
-       (t 'utf-8)))))
+Returns a symbol: `utf-16-le' or `utf-16-be' (UTF-16 with a BOM),
+`utf-16le' or `utf-16be' (UTF-16 without a BOM), `utf-8-with-signature',
+or `utf-8'."
+  (let* ((sample (johnson-dsl--read-leading-bytes
+                  path johnson-dsl--encoding-sample-bytes))
+         (len (length sample))
+         (b1 (and (> len 0) (aref sample 0)))
+         (b2 (and (> len 1) (aref sample 1)))
+         (b3 (and (> len 2) (aref sample 2))))
+    (cond
+     ((and b1 b2 (= b1 #xff) (= b2 #xfe)) 'utf-16-le)
+     ((and b1 b2 (= b1 #xfe) (= b2 #xff)) 'utf-16-be)
+     ((and b1 b2 b3 (= b1 #xef) (= b2 #xbb) (= b3 #xbf)) 'utf-8-with-signature)
+     ((johnson-dsl--bomless-utf-16 sample))
+     (t 'utf-8))))
+
+(defun johnson-dsl--read-leading-bytes (path count)
+  "Return up to COUNT leading bytes of the DSL file at PATH as a unibyte string.
+Handles both plain and dictzip-compressed (.dsl.dz) files."
+  (if (johnson-dsl--dictzip-p path)
+      (let* ((header (johnson-dictzip--parse-header path))
+             (size (* (plist-get header :chlen) (plist-get header :chcnt))))
+        (johnson-dictzip-read path 0 (min count size)))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert-file-contents-literally path nil 0 count)
+      (buffer-string))))
+
+(defun johnson-dsl--bomless-utf-16 (sample)
+  "Return the UTF-16 byte order of SAMPLE when it lacks a BOM, else nil.
+Return `utf-16le' or `utf-16be'.  A leading header line yields the byte
+pair `#' NUL (little endian) or NUL `#' (big endian).  Otherwise the NUL
+bytes of mostly-ASCII text sit at odd positions for little endian and at
+even positions for big endian; this heuristic requires NULs in at least a
+quarter of SAMPLE and a three-to-one imbalance between the two parities."
+  (let ((len (length sample)))
+    (cond
+     ((< len 2) nil)
+     ((and (= (aref sample 0) ?#) (= (aref sample 1) 0)) 'utf-16le)
+     ((and (= (aref sample 0) 0) (= (aref sample 1) ?#)) 'utf-16be)
+     (t
+      (let ((even 0)
+            (odd 0))
+        (dotimes (i len)
+          (when (zerop (aref sample i))
+            (if (cl-evenp i) (cl-incf even) (cl-incf odd))))
+        (cond
+         ((< (* 4 (+ even odd)) len) nil)
+         ((> odd (* 3 even)) 'utf-16le)
+         ((> even (* 3 odd)) 'utf-16be)))))))
+
+(defun johnson-dsl--utf-16-p (encoding)
+  "Return non-nil when ENCODING is one of the UTF-16 encoding symbols."
+  (memq encoding '(utf-16-le utf-16-be utf-16le utf-16be)))
 
 ;;;; Buffer cache
 
@@ -181,6 +224,8 @@ directly for indexing and retrieval."
   (pcase encoding
     ('utf-16-le 'utf-16-le)
     ('utf-16-be 'utf-16-be)
+    ('utf-16le 'utf-16le)
+    ('utf-16be 'utf-16be)
     ('utf-8-with-signature 'utf-8)
     ('utf-8 'utf-8)
     (_ 'utf-8)))
@@ -279,7 +324,7 @@ non-BOM content starts with `#'."
        (condition-case nil
            (let* ((encoding (johnson-dsl--detect-encoding path))
                   (bom-len (johnson-dsl--bom-length encoding))
-                  (read-len (if (memq encoding '(utf-16-le utf-16-be)) 64 32))
+                  (read-len (if (johnson-dsl--utf-16-p encoding) 64 32))
                   (coding (johnson-dsl--coding-system encoding)))
              (with-temp-buffer
                (if (johnson-dsl--dictzip-p path)
@@ -326,7 +371,7 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
       (if (johnson-dsl--dictzip-p path)
           ;; For dictzip: decompress first chunk (headers are at the top).
           (let* ((bom-len (johnson-dsl--bom-length encoding))
-                 (read-bytes (if (memq encoding '(utf-16-le utf-16-be)) 8192 4096))
+                 (read-bytes (if (johnson-dsl--utf-16-p encoding) 8192 4096))
                  (raw (johnson-dictzip-read path 0 (+ bom-len read-bytes))))
             (set-buffer-multibyte nil)
             (insert raw)
@@ -336,7 +381,7 @@ Returns a plist (:name STRING :source-lang STRING :target-lang STRING)."
             (set-buffer-multibyte t))
         (let* ((coding-system-for-read coding)
                (bom-len (johnson-dsl--bom-length encoding))
-               (read-bytes (if (memq encoding '(utf-16-le utf-16-be)) 8192 4096)))
+               (read-bytes (if (johnson-dsl--utf-16-p encoding) 8192 4096)))
           (insert-file-contents path nil bom-len (+ bom-len read-bytes))))
       (goto-char (point-min))
       ;; Skip BOM character if present (the decoded stream may start with it).

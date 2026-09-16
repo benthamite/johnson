@@ -815,5 +815,29 @@
                                       (error-message-string err))))))
       (delete-directory temp-dir t))))
 
+(ert-deftest johnson-stardict-test-wrong-wordcount-still-indexes ()
+  "A wrong wordcount in the .ifo does not reject a cleanly parsing .idx."
+  (johnson-stardict-test--cleanup)
+  (let ((temp-dir (make-temp-file "johnson-test-" t)))
+    (unwind-protect
+        (let ((headwords nil))
+          (dolist (ext '("idx" "dict" "syn"))
+            (copy-file (johnson-stardict-test--fixture
+                        (concat "test-stardict." ext))
+                       (expand-file-name (concat "wc." ext) temp-dir)))
+          (with-temp-file (expand-file-name "wc.ifo" temp-dir)
+            (insert-file-contents
+             (johnson-stardict-test--fixture "test-stardict.ifo"))
+            (goto-char (point-min))
+            (re-search-forward "^wordcount=.*$")
+            (replace-match "wordcount=999"))
+          (johnson-stardict-build-index
+           (expand-file-name "wc.ifo" temp-dir)
+           (lambda (hw _offset _size) (push hw headwords)))
+          (should (member "hello" headwords))
+          ;; All three .idx entries (wordcount=3 in the fixture) are kept.
+          (should (>= (length headwords) 3)))
+      (delete-directory temp-dir t))))
+
 (provide 'johnson-stardict-test)
 ;;; johnson-stardict-test.el ends here

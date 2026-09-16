@@ -332,5 +332,83 @@
       (johnson-bgl-test--cleanup)
       (delete-file path))))
 
+;;;; Truncated stream warning and retrieval without full copies
+
+(ert-deftest johnson-bgl-test-truncated-stream-warns ()
+  "A truncated gzip stream still indexes surviving entries and warns."
+  (johnson-bgl-test--cleanup)
+  (let* ((path (make-temp-file "johnson-bgl-trunc-" nil ".bgl"))
+         (bytes (with-temp-buffer
+                  (set-buffer-multibyte nil)
+                  (insert-file-contents-literally
+                   (johnson-bgl-test--fixture "test-bgl.bgl"))
+                  (buffer-string)))
+         (messages nil)
+         (entries nil))
+    (unwind-protect
+        (progn
+          (with-temp-file path
+            (set-buffer-multibyte nil)
+            (insert (substring bytes 0 -40)))
+          (cl-letf (((symbol-function 'message)
+                     (lambda (fmt &rest args)
+                       (push (apply #'format-message fmt args) messages))))
+            (johnson-bgl-build-index path (lambda (hw offset size)
+                                            (push (list hw offset size) entries))))
+          (should (>= (length entries) 1))
+          (should (cl-some (lambda (m)
+                             (and (string-match-p "truncated" m)
+                                  (string-match-p (file-name-nondirectory path) m)))
+                           messages)))
+      (johnson-bgl-test--cleanup)
+      (delete-file path))))
+
+(ert-deftest johnson-bgl-test-zeroed-crc-is-silent ()
+  "A complete stream with a zeroed CRC, as Babylon writes, indexes silently."
+  (johnson-bgl-test--cleanup)
+  (let* ((path (make-temp-file "johnson-bgl-zerocrc-" nil ".bgl"))
+         (bytes (with-temp-buffer
+                  (set-buffer-multibyte nil)
+                  (insert-file-contents-literally
+                   (johnson-bgl-test--fixture "test-bgl.bgl"))
+                  (buffer-string)))
+         (messages nil)
+         (entries nil))
+    (unwind-protect
+        (progn
+          ;; The gzip trailer is CRC32 (4 bytes) then ISIZE (4 bytes).
+          (with-temp-file path
+            (set-buffer-multibyte nil)
+            (insert (substring bytes 0 -8)
+                    (unibyte-string 0 0 0 0)
+                    (substring bytes -4)))
+          (cl-letf (((symbol-function 'message)
+                     (lambda (fmt &rest args)
+                       (push (apply #'format-message fmt args) messages))))
+            (johnson-bgl-build-index path (lambda (hw offset size)
+                                            (push (list hw offset size) entries))))
+          (should (= (length entries) 3))
+          (should-not messages))
+      (johnson-bgl-test--cleanup)
+      (delete-file path))))
+
+(ert-deftest johnson-bgl-test-retrieve-entry-avoids-full-copy ()
+  "Retrieving an entry reads only its bytes from the cache buffer."
+  (johnson-bgl-test--cleanup)
+  (let* ((path (johnson-bgl-test--fixture "test-bgl.bgl"))
+         (entries nil)
+         (calls 0))
+    (johnson-bgl-build-index path (lambda (hw offset size)
+                                    (push (list hw offset size) entries)))
+    (let* ((apple (cl-find "apple" entries :key #'car :test #'equal))
+           (expected (johnson-bgl-retrieve-entry path (nth 1 apple) (nth 2 apple)))
+           (orig (symbol-function 'buffer-string)))
+      (cl-letf (((symbol-function 'buffer-string)
+                 (lambda () (cl-incf calls) (funcall orig))))
+        (should (equal (johnson-bgl-retrieve-entry path (nth 1 apple) (nth 2 apple))
+                       expected)))
+      (should (string-match-p "round fruit" expected))
+      (should (= calls 0)))))
+
 (provide 'johnson-bgl-test)
 ;;; johnson-bgl-test.el ends here

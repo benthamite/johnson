@@ -2619,6 +2619,18 @@ is refused instead of storing a bogus headword.
 Sound links and images in HTML dictionaries can no longer
 reference files outside the dictionary's folder, and companion-zip
 resource names are passed to @samp{unzip} literally.
+
+@item
+DSL: dictionaries saved as UTF-16 without a byte-order mark are
+recognised and indexed correctly instead of being accepted as empty.
+@item
+StarDict: a dictionary whose @samp{.ifo} declares the wrong word count
+is indexed instead of rejected, with a message noting the mismatch.
+@item
+BGL: a truncated dictionary file produces a warning naming the
+file instead of silently dropping its last entry, while ordinary
+Babylon files, whose checksum is always zero, load without any
+message; lookups no longer copy the whole decompressed dictionary.
 @end itemize
 
 @node Future features

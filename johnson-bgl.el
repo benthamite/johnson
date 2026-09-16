@@ -135,7 +135,8 @@ these with a CRC error even though the deflate data is intact.  We
 call gzip directly via `call-process' and tolerate exit code 1 (CRC
 error) provided that output was produced."
   (let* ((gz-offset (johnson-bgl--gzip-offset path))
-         (temp-file (make-temp-file "johnson-bgl-" nil ".gz")))
+         (temp-file (make-temp-file "johnson-bgl-" nil ".gz"))
+         (stderr-file (make-temp-file "johnson-bgl-gzip-err-")))
     (unwind-protect
         (progn
           ;; Extract the gzip portion to a temp file.
@@ -148,12 +149,37 @@ error) provided that output was produced."
           ;; rather than jka-compr because some BGL files have invalid
           ;; gzip CRC32 (zeroed out), causing gzip to exit 1 even
           ;; though the deflate payload decompresses fully.
-          (let ((exit-code (call-process "gzip" temp-file t nil
-                                         "-c" "-q" "-d")))
-            (when (and (/= exit-code 0) (= (buffer-size) 0))
-              (error "BGL decompression failed for %s (gzip exit %d)"
-                     (file-name-nondirectory path) exit-code))))
-      (delete-file temp-file))))
+          (let ((exit-code (call-process "gzip" temp-file (list t stderr-file)
+                                         nil "-c" "-q" "-d")))
+            (unless (= exit-code 0)
+              (johnson-bgl--report-gzip-failure path exit-code stderr-file
+                                                (buffer-size)))))
+      (delete-file temp-file)
+      (delete-file stderr-file))))
+
+(defun johnson-bgl--report-gzip-failure (path exit-code stderr-file output-size)
+  "Report a nonzero gzip EXIT-CODE from decompressing the BGL file at PATH.
+STDERR-FILE holds gzip's diagnostic and OUTPUT-SIZE the number of bytes it
+produced.  Signal an error when nothing was produced.  Stay silent on the
+CRC error that Babylon's zeroed trailer always causes, warn that entries
+are missing when the stream ended prematurely, and pass any other
+diagnostic through as a warning."
+  (let ((diagnostic (string-trim (with-temp-buffer
+                                   (insert-file-contents stderr-file)
+                                   (buffer-string))))
+        (name (file-name-nondirectory path)))
+    (cond
+     ((zerop output-size)
+      (error "BGL decompression failed for %s (gzip exit %d): %s"
+             name exit-code diagnostic))
+     ((string-match-p "crc error" diagnostic)
+      nil)
+     ((string-match-p "unexpected end of file\\|unexpected EOF" diagnostic)
+      (message "johnson-bgl: %s is truncated; entries after the cut are missing"
+               name))
+     (t
+      (message "johnson-bgl: gzip exited %d on %s: %s"
+               exit-code name diagnostic)))))
 
 ;;;; Header parsing
 
@@ -472,8 +498,11 @@ back to UTF-8.  Result is cached."
 BYTE-OFFSET and BYTE-SIZE reference positions in the decompressed
 stream.  Returns the raw definition as a decoded string."
   (let* ((buf (johnson-bgl--get-buffer path))
-         (data (with-current-buffer buf (buffer-string)))
-         (raw (substring data byte-offset (+ byte-offset byte-size))))
+         ;; Buffer positions are 1-based; read only the definition bytes
+         ;; rather than copying the whole decompressed stream.
+         (raw (with-current-buffer buf
+                (buffer-substring-no-properties
+                 (1+ byte-offset) (+ 1 byte-offset byte-size)))))
     ;; Strip BGL control sequences before decoding.
     (let* ((cleaned (johnson-bgl--strip-control-codes raw))
            (coding (johnson-bgl--definition-coding-system path)))

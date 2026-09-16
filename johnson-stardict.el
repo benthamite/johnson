@@ -189,15 +189,12 @@ Returns a vector of (HEADWORD OFFSET SIZE) triples, in file order."
         (setq pos (+ cur-pos offset-bytes size-bytes))))
     (vconcat (nreverse entries))))
 
-(defun johnson-stardict--try-parse-idx (data offset-bytes size-bytes expected-count)
+(defun johnson-stardict--try-parse-idx (data offset-bytes size-bytes)
   "Try parsing idx DATA with OFFSET-BYTES and SIZE-BYTES per entry.
-Return the entry vector when successful and its length matches
-EXPECTED-COUNT (if non-nil), or nil on mismatch/error."
+Return the entry vector when DATA parses cleanly to its end, or nil when
+the layout runs past the end of DATA."
   (condition-case nil
-      (let ((result (johnson-stardict--do-parse-idx data offset-bytes size-bytes)))
-        (when (or (null expected-count)
-                  (= (length result) expected-count))
-          result))
+      (johnson-stardict--do-parse-idx data offset-bytes size-bytes)
     (args-out-of-range nil)))
 
 (defun johnson-stardict--idx-values-padded-p (entries)
@@ -234,30 +231,57 @@ Returns a vector of (HEADWORD OFFSET SIZE) triples, in file order.
 OFFSET and SIZE are byte offsets/lengths into the .dict file.
 
 When the .ifo declares idxoffsetbits=64, uses 8-byte offsets and
-4-byte sizes (standard StarDict 3.0).  Otherwise, tries 4+4 (the
-default), then 8+4, then 8+8 (for non-standard dictionaries whose
-.ifo omits the idxoffsetbits key), validating against the declared
-wordcount.  Detects and corrects 32-bit values padded to 8 bytes."
+4-byte sizes (standard StarDict 3.0).  Otherwise the layout is chosen
+by `johnson-stardict--select-idx-layout'.  A missing or non-positive
+wordcount is treated as unknown."
   (let* ((ifo (johnson-stardict--parse-ifo ifo-path))
          (wordcount (let ((v (johnson-stardict--ifo-get ifo "wordcount")))
-                      (and v (string-to-number v))))
+                      (and v (let ((n (string-to-number v)))
+                               (and (> n 0) n)))))
          (declared-64 (let ((v (johnson-stardict--ifo-get ifo "idxoffsetbits")))
                         (and v (equal v "64"))))
          (data (johnson-stardict--load-idx-data ifo-path)))
     (if declared-64
         ;; Standard 64-bit: 8-byte offset + 4-byte size.
         (johnson-stardict--do-parse-idx data 8 4)
-      ;; Auto-detect: try 32-bit first, fall back to 64-bit variants.
-      (or (johnson-stardict--try-parse-idx data 4 4 wordcount)
-          (johnson-stardict--try-parse-idx data 8 4 wordcount)
-          (let ((result (johnson-stardict--try-parse-idx data 8 8 wordcount)))
-            (when result
-              ;; Some dictionaries store 32-bit values padded to 8 bytes;
-              ;; detect and correct by right-shifting by 32.
-              (when (johnson-stardict--idx-values-padded-p result)
-                (johnson-stardict--fix-padded-idx result))
-              result))
-          (error "Failed to parse StarDict .idx for %s" ifo-path)))))
+      (johnson-stardict--select-idx-layout data wordcount ifo-path))))
+
+(defun johnson-stardict--select-idx-layout (data wordcount ifo-path)
+  "Parse idx DATA with whichever entry layout fits it.
+IFO-PATH names the dictionary for messages.  Try the 4+4 (default), 8+4
+and 8+8 byte offset+size layouts.  Prefer the layout whose entry count
+equals WORDCOUNT; when WORDCOUNT is nil take the first layout that parses
+cleanly; when WORDCOUNT is known but no layout matches it, accept the only
+layout that parses cleanly and report the mismatch.  Signal an error when
+no layout fits, or when several fit without matching WORDCOUNT.  Corrects
+32-bit values padded to 8 bytes in the 8+8 layout."
+  (let* ((candidates
+          (delq nil
+                (mapcar (lambda (layout)
+                          (let ((result (johnson-stardict--try-parse-idx
+                                         data (car layout) (cadr layout))))
+                            (and result (cons layout result))))
+                        '((4 4) (8 4) (8 8)))))
+         (matching (and wordcount
+                        (cl-find-if (lambda (candidate)
+                                      (= (length (cdr candidate)) wordcount))
+                                    candidates)))
+         (chosen (cond
+                  (matching)
+                  ((null wordcount) (car candidates))
+                  ((= (length candidates) 1)
+                   (message "johnson-stardict: %s declares wordcount=%d but its .idx holds %d entries"
+                            ifo-path wordcount (length (cdr (car candidates))))
+                   (car candidates)))))
+    (unless chosen
+      (error "Failed to parse StarDict .idx for %s" ifo-path))
+    (let ((result (cdr chosen)))
+      ;; Some dictionaries store 32-bit values padded to 8 bytes;
+      ;; detect and correct by right-shifting by 32.
+      (when (and (equal (car chosen) '(8 8))
+                 (johnson-stardict--idx-values-padded-p result))
+        (johnson-stardict--fix-padded-idx result))
+      result)))
 
 ;;;; .syn parsing
 

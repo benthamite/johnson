@@ -638,5 +638,64 @@ position rewound behind the current tag and re-matched forever."
       (johnson-dsl-test--kill-cache-buffers)
       (delete-file path))))
 
+;;;; BOM-less UTF-16 (regression: accepted but indexed as empty)
+
+(defun johnson-dsl-test--write-bomless (path coding)
+  "Write a small BOM-less DSL dictionary to PATH using CODING."
+  (with-temp-file path
+    (set-buffer-multibyte nil)
+    (insert (encode-coding-string
+             (concat "#NAME \"NoBom\"\n#INDEX_LANGUAGE \"English\"\n"
+                     "#CONTENTS_LANGUAGE \"English\"\n\napple\n\tfruit\n")
+             coding))))
+
+(ert-deftest johnson-dsl-test-bomless-utf16le ()
+  "A UTF-16LE file without a BOM is detected, parsed and indexed."
+  (johnson-dsl-test--kill-cache-buffers)
+  (let ((path (make-temp-file "johnson-dsl-nobom-le-" nil ".dsl"))
+        (headwords nil))
+    (unwind-protect
+        (progn
+          (johnson-dsl-test--write-bomless path 'utf-16le)
+          (should (eq (johnson-dsl--detect-encoding path) 'utf-16le))
+          (should (johnson-dsl-detect path))
+          (should (equal (plist-get (johnson-dsl-parse-metadata path) :name)
+                         "NoBom"))
+          (johnson-dsl-build-index path (lambda (hw _offset _length)
+                                          (push hw headwords)))
+          (should (equal headwords '("apple"))))
+      (johnson-dsl-test--kill-cache-buffers)
+      (delete-file path))))
+
+(ert-deftest johnson-dsl-test-bomless-utf16be ()
+  "A UTF-16BE file without a BOM is detected, parsed and indexed."
+  (johnson-dsl-test--kill-cache-buffers)
+  (let ((path (make-temp-file "johnson-dsl-nobom-be-" nil ".dsl"))
+        (headwords nil))
+    (unwind-protect
+        (progn
+          (johnson-dsl-test--write-bomless path 'utf-16be)
+          (should (eq (johnson-dsl--detect-encoding path) 'utf-16be))
+          (should (johnson-dsl-detect path))
+          (should (equal (plist-get (johnson-dsl-parse-metadata path) :name)
+                         "NoBom"))
+          (johnson-dsl-build-index path (lambda (hw _offset _length)
+                                          (push hw headwords)))
+          (should (equal headwords '("apple"))))
+      (johnson-dsl-test--kill-cache-buffers)
+      (delete-file path))))
+
+(ert-deftest johnson-dsl-test-bomless-utf16le-nul-density ()
+  "BOM-less UTF-16LE whose first line is not a header is still detected."
+  (let ((path (make-temp-file "johnson-dsl-nobom-nul-" nil ".dsl")))
+    (unwind-protect
+        (progn
+          (with-temp-file path
+            (set-buffer-multibyte nil)
+            (insert (encode-coding-string
+                     "\n\napple\n\tfruit\nbanana\n\tfruit\n" 'utf-16le)))
+          (should (eq (johnson-dsl--detect-encoding path) 'utf-16le)))
+      (delete-file path))))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here
