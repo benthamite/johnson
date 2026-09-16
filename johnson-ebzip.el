@@ -45,6 +45,9 @@
 (defconst johnson-ebzip--magic "EBZip"
   "Magic string at the start of EBZIP files.")
 
+(defconst johnson-ebzip--max-zip-level 5
+  "Highest EBZIP compression level accepted, as in the EB library.")
+
 ;;;; Binary helpers
 
 (defsubst johnson-ebzip--u40be (data pos)
@@ -80,6 +83,8 @@ Returns a plist with keys :slice-size, :uncompressed-size,
            (file-size (johnson-ebzip--u40be raw 9))
            (slice-count (ceiling (float file-size) slice-size))
            (index-width (johnson-ebzip--index-entry-width file-size)))
+      (when (> zip-level johnson-ebzip--max-zip-level)
+        (error "Unsupported EBZIP compression level %d in %s" zip-level path))
       (list :slice-size slice-size
             :uncompressed-size file-size
             :index-width index-width
@@ -100,8 +105,12 @@ Returns a plist with keys :slice-size, :uncompressed-size,
 SLICE-COUNT is the number of slices.  INDEX-WIDTH is the byte
 width per entry.  Returns a vector of (SLICE-COUNT + 1) offsets."
   (let* ((index-size (* (1+ slice-count) index-width))
-         (raw (johnson-ebzip--read-raw
-               path johnson-ebzip--header-size index-size))
+         (raw (progn
+                (unless (<= (+ johnson-ebzip--header-size index-size)
+                            (file-attribute-size (file-attributes path)))
+                  (error "EBZIP slice index does not fit in %s" path))
+                (johnson-ebzip--read-raw
+                 path johnson-ebzip--header-size index-size)))
          (offsets (make-vector (1+ slice-count) 0)))
     (dotimes (i (1+ slice-count))
       (aset offsets i

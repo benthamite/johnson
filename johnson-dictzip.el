@@ -116,16 +116,21 @@ Returns a plist with keys:
         (puthash path header johnson-dictzip--header-cache)
         header)))
 
+(defconst johnson-dictzip--header-read-limit (+ 12 65535 65535)
+  "Maximum number of bytes read when parsing a dictzip header.
+Covers the fixed gzip header, a maximal 65535-byte FEXTRA field,
+and up to 65535 bytes of FNAME and FCOMMENT text.")
+
 (defun johnson-dictzip--do-parse-header (path)
   "Internal: parse the gzip/dictzip header from PATH."
   (with-temp-buffer
     (set-buffer-multibyte nil)
     (insert-file-contents-literally path nil 0
-                                    (min 65536
+                                    (min johnson-dictzip--header-read-limit
                                          (file-attribute-size
                                           (file-attributes path))))
     ;; Verify gzip magic and deflate method.
-    (unless (and (>= (point-max) 10)
+    (unless (and (> (point-max) 10)
                  (= (char-after 1) #x1f)
                  (= (char-after 2) #x8b)
                  (= (char-after 3) 8))
@@ -138,23 +143,26 @@ Returns a plist with keys:
            (chunk-sizes nil))
       ;; FEXTRA (bit 2)
       (when (/= (logand flg 4) 0)
-        (let* ((xlen (johnson-dictzip--u16le pos))
+        (let* ((xlen (johnson-dictzip--header-u16le pos path))
                (xend (+ pos 2 xlen))
                (xpos (+ pos 2)))
           ;; Search for RA subfield (SI1='R'=0x52, SI2='A'=0x41).
           (while (< xpos xend)
-            (let ((si1 (char-after xpos))
-                  (si2 (char-after (1+ xpos)))
-                  (slen (johnson-dictzip--u16le (+ xpos 2))))
+            (let ((si1 (johnson-dictzip--header-byte xpos path))
+                  (si2 (johnson-dictzip--header-byte (1+ xpos) path))
+                  (slen (johnson-dictzip--header-u16le (+ xpos 2) path)))
               (if (and (= si1 #x52) (= si2 #x41))
                   (let ((sdata (+ xpos 4)))
                     ;; ver(u16le) chlen(u16le) chcnt(u16le) sizes(chcnt*u16le)
-                    (setq chlen (johnson-dictzip--u16le (+ sdata 2)))
-                    (setq chcnt (johnson-dictzip--u16le (+ sdata 4)))
+                    (setq chlen (johnson-dictzip--header-u16le
+                                 (+ sdata 2) path))
+                    (setq chcnt (johnson-dictzip--header-u16le
+                                 (+ sdata 4) path))
                     (setq chunk-sizes (make-vector chcnt 0))
                     (dotimes (i chcnt)
                       (aset chunk-sizes i
-                            (johnson-dictzip--u16le (+ sdata 6 (* i 2)))))
+                            (johnson-dictzip--header-u16le
+                             (+ sdata 6 (* i 2)) path)))
                     (setq xpos xend))
                 (setq xpos (+ xpos 4 slen)))))
           (setq pos xend)))
@@ -181,6 +189,19 @@ Returns a plist with keys:
             :chunk-sizes chunk-sizes
             :data-offset (1- pos)))))
 
+(defun johnson-dictzip--header-byte (pos path)
+  "Return the header byte at buffer position POS of the file PATH.
+Signal an error when POS lies beyond the bytes read from PATH."
+  (or (char-after pos)
+      (error "Truncated dictzip header in %s" path)))
+
+(defun johnson-dictzip--header-u16le (pos path)
+  "Read an unsigned 16-bit little-endian header integer at POS.
+PATH names the file being parsed; signal an error when the two bytes
+at buffer position POS were not read from it."
+  (+ (johnson-dictzip--header-byte pos path)
+     (ash (johnson-dictzip--header-byte (1+ pos) path) 8)))
+
 ;;;; Chunk decompression
 
 (defun johnson-dictzip--decompress-chunk (path header chunk-index)
@@ -190,6 +211,8 @@ HEADER is the parsed header plist.  Returns a unibyte string."
          (cached (johnson-dictzip--chunk-cache-get cache-key)))
     (or cached
         (let* ((chunk-sizes (plist-get header :chunk-sizes))
+               (chlen (plist-get header :chlen))
+               (last-chunk (1- (plist-get header :chcnt)))
                (data-offset (plist-get header :data-offset))
                ;; Calculate file offset of this chunk.
                (file-offset data-offset)
@@ -204,18 +227,28 @@ HEADER is the parsed header plist.  Returns a unibyte string."
                   (insert-file-contents-literally path nil
                                                   file-offset
                                                   (+ file-offset comp-size))
+                  (unless (= (buffer-size) (+ 2 comp-size))
+                    (johnson-dictzip--chunk-error chunk-index path))
                   ;; zlib-decompress-region with ALLOW-PARTIAL returns:
                   ;;   t       - full success
-                  ;;   integer - bytes consumed (partial; expected for dictzip
+                  ;;   integer - bytes left over (partial; expected for dictzip
                   ;;             chunks which lack a zlib checksum trailer)
                   ;;   nil     - total failure
-                  (let ((result (zlib-decompress-region 1 (point-max) t)))
-                    (unless result
-                      (error "Dictzip: decompression failed for chunk %d of %s"
-                             chunk-index path)))
+                  ;; A partial result also hides a cut-off deflate stream, so
+                  ;; the decompressed size is checked against CHLEN below.
+                  (unless (zlib-decompress-region 1 (point-max) t)
+                    (johnson-dictzip--chunk-error chunk-index path))
                   (buffer-string))))
+          (unless (if (= chunk-index last-chunk)
+                      (<= (length result) chlen)
+                    (= (length result) chlen))
+            (johnson-dictzip--chunk-error chunk-index path))
           (johnson-dictzip--chunk-cache-put cache-key result)
           result))))
+
+(defun johnson-dictzip--chunk-error (chunk-index path)
+  "Signal the error for an unreadable chunk CHUNK-INDEX of PATH."
+  (error "Truncated or corrupt dictzip chunk %d in %s" chunk-index path))
 
 ;;;; Public API
 

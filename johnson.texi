@@ -2562,6 +2562,19 @@ longer indexed as headwords.
 @item
 StarDict: a truncated @samp{.syn} file no longer prevents indexing,
 and a short read from a @samp{.dict.dz} file reports a clear error.
+
+@item
+dictzip: a truncated or corrupt @samp{.dict.dz} or @samp{.dsl.dz} file
+reports an error instead of silently yielding a cut-off definition;
+very large files (over about 32,000 chunks) now open, and a
+cut-off header reports a clear error.
+@item
+EBZIP and MDict: a forged size or block-count field can no longer
+make Emacs allocate gigabytes of memory; unsupported EBZIP
+compression levels are rejected with a clear message.
+@item
+MDict: entries can no longer reference files outside the
+dictionary's own folder.
 @end itemize
 
 @node Future features

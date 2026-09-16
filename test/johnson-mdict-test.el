@@ -473,5 +473,57 @@
   (let ((data (string #x01 #x00)))
     (should (= (johnson-binary-u16be data 0) 256))))
 
+;;;; Malformed input
+
+(ert-deftest johnson-mdict-test-record-index-count-mismatch-errors ()
+  "A forged record block count is rejected before the index is allocated."
+  (skip-unless (fboundp 'zlib-decompress-region))
+  (johnson-mdict-test--cleanup)
+  (let ((path (make-temp-file "johnson-mdict-test-" nil ".mdx")))
+    (unwind-protect
+        (progn
+          (copy-file (johnson-mdict-test--fixture "test-mdict.mdx") path t)
+          (johnson-mdict--parse-keyword-section path)
+          (let ((kw-end (gethash (concat path ":kw-end")
+                                 johnson-mdict--header-cache))
+                (bytes (with-temp-buffer
+                         (set-buffer-multibyte nil)
+                         (insert-file-contents-literally path)
+                         (buffer-string))))
+            ;; The record section starts with num_blocks as a u64be;
+            ;; declare 2^21 blocks for a three-entry dictionary.
+            (dotimes (i 8)
+              (aset bytes (+ kw-end i) 0))
+            (aset bytes (+ kw-end 5) #x20)
+            (let ((coding-system-for-write 'no-conversion))
+              (with-temp-file path
+                (set-buffer-multibyte nil)
+                (insert bytes))))
+          (johnson-mdict-test--cleanup)
+          (let ((err (should-error (johnson-mdict--parse-record-section path))))
+            (should (string-match-p "does not match index size" (cadr err)))))
+      (delete-file path)
+      (johnson-mdict-test--cleanup))))
+
+(ert-deftest johnson-mdict-test-resolve-resource-stays-in-dictionary-dir ()
+  "Disk lookup ignores resource names that leave the dictionary directory."
+  (let* ((dir (file-name-as-directory
+               (make-temp-file "johnson-mdict-test-" t)))
+         (dict-dir (file-name-as-directory (expand-file-name "dict" dir)))
+         (mdx (expand-file-name "test.mdx" dict-dir))
+         (inside (expand-file-name "img/ok.png" dict-dir))
+         (outside (expand-file-name "secret.png" dir)))
+    (make-directory (file-name-directory inside) t)
+    (with-temp-file inside (insert "x"))
+    (with-temp-file outside (insert "y"))
+    (unwind-protect
+        (progn
+          (should (equal (johnson-mdict--resolve-resource mdx "img/ok.png")
+                         inside))
+          (should-not (johnson-mdict--resolve-resource mdx "../secret.png"))
+          (should-not (johnson-mdict--resolve-resource mdx outside))
+          (should-not (johnson-mdict--resolve-resource mdx "~/secret.png")))
+      (delete-directory dir t))))
+
 (provide 'johnson-mdict-test)
 ;;; johnson-mdict-test.el ends here

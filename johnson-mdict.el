@@ -561,8 +561,11 @@ Returns a plist with:
                        rec-header-data (* 2 num-width) num-width))
            ;; Block info entries follow the header.
            (info-start (+ kw-end rec-header-size))
-           (info-data (johnson-mdict--read-file-region
-                       path info-start info-size))
+           (info-data (progn
+                        (johnson-mdict--check-record-index
+                         path num-blocks num-width info-start info-size)
+                        (johnson-mdict--read-file-region
+                         path info-start info-size)))
            (blocks (make-vector num-blocks nil))
            (data-start (+ info-start info-size))
            (file-off data-start))
@@ -574,6 +577,20 @@ Returns a plist with:
           (aset blocks i (list comp-size decomp-size file-off))
           (cl-incf file-off comp-size)))
       (list :blocks blocks :data-start data-start))))
+
+(defun johnson-mdict--check-record-index (path num-blocks num-width
+                                               info-start info-size)
+  "Signal an error unless the record block index of PATH is consistent.
+NUM-BLOCKS is the declared block count and NUM-WIDTH the integer width,
+so the index must occupy exactly INFO-SIZE bytes and must fit in the
+file starting at INFO-START.  Both fields come from the file, so they
+are checked before any allocation is sized from them."
+  (unless (= info-size (* 2 num-width num-blocks))
+    (error "MDict: record block count %d does not match index size %d in %s"
+           num-blocks info-size path))
+  (unless (<= (+ info-start info-size)
+              (file-attribute-size (file-attributes path)))
+    (error "MDict: record block index extends past the end of %s" path)))
 
 ;;;; Record retrieval
 
@@ -949,8 +966,8 @@ Returns raw bytes as a unibyte string, or nil."
 Tries disk first, then MDD lookup.  Writes to resource cache on
 MDD hit.  Returns the local file path or nil."
   (let* ((dir (file-name-directory mdx-path))
-         (disk-path (expand-file-name resource-name dir)))
-    (if (file-exists-p disk-path)
+         (disk-path (johnson-mdict--local-resource-path resource-name dir)))
+    (if (and disk-path (file-exists-p disk-path))
         disk-path
       ;; Try MDD (with error protection for malformed .mdd files).
       (let ((mdd (johnson-mdict--mdd-path mdx-path)))
@@ -972,6 +989,16 @@ MDD hit.  Returns the local file path or nil."
                     (set-buffer-multibyte nil)
                     (insert data)))
                 cached))))))))
+
+(defun johnson-mdict--local-resource-path (resource-name dir)
+  "Return RESOURCE-NAME expanded under the dictionary directory DIR.
+Return nil when RESOURCE-NAME is absolute, starts with `~', or expands
+to a path outside DIR, so entry HTML cannot reference arbitrary files."
+  (unless (or (file-name-absolute-p resource-name)
+              (string-prefix-p "~" resource-name))
+    (let ((path (expand-file-name resource-name dir)))
+      (when (file-in-directory-p path dir)
+        path))))
 
 ;;;; Cache clearing
 

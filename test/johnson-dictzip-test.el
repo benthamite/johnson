@@ -213,5 +213,96 @@
     (insert #x12 #x34 #x56 #x78)
     (should (= (johnson-dictzip--u32be 1) #x12345678))))
 
+;;;; Corrupt and oversized input
+
+(defun johnson-dictzip-test--write-bytes (bytes)
+  "Write the unibyte string BYTES to a new temporary file and return its path."
+  (let ((path (make-temp-file "johnson-dictzip-test-" nil ".dict.dz"))
+        (coding-system-for-write 'no-conversion))
+    (with-temp-file path
+      (set-buffer-multibyte nil)
+      (insert bytes))
+    path))
+
+(defun johnson-dictzip-test--file-bytes (path &optional end)
+  "Return the first END bytes of PATH, or the whole file, as a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert-file-contents-literally path nil 0 end)
+    (buffer-string)))
+
+(defun johnson-dictzip-test--u16le (n)
+  "Return N encoded as two little-endian bytes."
+  (unibyte-string (logand n #xff) (logand (ash n -8) #xff)))
+
+(defun johnson-dictzip-test--header-bytes (chcnt)
+  "Return a gzip header whose dictzip RA field declares CHCNT chunks."
+  (let* ((ra (concat (johnson-dictzip-test--u16le 1)
+                     (johnson-dictzip-test--u16le 58315)
+                     (johnson-dictzip-test--u16le chcnt)
+                     (apply #'concat
+                            (make-list chcnt
+                                       (johnson-dictzip-test--u16le 100)))))
+         (subfield (concat "RA" (johnson-dictzip-test--u16le (length ra)) ra)))
+    (concat (unibyte-string #x1f #x8b 8 4 0 0 0 0 0 3)
+            (johnson-dictzip-test--u16le (length subfield))
+            subfield)))
+
+(ert-deftest johnson-dictzip-test-truncated-chunk-errors ()
+  "A chunk cut off mid-stream signals an error and is not cached."
+  (johnson-dictzip-test--with-clean-cache
+    (let* ((fixture (johnson-dictzip-test--fixture "test.dict.dz"))
+           (header (johnson-dictzip--parse-header fixture))
+           (cut (+ (plist-get header :data-offset)
+                   (/ (aref (plist-get header :chunk-sizes) 0) 2)))
+           (path (johnson-dictzip-test--write-bytes
+                  (johnson-dictzip-test--file-bytes fixture cut))))
+      (unwind-protect
+          (progn
+            (let ((err (should-error (johnson-dictzip-read path 0 20))))
+              (should (string-match-p "Truncated or corrupt dictzip chunk 0"
+                                      (cadr err))))
+            (should-error (johnson-dictzip-read-full path))
+            (should-not (johnson-dictzip--chunk-cache-get (cons path 0))))
+        (delete-file path)))))
+
+(ert-deftest johnson-dictzip-test-short-chunk-errors ()
+  "A chunk that inflates to less than the declared chunk length errors."
+  (johnson-dictzip-test--with-clean-cache
+    (let* ((bytes (johnson-dictzip-test--file-bytes
+                   (johnson-dictzip-test--fixture "test.dict.dz")))
+           ;; chlen follows SI1 SI2 LEN VER in the RA subfield.
+           (chlen-pos (+ (string-match "RA" bytes) 6)))
+      (should (= (aref bytes chlen-pos) 50))
+      (aset bytes chlen-pos 60)
+      (let ((path (johnson-dictzip-test--write-bytes bytes)))
+        (unwind-protect
+            (let ((err (should-error (johnson-dictzip-read path 0 20))))
+              (should (string-match-p "Truncated or corrupt dictzip chunk 0"
+                                      (cadr err))))
+          (delete-file path))))))
+
+(ert-deftest johnson-dictzip-test-parse-header-maximal-fextra ()
+  "A header whose FEXTRA field is near the 64 KiB gzip limit parses."
+  (johnson-dictzip-test--with-clean-cache
+    (let* ((header-bytes (johnson-dictzip-test--header-bytes 32760))
+           (path (johnson-dictzip-test--write-bytes
+                  (concat header-bytes (make-string 200000 0)))))
+      (unwind-protect
+          (let ((header (johnson-dictzip--parse-header path)))
+            (should (= (plist-get header :chcnt) 32760))
+            (should (= (plist-get header :data-offset) (length header-bytes))))
+        (delete-file path)))))
+
+(ert-deftest johnson-dictzip-test-parse-header-truncated-fextra ()
+  "A header cut off inside its FEXTRA field reports a truncated header."
+  (johnson-dictzip-test--with-clean-cache
+    (let ((path (johnson-dictzip-test--write-bytes
+                 (substring (johnson-dictzip-test--header-bytes 100) 0 60))))
+      (unwind-protect
+          (let ((err (should-error (johnson-dictzip--parse-header path))))
+            (should (string-match-p "Truncated dictzip header" (cadr err))))
+        (delete-file path)))))
+
 (provide 'johnson-dictzip-test)
 ;;; johnson-dictzip-test.el ends here

@@ -2427,6 +2427,16 @@ interface layers.  The fixes below each carry a regression test.
    • StarDict: a truncated ‘.syn’ file no longer prevents indexing, and
      a short read from a ‘.dict.dz’ file reports a clear error.
 
+   • dictzip: a truncated or corrupt ‘.dict.dz’ or ‘.dsl.dz’ file
+     reports an error instead of silently yielding a cut-off definition;
+     very large files (over about 32,000 chunks) now open, and a cut-off
+     header reports a clear error.
+   • EBZIP and MDict: a forged size or block-count field can no longer
+     make Emacs allocate gigabytes of memory; unsupported EBZIP
+     compression levels are rejected with a clear message.
+   • MDict: entries can no longer reference files outside the
+     dictionary's own folder.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2823,13 +2833,13 @@ Node: Version 05 --- EPWING99370
 Node: Version 06 --- EPWING improvements and audits100162
 Node: Version 07 --- Progressive rendering100632
 Node: Version 08 (current) --- Robustness fixes101719
-Node: Future features103202
-Node: Contributing103507
-Node: AI assistance103938
-Node: Running the test suite104443
-Node: Indices104825
-Node: Function index104963
-Node: Variable index117005
+Node: Future features103750
+Node: Contributing104055
+Node: AI assistance104486
+Node: Running the test suite104991
+Node: Indices105373
+Node: Function index105511
+Node: Variable index117553
 
 End Tag Table
 
