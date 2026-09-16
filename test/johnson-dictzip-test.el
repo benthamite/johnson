@@ -268,6 +268,7 @@
 
 (ert-deftest johnson-dictzip-test-short-chunk-errors ()
   "A chunk that inflates to less than the declared chunk length errors."
+  (skip-unless (fboundp 'zlib-decompress-region))
   (johnson-dictzip-test--with-clean-cache
     (let* ((bytes (johnson-dictzip-test--file-bytes
                    (johnson-dictzip-test--fixture "test.dict.dz")))
