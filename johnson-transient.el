@@ -46,6 +46,7 @@
 (declare-function johnson-search "johnson")
 (declare-function johnson--available-source-langs "johnson")
 (declare-function johnson--available-target-langs "johnson")
+(declare-function johnson--set-language-scope "johnson")
 (declare-function johnson-jump-to-section "johnson")
 (declare-function johnson-next-section "johnson")
 (declare-function johnson-prev-section "johnson")
@@ -134,7 +135,7 @@
 
 (defun johnson-transient--set-source-lang (_var val)
   "Set source language to VAL and refresh the results buffer."
-  (setq johnson--current-source-lang val)
+  (johnson--set-language-scope val johnson--current-target-lang)
   (when (and (or (bound-and-true-p johnson--current-word)
                  (bound-and-true-p johnson--current-fts-query))
              (derived-mode-p 'johnson-mode))
@@ -142,7 +143,7 @@
 
 (defun johnson-transient--set-target-lang (_var val)
   "Set target language to VAL and refresh the results buffer."
-  (setq johnson--current-target-lang val)
+  (johnson--set-language-scope johnson--current-source-lang val)
   (when (and (or (bound-and-true-p johnson--current-word)
                  (bound-and-true-p johnson--current-fts-query))
              (derived-mode-p 'johnson-mode))

@@ -79,6 +79,8 @@ Cleans up afterwards."
           (johnson--current-source-lang nil)
           (johnson--current-target-lang nil)
           (johnson--current-custom-group nil)
+          (johnson--search-scope nil)
+          (johnson--discovered-p nil)
           (johnson--db-cache (make-hash-table :test #'equal))
           (johnson--navigating-history nil)
           (johnson-history nil)
@@ -642,6 +644,226 @@ pseudo-headword."
   (should (equal (johnson--unzip-member-pattern "back\\slash")
                  "back\\\\slash"))
   (should (equal (johnson--unzip-member-pattern "plain.mp3") "plain.mp3")))
+
+;;;; Persistence: atomic writes and merging across sessions
+
+(defun johnson-test--write-sexp (file object)
+  "Write OBJECT to FILE the way another Emacs session would."
+  (with-temp-file file
+    (let ((print-length nil) (print-level nil))
+      (prin1 object (current-buffer)))))
+
+(defun johnson-test--read-sexp (file)
+  "Return the Lisp object stored in FILE."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (read (current-buffer))))
+
+(defmacro johnson-test--with-persistence-dir (&rest body)
+  "Run BODY with history and bookmark files in a fresh directory bound to `dir'."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (make-temp-file "johnson-persist-test-" t))
+          (johnson-history-file (expand-file-name "history.el" dir))
+          (johnson-bookmarks-file (expand-file-name "bookmarks.el" dir))
+          (johnson-history-persist t)
+          (johnson-history-max 100)
+          (johnson-history nil)
+          (johnson--history-log nil)
+          (johnson--history-log-loaded nil)
+          (johnson--history-log-synced nil)
+          (johnson--bookmarks nil)
+          (johnson--bookmarks-loaded nil)
+          (johnson--bookmarks-synced nil))
+     (unwind-protect
+         (progn ,@body)
+       (delete-directory dir t))))
+
+(ert-deftest johnson-test-history-log-save-merges-other-session-entries ()
+  "Saving merges entries another session added since this one loaded.
+The write leaves no temporary file behind."
+  (johnson-test--with-persistence-dir
+    (let* ((now (float-time))
+           (one (list :word "one" :timestamp (- now 100) :dict-count 1))
+           (three (list :word "three" :timestamp (- now 50) :dict-count 3)))
+      (johnson-test--write-sexp johnson-history-file (list one))
+      (johnson--history-log-push "two" 2)
+      ;; Another session appends "three" on disk meanwhile.
+      (johnson-test--write-sexp johnson-history-file (list three one))
+      (johnson--history-log-push "four" 4)
+      (let ((words (mapcar (lambda (e) (plist-get e :word))
+                           (johnson-test--read-sexp johnson-history-file))))
+        (should (equal (car words) "four"))
+        (should (equal (sort (copy-sequence words) #'string<)
+                       '("four" "one" "three" "two"))))
+      (should (equal (directory-files dir nil "\\`[^.]") '("history.el"))))))
+
+(ert-deftest johnson-test-bookmarks-save-merges-without-resurrecting-deletions ()
+  "Saving keeps another session's new bookmark but not one this session removed."
+  (johnson-test--with-persistence-dir
+    (let* ((now (float-time))
+           (b1 (list :headword "run" :dictionary "A" :timestamp (- now 100)
+                     :path ""))
+           (b3 (list :headword "walk" :dictionary "A" :timestamp (- now 50)
+                     :path "")))
+      (johnson-test--write-sexp johnson-bookmarks-file (list b1))
+      (johnson--load-bookmarks)
+      (push (list :headword "jump" :dictionary "B" :timestamp now :path "")
+            johnson--bookmarks)
+      (johnson--save-bookmarks)
+      ;; Another session adds "walk" on disk; this session removes "run".
+      (johnson-test--write-sexp johnson-bookmarks-file (list b3 b1))
+      (setq johnson--bookmarks
+            (cl-remove-if (lambda (b) (equal (plist-get b :headword) "run"))
+                          johnson--bookmarks))
+      (johnson--save-bookmarks)
+      (let ((headwords (mapcar (lambda (b) (plist-get b :headword))
+                               (johnson-test--read-sexp johnson-bookmarks-file))))
+        (should (equal (sort (copy-sequence headwords) #'string<)
+                       '("jump" "walk")))))))
+
+(ert-deftest johnson-test-history-log-save-failure-keeps-old-file ()
+  "A failed write leaves the previous file intact and no temporary file."
+  (johnson-test--with-persistence-dir
+    (johnson-test--write-sexp johnson-history-file
+                              (list (list :word "one" :timestamp 1.0
+                                          :dict-count 1)))
+    (johnson--load-history-log)
+    (push (list :word "two" :timestamp 2.0 :dict-count 2) johnson--history-log)
+    (cl-letf (((symbol-function 'rename-file)
+               (lambda (&rest _) (error "disk full"))))
+      (should-error (johnson--save-history-log)))
+    (should (equal (mapcar (lambda (e) (plist-get e :word))
+                           (johnson-test--read-sexp johnson-history-file))
+                   '("one")))
+    (should (equal (directory-files dir nil "\\`[^.]") '("history.el")))))
+
+;;;; Discovery caching
+
+(ert-deftest johnson-test-ensure-dictionaries-caches-empty-discovery ()
+  "An empty discovery result is not rescanned on every call."
+  (johnson-test--with-env
+    (let* ((empty (make-temp-file "johnson-empty-dicts-" t))
+           (johnson-dictionary-directories (list empty))
+           (scans 0))
+      (unwind-protect
+          (cl-letf* ((original (symbol-function 'directory-files-recursively))
+                     ((symbol-function 'directory-files-recursively)
+                      (lambda (&rest args)
+                        (cl-incf scans)
+                        (apply original args))))
+            (johnson--ensure-dictionaries)
+            (johnson--ensure-dictionaries)
+            (should-not johnson--dictionaries)
+            (should (= scans 1))
+            ;; Closing caches forces a fresh scan.
+            (save-window-excursion (johnson-close-caches))
+            (johnson--ensure-dictionaries)
+            (should (= scans 2)))
+        (delete-directory empty t)))))
+
+;;;; Index progress parsing
+
+(ert-deftest johnson-test-index-filter-parses-fts-lines-with-spaces ()
+  "FTS progress lines for dictionaries whose names contain spaces are shown."
+  (let* ((buf (generate-new-buffer " *johnson-test-index*"))
+         (proc (make-process :name "johnson-test-dummy"
+                             :command '("sleep" "30")
+                             :noquery t)))
+    (unwind-protect
+        (progn
+          (process-put proc 'johnson-buf buf)
+          (johnson--index-process-filter
+           proc
+           (concat "JOHNSON-INDEX-FTS-DONE 1234 Oxford Dictionary\n"
+                   "JOHNSON-INDEX-FTS-ERROR Oxford Dictionary\tboom\n"))
+          (let ((text (with-current-buffer buf (buffer-string))))
+            (should (string-match-p "FTS done (1,234 entries)" text))
+            (should (string-match-p "FTS error: boom$" text)))
+          ;; The child script emits the same shapes the filter parses.
+          (let ((script (let ((johnson-dictionary-directories nil)
+                              (johnson-cache-directory "/tmp/"))
+                          (johnson--index-subprocess-script))))
+            (should (string-match-p "JOHNSON-INDEX-FTS-DONE %d %s" script))
+            (should (string-match-p "JOHNSON-INDEX-FTS-ERROR %s\\\\t%s" script))))
+      (johnson-test-support-delete-process proc)
+      (kill-buffer buf))))
+
+;;;; Default search scope
+
+(ert-deftest johnson-test-default-search-scope-governs-initial-scope ()
+  "`johnson-default-search-scope' set to `group' selects the first group."
+  (johnson-test--with-env
+    (johnson--discover)
+    (should (> (length johnson--dictionaries) 1))
+    (let ((johnson-dictionary-groups '(("Small" "Test Dictionary"))))
+      (let ((johnson-default-search-scope 'all))
+        (should (= (length (johnson--dictionaries-in-scope))
+                   (length johnson--dictionaries))))
+      (let ((johnson-default-search-scope 'group))
+        (should (equal (mapcar (lambda (d) (plist-get d :name))
+                               (johnson--dictionaries-in-scope))
+                       '("Test Dictionary")))
+        (should (equal (johnson--format-scope) "Small"))))))
+
+(ert-deftest johnson-test-select-group-does-not-mutate-option ()
+  "`johnson-select-group' records its choice without changing the option."
+  (johnson-test--with-env
+    (johnson--discover)
+    (let ((johnson-dictionary-groups '(("Small" "Test Dictionary")))
+          (johnson-default-search-scope 'all))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (&rest _) "Small")))
+        (johnson-select-group))
+      (should (eq johnson-default-search-scope 'all))
+      (should (equal (mapcar (lambda (d) (plist-get d :name))
+                             (johnson--dictionaries-in-scope))
+                     '("Test Dictionary"))))))
+
+;;;; Bookmark removal
+
+(ert-deftest johnson-test-bookmark-remove-prefers-section-at-point ()
+  "Removing a bookmark targets the dictionary section at point."
+  (let ((johnson--bookmarks
+         (list (list :headword "run" :dictionary "A" :timestamp 1.0 :path "")
+               (list :headword "run" :dictionary "B" :timestamp 2.0 :path "")))
+        (johnson--bookmarks-loaded t))
+    (cl-letf (((symbol-function 'johnson--save-bookmarks) #'ignore))
+      (with-temp-buffer
+        (johnson-mode)
+        (setq johnson--current-word "run")
+        (let ((inhibit-read-only t))
+          (insert "section B text\n\nno section here\n"))
+        (let ((ov (make-overlay 1 15)))
+          (overlay-put ov 'johnson-section "B")
+          (overlay-put ov 'johnson-section-content t))
+        (goto-char 3)
+        (johnson-bookmark-remove)
+        (should (equal (mapcar (lambda (b) (plist-get b :dictionary))
+                               johnson--bookmarks)
+                       '("A")))
+        ;; Without a section at point, fall back to the headword.
+        (goto-char (point-max))
+        (johnson-bookmark-remove)
+        (should-not johnson--bookmarks)))))
+
+;;;; History maximum
+
+(ert-deftest johnson-test-history-max-zero-keeps-nothing ()
+  "A history maximum of 0 keeps no entries; 1 keeps only the latest."
+  (let ((johnson-history nil) (johnson-history-max 0))
+    (johnson--history-push "a")
+    (johnson--history-push "b")
+    (should-not johnson-history))
+  (let ((johnson-history nil) (johnson-history-max 1))
+    (johnson--history-push "a")
+    (johnson--history-push "b")
+    (should (equal johnson-history '("b"))))
+  (let ((johnson-history-persist nil)
+        (johnson--history-log nil)
+        (johnson--history-log-loaded t)
+        (johnson-history-max 0))
+    (johnson--history-log-push "a" 1)
+    (should-not johnson--history-log)))
 
 (provide 'johnson-test)
 ;;; johnson-test.el ends here

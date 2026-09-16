@@ -156,7 +156,7 @@ Returns the path to the zip file."
           ;; First attempt: fails and creates .missing marker.
           (should-not (johnson--extract-resource zip-path "nonexistent.mp3"))
           (let ((marker (concat (expand-file-name
-                                 "nonexistent.mp3"
+                                 (johnson--resource-cache-name "nonexistent.mp3")
                                  (johnson--resource-cache-dir zip-path))
                                 ".missing")))
             (should (file-exists-p marker)))
@@ -314,7 +314,8 @@ Returns the path to the zip file."
           (should-not (johnson--extract-resource zip-path "-x"))
           (should-not (file-exists-p
                        (expand-file-name
-                        "-x" (johnson--resource-cache-dir zip-path)))))
+                        (johnson--resource-cache-name "-x")
+                        (johnson--resource-cache-dir zip-path)))))
       (delete-directory dir t)
       (delete-directory cache-dir t))))
 
@@ -338,6 +339,42 @@ Returns the path to the zip file."
             (should (equal (buffer-string) "BRACKET"))))
       (delete-directory dir t)
       (delete-directory cache-dir t))))
+
+(ert-deftest johnson-resource-test-extract-same-basename-different-folders ()
+  "Members sharing a base name in different folders get distinct cache files."
+  (let* ((dir (make-temp-file "johnson-res-test-" t))
+         (cache-dir (make-temp-file "johnson-res-cache-" t))
+         (johnson-cache-directory cache-dir)
+         (zip-path (expand-file-name "nested.dsl.files.zip" dir)))
+    (make-directory (expand-file-name "a" dir))
+    (make-directory (expand-file-name "b" dir))
+    (with-temp-file (expand-file-name "a/x.mp3" dir) (insert "FROM-A"))
+    (with-temp-file (expand-file-name "b/x.mp3" dir) (insert "FROM-B"))
+    (let ((default-directory dir))
+      (call-process "zip" nil nil nil "-q" zip-path "a/x.mp3" "b/x.mp3"))
+    (unwind-protect
+        (let ((from-a (johnson--extract-resource zip-path "a/x.mp3"))
+              (from-b (johnson--extract-resource zip-path "b/x.mp3")))
+          (should from-a)
+          (should from-b)
+          (should-not (equal from-a from-b))
+          ;; The extension survives, so media-type detection keeps working.
+          (should (string-suffix-p ".mp3" from-a))
+          (should (string-suffix-p ".mp3" from-b))
+          (with-temp-buffer
+            (insert-file-contents from-a)
+            (should (equal (buffer-string) "FROM-A")))
+          (with-temp-buffer
+            (insert-file-contents from-b)
+            (should (equal (buffer-string) "FROM-B"))))
+      (delete-directory dir t)
+      (delete-directory cache-dir t))))
+
+(ert-deftest johnson-resource-test-cache-name-normalizes-backslashes ()
+  "A backslash-separated member path yields the bare base name after the hash."
+  (let ((name (johnson--resource-cache-name "snd\\x.mp3")))
+    (should (string-suffix-p "-x.mp3" name))
+    (should (equal name (johnson--resource-cache-name "snd/x.mp3")))))
 
 (provide 'johnson-resource-test)
 ;;; johnson-resource-test.el ends here

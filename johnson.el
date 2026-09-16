@@ -56,8 +56,14 @@
   :group 'johnson)
 
 (defcustom johnson-default-search-scope 'all
-  "Default search scope for lookups.
-`all' searches all dictionaries; `group' searches only the active group."
+  "Search scope in effect until `johnson-select-group' chooses one.
+`all' searches every dictionary, ignoring group and language filters.
+`group' searches only the active group: when `johnson-dictionary-groups'
+is set and no group has been selected yet, its first entry; otherwise
+the group or language pair chosen with `johnson-select-group', and
+every dictionary until a choice is made.  `johnson-select-group'
+records its choice in a session variable and never changes this
+option."
   :type '(choice (const :tag "All dictionaries" all)
                  (const :tag "Active group" group))
   :group 'johnson)
@@ -127,8 +133,10 @@ and Emacs has no pending user input."
   :group 'johnson)
 
 (defcustom johnson-history-max 100
-  "Maximum number of entries in lookup history."
-  :type 'integer
+  "Maximum number of entries in lookup history.
+Zero keeps no history.  The persistent history log keeps ten times
+this many entries."
+  :type 'natnum
   :group 'johnson)
 
 (defcustom johnson-audio-player 'auto
@@ -327,6 +335,16 @@ Each element has keys :path, :format-name, :name,
   "Currently active custom group name, or nil for all.
 Only used when `johnson-dictionary-groups' is non-nil.")
 
+(defvar johnson--search-scope nil
+  "Search scope chosen with `johnson-select-group' this session.
+Either `all' or `group'; nil means `johnson-default-search-scope'
+applies.  See `johnson--effective-search-scope'.")
+
+(defvar johnson--discovered-p nil
+  "Non-nil once `johnson--discover' has run.
+Lets `johnson--ensure-dictionaries' skip rescanning when discovery
+found no dictionaries.  Cleared by `johnson-close-caches'.")
+
 (defvar johnson-history nil
   "History of looked-up words for `completing-read'.")
 
@@ -413,12 +431,22 @@ Each element is a plist (:headword STRING :dictionary STRING
 (defvar johnson--bookmarks-loaded nil
   "Non-nil when bookmarks have been loaded from disk.")
 
+(defvar johnson--bookmarks-synced nil
+  "Identities of the bookmarks on disk at the last load or save.
+Each identity is (HEADWORD . DICTIONARY).  A bookmark on disk whose
+identity is absent from this list was added by another Emacs session
+and is kept when saving; see `johnson--merge-persisted'.")
+
 (defvar johnson--history-log nil
   "Timestamped history of lookups.
 Each element is a plist (:word STRING :timestamp FLOAT :dict-count INTEGER).")
 
 (defvar johnson--history-log-loaded nil
   "Non-nil when history log has been loaded from disk.")
+
+(defvar johnson--history-log-synced nil
+  "Identities of the history entries on disk at the last load or save.
+Each identity is (WORD . TIMESTAMP); see `johnson--bookmarks-synced'.")
 
 (defvar johnson--eldoc-cache (make-hash-table :test #'equal)
   "LRU cache for eldoc definitions.  Maps word to plain-text result.")
@@ -547,7 +575,8 @@ context."
           (error
            (message "johnson: discovery error for %s: %s"
                     (plist-get fmt :name)
-                    (error-message-string err))))))))
+                    (error-message-string err))))))
+    (setq johnson--discovered-p t)))
 
 (defun johnson--lookup-priority (name file root)
   "Return the priority for the dictionary at FILE.
@@ -576,8 +605,10 @@ ROOT is excluded from the result."
     (nreverse names)))
 
 (defun johnson--ensure-dictionaries ()
-  "Ensure dictionaries have been discovered."
-  (unless johnson--dictionaries
+  "Ensure dictionaries have been discovered.
+Discovery runs once, even when it finds nothing, until
+`johnson-close-caches' clears `johnson--discovered-p'."
+  (unless (or johnson--dictionaries johnson--discovered-p)
     (johnson--discover)))
 
 ;;;; Groups
@@ -609,13 +640,36 @@ source language."
                     collect tgt))
           #'string<)))
 
+(defun johnson--effective-search-scope ()
+  "Return the search scope in effect: `all' or `group'.
+The session choice in `johnson--search-scope' wins over
+`johnson-default-search-scope'."
+  (or johnson--search-scope johnson-default-search-scope))
+
+(defun johnson--active-custom-group ()
+  "Return the name of the active custom group, or nil.
+When the scope is `group' and no group has been chosen, the first
+entry of `johnson-dictionary-groups' is active."
+  (or johnson--current-custom-group
+      (and (eq (johnson--effective-search-scope) 'group)
+           (car (car johnson-dictionary-groups)))))
+
+(defun johnson--set-language-scope (source target)
+  "Restrict the scope to SOURCE and TARGET languages, nil meaning any.
+Record the scope as `group' when either is set and `all' otherwise."
+  (setq johnson--current-source-lang source
+        johnson--current-target-lang target
+        johnson--search-scope (if (or source target) 'group 'all)))
+
 (defun johnson--dictionaries-in-scope ()
   "Return dictionaries matching the current search scope."
   (johnson--ensure-dictionaries)
   (cond
+   ;; Scope `all' ignores every filter.
+   ((eq (johnson--effective-search-scope) 'all) johnson--dictionaries)
    ;; Custom groups: filter by dictionary name membership.
-   ((and johnson-dictionary-groups johnson--current-custom-group)
-    (let ((names (cdr (assoc johnson--current-custom-group
+   ((and johnson-dictionary-groups (johnson--active-custom-group))
+    (let ((names (cdr (assoc (johnson--active-custom-group)
                               johnson-dictionary-groups))))
       (cl-remove-if-not
        (lambda (d) (member (plist-get d :name) names))
@@ -642,7 +696,8 @@ source language."
 (defun johnson--format-scope ()
   "Return a human-readable string for the current scope."
   (cond
-   (johnson--current-custom-group johnson--current-custom-group)
+   ((eq (johnson--effective-search-scope) 'all) "<all>")
+   ((johnson--active-custom-group))
    ((or johnson--current-source-lang johnson--current-target-lang)
     (format "%s → %s"
             (or johnson--current-source-lang "<all>")
@@ -663,9 +718,9 @@ an @samp{<all>} option for flexible filtering."
              (selection (completing-read "Dictionary group: " choices nil t)))
         (if (equal selection "<all>")
             (setq johnson--current-custom-group nil
-                  johnson-default-search-scope 'all)
+                  johnson--search-scope 'all)
           (setq johnson--current-custom-group selection
-                johnson-default-search-scope 'group))
+                johnson--search-scope 'group))
         (message "johnson: scope set to %s" (johnson--format-scope))
         (when (johnson--displaying-p)
           (johnson-refresh)))
@@ -679,11 +734,7 @@ an @samp{<all>} option for flexible filtering."
            (tgt-choices (cons all-label tgt-langs))
            (tgt (completing-read "Target language: " tgt-choices nil t))
            (target (unless (equal tgt all-label) tgt)))
-      (setq johnson--current-source-lang source
-            johnson--current-target-lang target)
-      (if (or source target)
-          (setq johnson-default-search-scope 'group)
-        (setq johnson-default-search-scope 'all))
+      (johnson--set-language-scope source target)
       (message "johnson: scope set to %s" (johnson--format-scope))
       (when (johnson--displaying-p)
         (johnson-refresh)))))
@@ -808,10 +859,10 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                                       (cl-incf fts-count))))
                                 (sqlite-execute db \"COMMIT\")
                                 (johnson-db-set-fts-indexed db)
-                                (message \"JOHNSON-INDEX-FTS-DONE %%s %%d\" name fts-count))
+                                (message \"JOHNSON-INDEX-FTS-DONE %%d %%s\" fts-count name))
                             (error
                              (ignore-errors (sqlite-execute db \"ROLLBACK\"))
-                             (message \"JOHNSON-INDEX-FTS-ERROR %%s %%s\"
+                             (message \"JOHNSON-INDEX-FTS-ERROR %%s\\t%%s\"
                                       name (error-message-string fts-err)))))
                         (message \"JOHNSON-INDEX-PROGRESS %%d %%d up-to-date %%d %%s\"
                                  done total count name))
@@ -853,11 +904,11 @@ Returns non-nil on success.  Used for batch mode and single-dict reindex."
                                     (cl-incf fts-count))))
                               (sqlite-execute (johnson--get-db path) \"COMMIT\")
                               (johnson-db-set-fts-indexed db)
-                              (message \"JOHNSON-INDEX-FTS-DONE %%s %%d\" name fts-count))
+                              (message \"JOHNSON-INDEX-FTS-DONE %%d %%s\" fts-count name))
                           (error
                            (ignore-errors
                              (sqlite-execute (johnson--get-db path) \"ROLLBACK\"))
-                           (message \"JOHNSON-INDEX-FTS-ERROR %%s %%s\"
+                           (message \"JOHNSON-INDEX-FTS-ERROR %%s\\t%%s\"
                                     name (error-message-string fts-err)))))
                       (johnson-db-set-metadata db \"entry-count\"
                         (number-to-string count))
@@ -942,12 +993,12 @@ Parses structured messages from OUTPUT and updates the progress buffer."
              ((string-match "^JOHNSON-INDEX-FTS \\(.*\\)" line)
               (goto-char (point-max))
               (insert (format "    FTS indexing %s...\n" (match-string 1 line))))
-             ((string-match "^JOHNSON-INDEX-FTS-DONE \\(\\S-+\\) \\([0-9]+\\)" line)
+             ((string-match "^JOHNSON-INDEX-FTS-DONE \\([0-9]+\\) \\(.*\\)" line)
               (goto-char (point-max))
               (insert (format "    FTS done (%s entries)\n"
                               (johnson--format-number
-                               (string-to-number (match-string 2 line))))))
-             ((string-match "^JOHNSON-INDEX-FTS-ERROR \\(\\S-+\\) \\(.*\\)" line)
+                               (string-to-number (match-string 1 line))))))
+             ((string-match "^JOHNSON-INDEX-FTS-ERROR \\([^\t]*\\)\t\\(.*\\)" line)
               (goto-char (point-max))
               (insert (format "    FTS error: %s\n" (match-string 2 line))))
              ((string-match "^JOHNSON-INDEX-COMPLETION building" line)
@@ -1238,12 +1289,22 @@ Returns a list of (DICT-PLIST . MATCHES) sorted by priority."
             (< (or (plist-get (car a) :priority) 0)
                (or (plist-get (car b) :priority) 0))))))
 
+(defun johnson--truncate-list (list max)
+  "Return LIST destructively truncated to at most MAX elements.
+Return nil when MAX is not positive."
+  (cond
+   ((<= max 0) nil)
+   ((> (length list) max)
+    (setcdr (nthcdr (1- max) list) nil)
+    list)
+   (t list)))
+
 (defun johnson--history-push (word)
   "Add WORD to `johnson-history', capping at `johnson-history-max'."
   (unless (equal word (car johnson-history))
     (push word johnson-history)
-    (when (> (length johnson-history) johnson-history-max)
-      (setcdr (nthcdr (1- johnson-history-max) johnson-history) nil))))
+    (setq johnson-history
+          (johnson--truncate-list johnson-history johnson-history-max))))
 
 ;;;; Lookup
 
@@ -2044,7 +2105,7 @@ identity."
        '(:no-history t))))))
 
 (defun johnson--displaying-p ()
-  "Return non-nil when the current buffer shows a lookup or full-text search."
+  "Return non-nil when the current buffer displays a lookup or a full-text search."
   (or johnson--current-word johnson--current-fts-query))
 
 ;;;; Navigation history
@@ -2506,6 +2567,7 @@ cache invalidation."
       (clrhash johnson-mdict--mdd-record-cache))
     (clrhash johnson--eldoc-cache)
     (setq johnson--dictionaries nil)
+    (setq johnson--discovered-p nil)
     (setq johnson--indexed-p nil)
     (message "Closed %d cache buffer%s and all database connections"
              count (if (= count 1) "" "s"))))
@@ -2544,13 +2606,26 @@ The directory is `johnson-cache-directory/resources/<md5-of-zip-path>/'."
   (expand-file-name (md5 zip-path)
                     (expand-file-name "resources" johnson-cache-directory)))
 
+(defun johnson--resource-cache-name (filename)
+  "Return the cache file name for the archive member FILENAME.
+The name is the MD5 of the normalized member path followed by the
+original base name, so members sharing a base name in different
+folders get distinct files while the extension still identifies the
+media type."
+  (let ((normalized (subst-char-in-string ?\\ ?/ filename)))
+    (concat (md5 (downcase normalized))
+            "-"
+            (file-name-nondirectory normalized))))
+
 (defun johnson--extract-resource (zip-path filename)
   "Extract FILENAME from ZIP-PATH to the resource cache directory.
-Uses `unzip -p' to extract to stdout, then writes to disk.
-Return the cached file path on success, nil on failure.
-Skip extraction if already cached or previously failed."
+Uses `unzip -p' to extract to stdout, then writes to disk under the
+name returned by `johnson--resource-cache-name'.  Return the cached
+file path on success, nil on failure.  Skip extraction if already
+cached or previously failed."
   (let* ((cache-dir (johnson--resource-cache-dir zip-path))
-         (cached (expand-file-name (file-name-nondirectory filename) cache-dir))
+         (cached (expand-file-name (johnson--resource-cache-name filename)
+                                   cache-dir))
          (neg-marker (concat cached ".missing")))
     (cond
      ;; unzip parses a member argument starting with `-' as an option.
@@ -3013,35 +3088,94 @@ When enabled, looking up words via selection or idle timer."
                                      #'johnson-scan--on-idle))))
     (setq johnson--scan-last-word nil)))
 
+;;;; Persisted lists
+
+(defun johnson--read-persisted-list (file predicate)
+  "Return the list stored in FILE when every element satisfies PREDICATE.
+Return nil when FILE is missing, unreadable, or holds anything else."
+  (when (file-exists-p file)
+    (condition-case nil
+        (let ((data (with-temp-buffer
+                      (insert-file-contents file)
+                      (read (current-buffer)))))
+          (and (listp data) (cl-every predicate data) data))
+      (error nil))))
+
+(defun johnson--write-persisted-list (file list)
+  "Write LIST to FILE atomically.
+The data goes to a temporary file in FILE's directory that is then
+renamed over FILE, so an interrupted write never truncates FILE.  The
+temporary file is removed when the write fails."
+  (make-directory (file-name-directory file) t)
+  (let ((temp (make-temp-file
+               (expand-file-name (concat (file-name-nondirectory file) ".")
+                                 (file-name-directory file)))))
+    (condition-case err
+        (progn
+          (with-temp-file temp
+            (let ((print-length nil)
+                  (print-level nil))
+              (prin1 list (current-buffer))))
+          (rename-file temp file t))
+      (error
+       (ignore-errors (delete-file temp))
+       (signal (car err) (cdr err))))))
+
+(defun johnson--merge-persisted (ours disk known identity)
+  "Return OURS merged with the DISK entries added by another session.
+IDENTITY maps an entry to a comparable key.  KNOWN lists the identities
+present on disk at this session's last load or save; DISK entries with
+an identity in neither KNOWN nor OURS were added elsewhere and are kept,
+while entries this session removed stay removed.  The result is ordered
+by `:timestamp', newest first, stable for equal timestamps."
+  (let ((ids (mapcar identity ours))
+        (added nil))
+    (dolist (entry disk)
+      (let ((id (funcall identity entry)))
+        (unless (or (member id known) (member id ids))
+          (push entry added))))
+    (sort (append ours (nreverse added))
+          (lambda (a b)
+            (> (or (plist-get a :timestamp) 0)
+               (or (plist-get b :timestamp) 0))))))
+
 ;;;; Bookmarks
+
+(defun johnson--bookmark-entry-p (entry)
+  "Return non-nil when ENTRY is a well-formed bookmark plist."
+  (and (listp entry)
+       (stringp (plist-get entry :headword))
+       (stringp (plist-get entry :dictionary))))
+
+(defun johnson--bookmark-identity (bookmark)
+  "Return the identity (HEADWORD . DICTIONARY) of BOOKMARK."
+  (cons (plist-get bookmark :headword) (plist-get bookmark :dictionary)))
 
 (defun johnson--load-bookmarks ()
   "Load bookmarks from `johnson-bookmarks-file'."
   (unless johnson--bookmarks-loaded
     (when (file-exists-p johnson-bookmarks-file)
-      (condition-case nil
-          (let ((data (with-temp-buffer
-                        (insert-file-contents johnson-bookmarks-file)
-                        (read (current-buffer)))))
-            (setq johnson--bookmarks
-                  (if (and (listp data)
-                           (cl-every (lambda (b)
-                                       (and (listp b)
-                                            (stringp (plist-get b :headword))
-                                            (stringp (plist-get b :dictionary))))
-                                     data))
-                      data
-                    nil)))
-        (error (setq johnson--bookmarks nil))))
+      (setq johnson--bookmarks
+            (johnson--read-persisted-list johnson-bookmarks-file
+                                          #'johnson--bookmark-entry-p))
+      (setq johnson--bookmarks-synced
+            (mapcar #'johnson--bookmark-identity johnson--bookmarks)))
     (setq johnson--bookmarks-loaded t)))
 
 (defun johnson--save-bookmarks ()
-  "Save bookmarks to `johnson-bookmarks-file'."
-  (make-directory (file-name-directory johnson-bookmarks-file) t)
-  (with-temp-file johnson-bookmarks-file
-    (let ((print-length nil)
-          (print-level nil))
-      (prin1 johnson--bookmarks (current-buffer)))))
+  "Save bookmarks to `johnson-bookmarks-file'.
+Merge in bookmarks another session added since this one last read the
+file, then write atomically; see `johnson--merge-persisted'."
+  (setq johnson--bookmarks
+        (johnson--merge-persisted
+         johnson--bookmarks
+         (johnson--read-persisted-list johnson-bookmarks-file
+                                       #'johnson--bookmark-entry-p)
+         johnson--bookmarks-synced
+         #'johnson--bookmark-identity))
+  (johnson--write-persisted-list johnson-bookmarks-file johnson--bookmarks)
+  (setq johnson--bookmarks-synced
+        (mapcar #'johnson--bookmark-identity johnson--bookmarks)))
 
 (defun johnson-bookmark-add ()
   "Bookmark the entry at point."
@@ -3073,12 +3207,17 @@ When enabled, looking up words via selection or idle timer."
   (unless (derived-mode-p 'johnson-mode)
     (user-error "Not in a johnson buffer"))
   (johnson--load-bookmarks)
-  (let ((headword johnson--current-word))
+  (let ((headword johnson--current-word)
+        (dict-name (johnson--section-name-at (point))))
     (unless headword
       (user-error "No entry to unbookmark"))
+    ;; Prefer the bookmark of the dictionary section at point; match by
+    ;; headword alone only when point is outside every section.
     (let ((found (cl-find-if
                   (lambda (b)
-                    (equal (plist-get b :headword) headword))
+                    (and (equal (plist-get b :headword) headword)
+                         (or (null dict-name)
+                             (equal (plist-get b :dictionary) dict-name))))
                   johnson--bookmarks)))
       (if found
           (progn
@@ -3148,21 +3287,23 @@ When enabled, looking up words via selection or idle timer."
 
 ;;;; History log (with timestamps)
 
+(defun johnson--history-entry-identity (entry)
+  "Return the identity (WORD . TIMESTAMP) of history ENTRY."
+  (cons (plist-get entry :word) (plist-get entry :timestamp)))
+
+(defun johnson--history-log-max ()
+  "Return the maximum length of the persistent history log."
+  (* 10 johnson-history-max))
+
 (defun johnson--load-history-log ()
   "Load the timestamped history log from `johnson-history-file'."
   (unless johnson--history-log-loaded
     (when (and johnson-history-persist
                (file-exists-p johnson-history-file))
-      (condition-case nil
-          (let ((data (with-temp-buffer
-                        (insert-file-contents johnson-history-file)
-                        (read (current-buffer)))))
-            (setq johnson--history-log
-                  (if (and (listp data)
-                           (cl-every #'listp data))
-                      data
-                    nil)))
-        (error (setq johnson--history-log nil))))
+      (setq johnson--history-log
+            (johnson--read-persisted-list johnson-history-file #'listp))
+      (setq johnson--history-log-synced
+            (mapcar #'johnson--history-entry-identity johnson--history-log)))
     (setq johnson--history-log-loaded t)
     (unless johnson-history
       (let ((words (mapcar (lambda (entry) (plist-get entry :word))
@@ -3171,13 +3312,22 @@ When enabled, looking up words via selection or idle timer."
               (seq-take (delete-dups words) johnson-history-max))))))
 
 (defun johnson--save-history-log ()
-  "Save the timestamped history log to `johnson-history-file'."
+  "Save the timestamped history log to `johnson-history-file'.
+Merge in entries another session added since this one last read the
+file, cap the log at ten times `johnson-history-max', then write
+atomically; see `johnson--merge-persisted'."
   (when johnson-history-persist
-    (make-directory (file-name-directory johnson-history-file) t)
-    (with-temp-file johnson-history-file
-      (let ((print-length nil)
-            (print-level nil))
-        (prin1 johnson--history-log (current-buffer))))))
+    (setq johnson--history-log
+          (johnson--truncate-list
+           (johnson--merge-persisted
+            johnson--history-log
+            (johnson--read-persisted-list johnson-history-file #'listp)
+            johnson--history-log-synced
+            #'johnson--history-entry-identity)
+           (johnson--history-log-max)))
+    (johnson--write-persisted-list johnson-history-file johnson--history-log)
+    (setq johnson--history-log-synced
+          (mapcar #'johnson--history-entry-identity johnson--history-log))))
 
 (defun johnson--history-log-push (word dict-count)
   "Push WORD with DICT-COUNT results to the timestamped history log.
@@ -3188,9 +3338,9 @@ Return the newly pushed history entry plist."
     (push entry johnson--history-log)
     ;; The persistent log keeps 10x the completing-read history size,
     ;; since it stores timestamps and is only displayed in the history list.
-    (let ((max-len (* 10 johnson-history-max)))
-      (when (> (length johnson--history-log) max-len)
-        (setcdr (nthcdr (1- max-len) johnson--history-log) nil)))
+    (setq johnson--history-log
+          (johnson--truncate-list johnson--history-log
+                                  (johnson--history-log-max)))
     (johnson--save-history-log)
     entry))
 

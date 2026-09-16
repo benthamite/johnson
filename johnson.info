@@ -257,6 +257,10 @@ identifies files using the registered format backends' detection
 functions.  Files matching the ‘_abrv’ naming convention (abbreviation
 tables) are automatically skipped.
 
+   Discovery runs once per session, even when it finds no dictionaries;
+run ‘johnson-close-caches’ or ‘johnson-index’ to scan the directories
+again after adding files.
+
    The default value is ‘("~/.local/share/dictionaries/")’.  You should
 change this to point at wherever your dictionary files are stored.  The
 value is a list of directory paths (type: ‘(repeat directory)’), so you
@@ -273,10 +277,15 @@ File: johnson.info,  Node: Search scope and groups,  Next: Cross-reference scope
 2.2 Search scope and groups
 ===========================
 
-The user option ‘johnson-default-search-scope’ controls the default
-search scope for lookups.  When set to ‘all’ (the default), lookups
-search across all discovered dictionaries.  When set to ‘group’, lookups
-search only within the currently active dictionary group.
+The user option ‘johnson-default-search-scope’ sets the search scope in
+effect until you choose one interactively.  When set to ‘all’ (the
+default), lookups search across all discovered dictionaries, ignoring
+group and language filters.  When set to ‘group’, lookups search only
+within the active dictionary group: the first entry of
+‘johnson-dictionary-groups’ when that option is set and no group has
+been chosen yet, otherwise the group or language pair chosen with
+‘johnson-select-group’.  Interactive choices are recorded for the
+session and never modify this option.
 
      (setopt johnson-default-search-scope 'group)
 
@@ -360,7 +369,9 @@ File: johnson.info,  Node: Lookup history,  Next: Cache directory,  Prev: Displa
 ==================
 
 The user option ‘johnson-history-max’ sets the maximum number of entries
-retained in the lookup history.  The default value is ‘100’.
+retained in the lookup history.  The default value is ‘100’ (type:
+‘natnum’).  Setting it to ‘0’ disables history.  The persistent history
+log (*note Browsing history::) keeps ten times this many entries.
 
      (setopt johnson-history-max 200)
 
@@ -372,6 +383,13 @@ lookups via ‘M-p’ and ‘M-n’ in the completion prompt.  If
 
    When the history exceeds ‘johnson-history-max’ entries, the oldest
 entries are discarded.
+
+   The persistent history log and the bookmarks file are written
+atomically: the data goes to a temporary file in the same directory that
+is then renamed over the target, so an interrupted write never truncates
+the file.  Before each write, entries added by another Emacs session
+since this one last read the file are merged in, while entries removed
+in this session stay removed.
 
 
 File: johnson.info,  Node: Cache directory,  Next: Audio playback,  Prev: Lookup history,  Up: User options
@@ -635,9 +653,10 @@ bookmarked dictionary entries are persisted.  The default value is
      (setopt johnson-bookmarks-file "~/.local/share/johnson/bookmarks.el")
 
    Bookmarks allow you to save dictionary entries for later reference.
-Each bookmark records the headword, dictionary name, and date.  See
-*note Managing bookmarks:: for the commands that add, remove, and list
-bookmarks.
+Each bookmark records the headword, dictionary name, and date.  The file
+is written atomically and merged with concurrent sessions' additions
+(*note Lookup history::).  See *note Managing bookmarks:: for the
+commands that add, remove, and list bookmarks.
 
 
 File: johnson.info,  Node: History buffer,  Next: Completion behavior,  Prev: Bookmarks,  Up: User options
@@ -1159,8 +1178,10 @@ dictionary name, and current date.  Bookmarks are persisted to
    It is bound to ‘b’ in ‘johnson-mode’.
 
    The command ‘johnson-bookmark-remove’ removes the bookmark for the
-dictionary entry at point.  If the entry is not bookmarked, the command
-displays a message indicating so.
+dictionary entry at point.  When the same headword is bookmarked in
+several dictionaries, the bookmark of the dictionary section at point is
+removed; outside every section the headword alone decides.  If the entry
+is not bookmarked, the command displays a message indicating so.
 
    It is bound to ‘M’ in ‘johnson-mode’.
 
@@ -2485,6 +2506,24 @@ interface layers.  The fixes below each carry a regression test.
      Windows-style backslashes, no longer overwrite each other in the
      cache, so each entry shows the correct file.
 
+   • History and bookmarks are saved atomically and merged across
+     concurrent Emacs sessions, so a crash or a second Emacs no longer
+     loses entries.
+   • ‘johnson-default-search-scope’ governs the initial scope, and
+     ‘johnson-select-group’ records its choice for the session instead
+     of rewriting the option.
+   • ‘johnson-history-max’ accepts only natural numbers, and ‘0’
+     disables history instead of keeping one entry.
+   • Removing a bookmark targets the dictionary section at point when
+     the same headword is bookmarked in several dictionaries.
+   • With no dictionaries found, eldoc and scan mode no longer rescan
+     the dictionary directories on every update.
+   • Indexing progress reports full-text results for dictionaries whose
+     names contain spaces.
+   • Audio and image files extracted from companion ‘.dsl.files.zip’
+     archives no longer overwrite each other when two members share a
+     file name in different folders.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2798,96 +2837,96 @@ Node: Top215
 Node: Overview2992
 Node: User options6935
 Node: Dictionary discovery7427
-Node: Search scope and groups8399
-Node: Cross-reference scope10121
-Node: Display ordering10832
-Node: Lookup history12246
-Node: Cache directory13039
-Node: Audio playback13984
-Node: Companion zip archives15395
-Node: DICT protocol16319
-Node: EPWING17393
-Node: Images19064
-Node: Wildcard search19738
-Node: Full-text search20554
-Node: Eldoc integration21280
-Node: Scan-popup mode21840
-Node: Bookmarks23027
-Node: History buffer23637
-Node: Completion behavior24475
-Node: Rendering performance25294
-Node: Commands28746
-Node: Looking up words29374
-Node: Indexing dictionaries31658
-Node: Managing groups and scope33335
-Node: Navigating the results buffer34425
-Node: Following cross-references36807
-Node: Navigation history37716
-Node: Copying entries39124
-Node: Dictionary list40376
-Node: Cache management41787
-Node: Toggling images43513
-Node: Searching definitions44019
-Node: Eldoc integration commands44750
-Node: Scan-popup mode commands45655
-Node: Managing bookmarks46432
-Node: Browsing history47577
-Node: Browsing dictionary files48507
-Node: Clearing the index49053
-Node: Reordering dictionaries49749
-Node: Importing GoldenDict order50912
-Node: Transient menu51759
-Node: Functions52619
-Node: Format registration53322
-Node: Completion at point56892
-Node: Database lifecycle57795
-Node: Metadata storage58694
-Node: Headword normalization59865
-Node: Entry insertion60702
-Node: Querying entries61714
-Node: Staleness detection and reset63024
-Node: Wildcard and full-text search queries64454
-Node: Completion index65812
-Node: DSL format detection67124
-Node: DSL metadata parsing68087
-Node: DSL index building69098
-Node: DSL entry retrieval71126
-Node: DSL entry rendering72032
-Node: StarDict backend74235
-Node: MDict backend75962
-Node: BGL backend77559
-Node: DICT protocol backend78748
-Node: Dictzip backend80177
-Node: HTML rendering81191
-Node: RIPEMD-128 hashing82746
-Node: Audio playback functions83515
-Node: EPWING backend84341
-Node: EBZIP backend86100
-Node: Faces87046
-Node: Text styling faces87562
-Node: Content type faces88266
-Node: Link faces89527
-Node: Section header face90186
-Node: Color faces90774
-Node: UI faces92178
-Node: Tips92877
-Node: Looking up words in PDF documents93015
-Node: Roadmap94612
-Node: Version 01 --- DSL95349
-Node: Version 02 --- StarDict and compressed DSL96349
-Node: Version 03 --- MDict and DSL abbreviations97642
-Node: Version 04 --- BGL DICT and more98140
-Node: Version 05 --- EPWING99491
-Node: Version 06 --- EPWING improvements and audits100283
-Node: Version 07 --- Progressive rendering100753
-Node: Version 08 (current) --- Robustness fixes101840
-Node: Future features106535
-Node: Contributing106840
-Node: AI assistance107271
-Node: Running the test suite107776
-Node: Indices108158
-Node: Function index108296
-Node: Variable index120338
+Node: Search scope and groups8576
+Node: Cross-reference scope10612
+Node: Display ordering11323
+Node: Lookup history12737
+Node: Cache directory14064
+Node: Audio playback15009
+Node: Companion zip archives16420
+Node: DICT protocol17344
+Node: EPWING18418
+Node: Images20089
+Node: Wildcard search20763
+Node: Full-text search21579
+Node: Eldoc integration22305
+Node: Scan-popup mode22865
+Node: Bookmarks24052
+Node: History buffer24767
+Node: Completion behavior25605
+Node: Rendering performance26424
+Node: Commands29876
+Node: Looking up words30504
+Node: Indexing dictionaries32788
+Node: Managing groups and scope34465
+Node: Navigating the results buffer35555
+Node: Following cross-references37937
+Node: Navigation history38846
+Node: Copying entries40254
+Node: Dictionary list41506
+Node: Cache management42917
+Node: Toggling images44643
+Node: Searching definitions45149
+Node: Eldoc integration commands45880
+Node: Scan-popup mode commands46785
+Node: Managing bookmarks47562
+Node: Browsing history48880
+Node: Browsing dictionary files49810
+Node: Clearing the index50356
+Node: Reordering dictionaries51052
+Node: Importing GoldenDict order52215
+Node: Transient menu53062
+Node: Functions53922
+Node: Format registration54625
+Node: Completion at point58195
+Node: Database lifecycle59098
+Node: Metadata storage59997
+Node: Headword normalization61168
+Node: Entry insertion62005
+Node: Querying entries63017
+Node: Staleness detection and reset64327
+Node: Wildcard and full-text search queries65757
+Node: Completion index67115
+Node: DSL format detection68427
+Node: DSL metadata parsing69390
+Node: DSL index building70401
+Node: DSL entry retrieval72429
+Node: DSL entry rendering73335
+Node: StarDict backend75538
+Node: MDict backend77265
+Node: BGL backend78862
+Node: DICT protocol backend80051
+Node: Dictzip backend81480
+Node: HTML rendering82494
+Node: RIPEMD-128 hashing84049
+Node: Audio playback functions84818
+Node: EPWING backend85644
+Node: EBZIP backend87403
+Node: Faces88349
+Node: Text styling faces88865
+Node: Content type faces89569
+Node: Link faces90830
+Node: Section header face91489
+Node: Color faces92077
+Node: UI faces93481
+Node: Tips94180
+Node: Looking up words in PDF documents94318
+Node: Roadmap95915
+Node: Version 01 --- DSL96652
+Node: Version 02 --- StarDict and compressed DSL97652
+Node: Version 03 --- MDict and DSL abbreviations98945
+Node: Version 04 --- BGL DICT and more99443
+Node: Version 05 --- EPWING100794
+Node: Version 06 --- EPWING improvements and audits101586
+Node: Version 07 --- Progressive rendering102056
+Node: Version 08 (current) --- Robustness fixes103143
+Node: Future features108841
+Node: Contributing109146
+Node: AI assistance109577
+Node: Running the test suite110082
+Node: Indices110464
+Node: Function index110602
+Node: Variable index122644
 
 End Tag Table
 

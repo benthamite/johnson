@@ -268,6 +268,10 @@ identifies files using the registered format backends' detection
 functions.  Files matching the @samp{_abrv} naming convention (abbreviation
 tables) are automatically skipped.
 
+Discovery runs once per session, even when it finds no dictionaries;
+run @code{johnson-close-caches} or @code{johnson-index} to scan the directories
+again after adding files.
+
 The default value is @samp{("~/.local/share/dictionaries/")}.  You should
 change this to point at wherever your dictionary files are stored.  The
 value is a list of directory paths (type: @code{(repeat directory)}), so you
@@ -285,10 +289,15 @@ different locations:
 
 @vindex johnson-default-search-scope
 @vindex johnson-dictionary-groups
-The user option @code{johnson-default-search-scope} controls the default
-search scope for lookups.  When set to @code{all} (the default), lookups
-search across all discovered dictionaries.  When set to @code{group}, lookups
-search only within the currently active dictionary group.
+The user option @code{johnson-default-search-scope} sets the search scope in
+effect until you choose one interactively.  When set to @code{all} (the
+default), lookups search across all discovered dictionaries, ignoring
+group and language filters.  When set to @code{group}, lookups search only
+within the active dictionary group: the first entry of
+@code{johnson-dictionary-groups} when that option is set and no group has
+been chosen yet, otherwise the group or language pair chosen with
+@code{johnson-select-group}.  Interactive choices are recorded for the
+session and never modify this option.
 
 @lisp
 (setopt johnson-default-search-scope 'group)
@@ -375,7 +384,9 @@ appear before ``Collins English-Spanish'', assign it a lower priority:
 @vindex johnson-history-max
 @vindex johnson-history
 The user option @code{johnson-history-max} sets the maximum number of entries
-retained in the lookup history.  The default value is @code{100}.
+retained in the lookup history.  The default value is @code{100} (type:
+@code{natnum}).  Setting it to @code{0} disables history.  The persistent
+history log (@ref{Browsing history}) keeps ten times this many entries.
 
 @lisp
 (setopt johnson-history-max 200)
@@ -389,6 +400,13 @@ previous lookups via @samp{M-p} and @samp{M-n} in the completion prompt.  If
 
 When the history exceeds @code{johnson-history-max} entries, the oldest
 entries are discarded.
+
+The persistent history log and the bookmarks file are written
+atomically: the data goes to a temporary file in the same directory
+that is then renamed over the target, so an interrupted write never
+truncates the file.  Before each write, entries added by another Emacs
+session since this one last read the file are merged in, while entries
+removed in this session stay removed.
 
 @node Cache directory
 @section Cache directory
@@ -681,7 +699,9 @@ bookmarked dictionary entries are persisted.  The default value is
 @end lisp
 
 Bookmarks allow you to save dictionary entries for later reference.
-Each bookmark records the headword, dictionary name, and date.
+Each bookmark records the headword, dictionary name, and date.  The file
+is written atomically and merged with concurrent sessions' additions
+(@ref{Lookup history}).
 See @ref{Managing bookmarks} for the commands that add, remove, and
 list bookmarks.
 
@@ -1215,8 +1235,10 @@ persisted to @code{johnson-bookmarks-file} (@ref{Bookmarks}).
 It is bound to @samp{b} in @code{johnson-mode}.
 
 The command @code{johnson-bookmark-remove} removes the bookmark for
-the dictionary entry at point.  If the entry is not bookmarked, the
-command displays a message indicating so.
+the dictionary entry at point.  When the same headword is bookmarked in
+several dictionaries, the bookmark of the dictionary section at point
+is removed; outside every section the headword alone decides.  If the
+entry is not bookmarked, the command displays a message indicating so.
 
 It is bound to @samp{M} in @code{johnson-mode}.
 
@@ -2637,6 +2659,31 @@ MDict: images and sounds with the same file name in different
 folders of the resource archive, whether written with slashes or
 Windows-style backslashes, no longer overwrite each other in the
 cache, so each entry shows the correct file.
+
+@item
+History and bookmarks are saved atomically and merged across
+concurrent Emacs sessions, so a crash or a second Emacs no longer
+loses entries.
+@item
+@code{johnson-default-search-scope} governs the initial scope, and
+@code{johnson-select-group} records its choice for the session instead of
+rewriting the option.
+@item
+@code{johnson-history-max} accepts only natural numbers, and @code{0}
+disables history instead of keeping one entry.
+@item
+Removing a bookmark targets the dictionary section at point when
+the same headword is bookmarked in several dictionaries.
+@item
+With no dictionaries found, eldoc and scan mode no longer rescan
+the dictionary directories on every update.
+@item
+Indexing progress reports full-text results for dictionaries whose
+names contain spaces.
+@item
+Audio and image files extracted from companion @samp{.dsl.files.zip}
+archives no longer overwrite each other when two members share a
+file name in different folders.
 @end itemize
 
 @node Future features
