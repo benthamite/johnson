@@ -1,8 +1,9 @@
 ;;; johnson-ebzip.el --- EBZIP decompression for johnson -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Free Software Foundation, Inc.
+;; Copyright (C) 2026 Pablo Stafforini
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
+;; Assisted-by: various LLMs (Claude, Codex)
 ;; Version: 0.5.0
 ;; Package-Requires: ((emacs "29.1"))
 

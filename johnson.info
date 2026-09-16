@@ -127,6 +127,7 @@ Roadmap
 
 Contributing
 
+* AI assistance::
 * Running the test suite::
 
 Indices
@@ -2391,23 +2392,35 @@ File: johnson.info,  Node: Contributing,  Next: Indices,  Prev: Roadmap,  Up: To
 8 Contributing
 **************
 
-‘johnson’ is distributed as part of GNU ELPA (https://elpa.gnu.org/).
-Copyright is assigned to the Free Software Foundation.  All
-contributions must be covered by an FSF copyright assignment; see
-Contributor FAQ (https://www.fsf.org/licensing/contributor-faq) for
-details.
+‘johnson’ is distributed through MELPA (https://melpa.org/).  Copyright
+is held by the author; no copyright assignment is required to
+contribute.
 
    Bug reports and patches can be sent to the issue tracker
 (https://github.com/benthamite/johnson/issues).
 
 * Menu:
 
+* AI assistance::
 * Running the test suite::
 
 
-File: johnson.info,  Node: Running the test suite,  Up: Contributing
+File: johnson.info,  Node: AI assistance,  Next: Running the test suite,  Up: Contributing
 
-8.1 Running the test suite
+8.1 AI assistance
+=================
+
+‘johnson’ was written with substantial help from large language models
+(Claude and Codex), with the author reviewing all generated code.
+Following MELPA's contributor guidelines, every source file carries an
+‘Assisted-by’ line beneath its ‘Author’ line recording this.
+Contributors who use such tools for their own patches are asked to keep
+that line accurate.
+
+
+File: johnson.info,  Node: Running the test suite,  Prev: AI assistance,  Up: Contributing
+
+8.2 Running the test suite
 ==========================
 
      make test     # run the full ERT suite
@@ -2672,96 +2685,97 @@ File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
 
 Tag Table:
 Node: Top215
-Node: Overview2828
-Node: User options6771
-Node: Dictionary discovery7263
-Node: Search scope and groups8235
-Node: Cross-reference scope9957
-Node: Display ordering10668
-Node: Lookup history12082
-Node: Cache directory12875
-Node: Audio playback13820
-Node: Companion zip archives15231
-Node: DICT protocol16155
-Node: EPWING17229
-Node: Images18900
-Node: Wildcard search19574
-Node: Full-text search20390
-Node: Eldoc integration21116
-Node: Scan-popup mode21676
-Node: Bookmarks22863
-Node: History buffer23473
-Node: Completion behavior24311
-Node: Rendering performance25009
-Node: Commands28461
-Node: Looking up words29089
-Node: Indexing dictionaries31373
-Node: Managing groups and scope33050
-Node: Navigating the results buffer34140
-Node: Following cross-references36522
-Node: Navigation history37431
-Node: Copying entries38839
-Node: Dictionary list40091
-Node: Cache management41502
-Node: Toggling images43228
-Node: Searching definitions43734
-Node: Eldoc integration commands44465
-Node: Scan-popup mode commands45370
-Node: Managing bookmarks46147
-Node: Browsing history47292
-Node: Browsing dictionary files48222
-Node: Clearing the index48768
-Node: Reordering dictionaries49464
-Node: Importing GoldenDict order50627
-Node: Transient menu51474
-Node: Functions52334
-Node: Format registration53037
-Node: Completion at point56607
-Node: Database lifecycle57510
-Node: Metadata storage58409
-Node: Headword normalization59580
-Node: Entry insertion60417
-Node: Querying entries61429
-Node: Staleness detection and reset62739
-Node: Wildcard and full-text search queries64169
-Node: Completion index65527
-Node: DSL format detection66839
-Node: DSL metadata parsing67802
-Node: DSL index building68813
-Node: DSL entry retrieval70841
-Node: DSL entry rendering71747
-Node: StarDict backend73950
-Node: MDict backend75677
-Node: BGL backend77274
-Node: DICT protocol backend78463
-Node: Dictzip backend79892
-Node: HTML rendering80906
-Node: RIPEMD-128 hashing82461
-Node: Audio playback functions83230
-Node: EPWING backend84056
-Node: EBZIP backend85815
-Node: Faces86761
-Node: Text styling faces87277
-Node: Content type faces87981
-Node: Link faces89242
-Node: Section header face89901
-Node: Color faces90489
-Node: UI faces91893
-Node: Tips92592
-Node: Looking up words in PDF documents92730
-Node: Roadmap94327
-Node: Version 01 --- DSL94918
-Node: Version 02 --- StarDict and compressed DSL95918
-Node: Version 03 --- MDict and DSL abbreviations97211
-Node: Version 04 --- BGL DICT and more97709
-Node: Version 05 --- EPWING99060
-Node: Version 06 (current) --- EPWING improvements and audits99862
-Node: Future features100341
-Node: Contributing100660
-Node: Running the test suite101200
-Node: Indices101560
-Node: Function index101698
-Node: Variable index113740
+Node: Overview2846
+Node: User options6789
+Node: Dictionary discovery7281
+Node: Search scope and groups8253
+Node: Cross-reference scope9975
+Node: Display ordering10686
+Node: Lookup history12100
+Node: Cache directory12893
+Node: Audio playback13838
+Node: Companion zip archives15249
+Node: DICT protocol16173
+Node: EPWING17247
+Node: Images18918
+Node: Wildcard search19592
+Node: Full-text search20408
+Node: Eldoc integration21134
+Node: Scan-popup mode21694
+Node: Bookmarks22881
+Node: History buffer23491
+Node: Completion behavior24329
+Node: Rendering performance25027
+Node: Commands28479
+Node: Looking up words29107
+Node: Indexing dictionaries31391
+Node: Managing groups and scope33068
+Node: Navigating the results buffer34158
+Node: Following cross-references36540
+Node: Navigation history37449
+Node: Copying entries38857
+Node: Dictionary list40109
+Node: Cache management41520
+Node: Toggling images43246
+Node: Searching definitions43752
+Node: Eldoc integration commands44483
+Node: Scan-popup mode commands45388
+Node: Managing bookmarks46165
+Node: Browsing history47310
+Node: Browsing dictionary files48240
+Node: Clearing the index48786
+Node: Reordering dictionaries49482
+Node: Importing GoldenDict order50645
+Node: Transient menu51492
+Node: Functions52352
+Node: Format registration53055
+Node: Completion at point56625
+Node: Database lifecycle57528
+Node: Metadata storage58427
+Node: Headword normalization59598
+Node: Entry insertion60435
+Node: Querying entries61447
+Node: Staleness detection and reset62757
+Node: Wildcard and full-text search queries64187
+Node: Completion index65545
+Node: DSL format detection66857
+Node: DSL metadata parsing67820
+Node: DSL index building68831
+Node: DSL entry retrieval70859
+Node: DSL entry rendering71765
+Node: StarDict backend73968
+Node: MDict backend75695
+Node: BGL backend77292
+Node: DICT protocol backend78481
+Node: Dictzip backend79910
+Node: HTML rendering80924
+Node: RIPEMD-128 hashing82479
+Node: Audio playback functions83248
+Node: EPWING backend84074
+Node: EBZIP backend85833
+Node: Faces86779
+Node: Text styling faces87295
+Node: Content type faces87999
+Node: Link faces89260
+Node: Section header face89919
+Node: Color faces90507
+Node: UI faces91911
+Node: Tips92610
+Node: Looking up words in PDF documents92748
+Node: Roadmap94345
+Node: Version 01 --- DSL94936
+Node: Version 02 --- StarDict and compressed DSL95936
+Node: Version 03 --- MDict and DSL abbreviations97229
+Node: Version 04 --- BGL DICT and more97727
+Node: Version 05 --- EPWING99078
+Node: Version 06 (current) --- EPWING improvements and audits99880
+Node: Future features100359
+Node: Contributing100678
+Node: AI assistance101109
+Node: Running the test suite101614
+Node: Indices101996
+Node: Function index102134
+Node: Variable index114176
 
 End Tag Table
 

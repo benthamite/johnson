@@ -1,8 +1,9 @@
 ;;; johnson.el --- Multi-format dictionary UI for Emacs -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Free Software Foundation, Inc.
+;; Copyright (C) 2026 Pablo Stafforini
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
+;; Assisted-by: various LLMs (Claude, Codex)
 ;; Maintainer: Pablo Stafforini <pablostafforini@gmail.com>
 ;; URL: https://github.com/benthamite/johnson
 ;; Version: 0.7.0

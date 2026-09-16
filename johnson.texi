@@ -140,6 +140,7 @@ Roadmap
 
 Contributing
 
+* AI assistance::
 * Running the test suite::
 
 Indices
@@ -2513,16 +2514,25 @@ EPWING gaiji (custom character) rendering with Unicode mapping.
 @node Contributing
 @chapter Contributing
 
-@samp{johnson} is distributed as part of @uref{https://elpa.gnu.org/, GNU ELPA}.
-Copyright is assigned to the Free Software Foundation.  All
-contributions must be covered by an FSF copyright assignment; see
-@uref{https://www.fsf.org/licensing/contributor-faq, Contributor FAQ} for details.
+@samp{johnson} is distributed through @uref{https://melpa.org/, MELPA}.  Copyright is held
+by the author; no copyright assignment is required to contribute.
 
 Bug reports and patches can be sent to the @uref{https://github.com/benthamite/johnson/issues, issue tracker}.
 
 @menu
+* AI assistance::
 * Running the test suite::
 @end menu
+
+@node AI assistance
+@section AI assistance
+
+@samp{johnson} was written with substantial help from large language models
+(Claude and Codex), with the author reviewing all generated code.
+Following MELPA's contributor guidelines, every source file carries an
+@samp{Assisted-by} line beneath its @samp{Author} line recording this.
+Contributors who use such tools for their own patches are asked to
+keep that line accurate.
 
 @node Running the test suite
 @section Running the test suite

@@ -2359,12 +2359,19 @@ version:
 :CUSTOM_ID: h:contributing
 :END:
 
-=johnson= is distributed as part of [[https://elpa.gnu.org/][GNU ELPA]].
-Copyright is assigned to the Free Software Foundation.  All
-contributions must be covered by an FSF copyright assignment; see
-[[https://www.fsf.org/licensing/contributor-faq][Contributor FAQ]] for details.
+=johnson= is distributed through [[https://melpa.org/][MELPA]].  Copyright is held
+by the author; no copyright assignment is required to contribute.
 
 Bug reports and patches can be sent to the [[https://github.com/benthamite/johnson/issues][issue tracker]].
+
+** AI assistance
+
+=johnson= was written with substantial help from large language models
+(Claude and Codex), with the author reviewing all generated code.
+Following MELPA's contributor guidelines, every source file carries an
+=Assisted-by= line beneath its =Author= line recording this.
+Contributors who use such tools for their own patches are asked to
+keep that line accurate.
 
 ** Running the test suite
 

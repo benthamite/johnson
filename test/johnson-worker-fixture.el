@@ -1,8 +1,9 @@
 ;;; johnson-worker-fixture.el --- Deterministic worker test format -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2026 Free Software Foundation, Inc.
+;; Copyright (C) 2026 Pablo Stafforini
 
 ;; Author: Pablo Stafforini <pablostafforini@gmail.com>
+;; Assisted-by: various LLMs (Claude, Codex)
 
 ;; This file is NOT part of GNU Emacs.
 
