@@ -62,26 +62,59 @@ named by the MD5 hash of the dictionary file's absolute path."
 (defun johnson-db-open (dict-path)
   "Open or create the sqlite database for the dictionary at DICT-PATH.
 Creates the cache directory and database tables if they do not exist.
-Returns the database connection object."
+When the index file exists but sqlite rejects it as corrupt or not a
+database, delete it and create a fresh one in its place.  Returns the
+database connection object."
   (johnson-db--ensure-cache-directory)
-  (let ((db (sqlite-open (johnson-db--index-path dict-path))))
-    (sqlite-execute db
-                    "CREATE TABLE IF NOT EXISTS metadata (
-                       key TEXT PRIMARY KEY,
-                       value TEXT)")
-    (sqlite-execute db
-                    "CREATE TABLE IF NOT EXISTS entries (
-                       headword TEXT NOT NULL,
-                       headword_normalized TEXT NOT NULL,
-                       byte_offset INTEGER NOT NULL,
-                       byte_length INTEGER NOT NULL)")
-    (sqlite-execute db
-                    "CREATE INDEX IF NOT EXISTS idx_normalized
-                       ON entries(headword_normalized)")
-    (sqlite-execute db
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS fts_entries
-                       USING fts5(headword, definition)")
-    db))
+  (let ((index-path (johnson-db--index-path dict-path)))
+    (condition-case err
+        (johnson-db--open-with-schema index-path)
+      (sqlite-error
+       (unless (johnson-db--unusable-file-error-p err)
+         (signal (car err) (cdr err)))
+       (delete-file index-path)
+       (johnson-db--open-with-schema index-path)))))
+
+(defun johnson-db--open-with-schema (index-path)
+  "Open the sqlite database at INDEX-PATH, ensure its schema, and return it.
+Close the connection before re-signaling when creating the schema fails."
+  (let ((db (sqlite-open index-path)))
+    (condition-case err
+        (progn
+          (sqlite-execute db
+                          "CREATE TABLE IF NOT EXISTS metadata (
+                             key TEXT PRIMARY KEY,
+                             value TEXT)")
+          (sqlite-execute db
+                          "CREATE TABLE IF NOT EXISTS entries (
+                             headword TEXT NOT NULL,
+                             headword_normalized TEXT NOT NULL,
+                             byte_offset INTEGER NOT NULL,
+                             byte_length INTEGER NOT NULL)")
+          (sqlite-execute db
+                          "CREATE INDEX IF NOT EXISTS idx_normalized
+                             ON entries(headword_normalized)")
+          (sqlite-execute db
+                          "CREATE VIRTUAL TABLE IF NOT EXISTS fts_entries
+                             USING fts5(headword, definition)")
+          db)
+      (error
+       (sqlite-close db)
+       (signal (car err) (cdr err))))))
+
+(defconst johnson-db--unusable-file-codes '(11 26)
+  "Sqlite primary result codes saying the database file itself is unusable.
+11 is SQLITE_CORRUPT and 26 is SQLITE_NOTADB.")
+
+(defun johnson-db--unusable-file-error-p (err)
+  "Return non-nil when sqlite error ERR says the database file is unusable.
+ERR is the `sqlite-error' condition as caught by `condition-case'.  Its
+single datum is a list of the error string, the message, the primary
+result code, and the extended result code.  Locking and logic errors do
+not qualify, so a valid index is never deleted over them."
+  (let ((details (cadr err)))
+    (and (consp details)
+         (memq (nth 2 details) johnson-db--unusable-file-codes))))
 
 (defun johnson-db-close (db)
   "Close the sqlite database connection DB."
@@ -216,28 +249,31 @@ Returns a list of distinct headword strings.  LIMIT defaults to 200."
 (defun johnson-db-stale-p (dict-path)
   "Return non-nil if the index for DICT-PATH is stale or does not exist.
 Compares the stored modification time in the database metadata against
-the actual file modification time."
+the actual file modification time.  An index file that sqlite cannot
+open or read metadata from, such as a zero-byte file left by an
+interrupted open or a corrupt file, is stale as well, so it gets
+rebuilt instead of failing every lookup."
   (let ((index-path (johnson-db--index-path dict-path)))
     (if (not (file-exists-p index-path))
         t
       (if (not (file-attributes dict-path))
           t
-        (let ((db (sqlite-open index-path)))
-          (unwind-protect
-              (let* ((stored-mtime (caar (sqlite-select db
-                                                      "SELECT value FROM metadata WHERE key = ?"
-                                                      '("mtime"))))
-                   (actual-mtime (format-time-string
-                                  "%s"
-                                  (file-attribute-modification-time
-                                   (file-attributes dict-path)))))
-              (or (not (equal stored-mtime actual-mtime))
-                  ;; Treat databases with zero entries as stale -- they
-                  ;; were likely created by a broken parser version.
-                  (condition-case nil
-                      (zerop (johnson-db-entry-count db))
-                    (sqlite-error t))))
-          (sqlite-close db)))))))
+        (condition-case nil
+            (let ((db (sqlite-open index-path)))
+              (unwind-protect
+                  (let* ((stored-mtime (caar (sqlite-select db
+                                                            "SELECT value FROM metadata WHERE key = ?"
+                                                            '("mtime"))))
+                         (actual-mtime (format-time-string
+                                        "%s"
+                                        (file-attribute-modification-time
+                                         (file-attributes dict-path)))))
+                    (or (not (equal stored-mtime actual-mtime))
+                        ;; Treat databases with zero entries as stale -- they
+                        ;; were likely created by a broken parser version.
+                        (zerop (johnson-db-entry-count db))))
+                (sqlite-close db)))
+          (sqlite-error t))))))
 
 (defun johnson-db-stale-quick-p (dict-path)
   "Fast filesystem-only staleness check for DICT-PATH.

@@ -113,6 +113,32 @@ Return the network process."
         (puthash key new-proc johnson-dict--connection-cache)
         new-proc))))
 
+(defun johnson-dict--call-with-connection (host port function)
+  "Call FUNCTION with an open connection to the DICT server at HOST:PORT.
+FUNCTION receives the network process and its value is returned.  When
+FUNCTION signals an error or is quit, drop the cached connection before
+re-signaling: its buffer may hold a late or partial response that a
+later command would otherwise read as its own reply."
+  (let ((proc (johnson-dict--ensure-connection host port)))
+    (condition-case err
+        (funcall function proc)
+      ((error quit)
+       (johnson-dict--drop-connection host port)
+       (signal (car err) (cdr err))))))
+
+(defun johnson-dict--drop-connection (host port)
+  "Forget and delete the cached connection to HOST:PORT, if any.
+Unlike `johnson-dict--close-process', send no QUIT: the connection is
+being discarded because its response stream can no longer be trusted."
+  (let* ((key (johnson-dict--cache-key host port))
+         (proc (gethash key johnson-dict--connection-cache)))
+    (when proc
+      (remhash key johnson-dict--connection-cache)
+      (delete-process proc)
+      (let ((buf (process-get proc 'johnson-dict-buffer)))
+        (when (buffer-live-p buf)
+          (kill-buffer buf))))))
+
 (defun johnson-dict--close-process (proc)
   "Close network process PROC and kill its buffer."
   (let ((buf (process-get proc 'johnson-dict-buffer)))
@@ -192,7 +218,8 @@ beginning with \"..\") are unescaped."
                   ;; Terminal status codes (2xx, 3xx, 4xx, 5xx) end
                   ;; the response.
                   (when (>= status-code 200)
-                    (setq done t))))))))
+                    (setq done t)))))))
+          (johnson-dict--check-connection-open proc done))
         ;; Preserve any unconsumed data (e.g. next status line) in
         ;; the buffer; only delete what we have already parsed.
         (delete-region (point-min) line-start)
@@ -254,9 +281,19 @@ Return a list of definition strings, one per 151 block."
                  ;; 250: ok, all definitions sent.
                  ((= code 250) (setq done t))
                  ;; 550, 552: error, no match.
-                 ((>= code 400) (setq done t)))))))))
+                 ((>= code 400) (setq done t))))))))
+        (johnson-dict--check-connection-open proc done))
       (delete-region (point-min) line-start))
     (nreverse definitions)))
+
+(defun johnson-dict--check-connection-open (proc done)
+  "Signal an error when PROC has closed before its response was complete.
+DONE is non-nil once the response has been fully parsed, in which case
+a closed connection is not an error.  Called after each parse pass so
+a server that drops the connection fails the command at once instead
+of waiting out the timeout."
+  (unless (or done (process-live-p proc))
+    (error "DICT connection closed by server before the response completed")))
 
 ;;;; Parameter sanitization
 
@@ -272,47 +309,53 @@ Strip CR/LF characters and escape backslashes and double quotes."
 (defun johnson-dict--show-databases (host port)
   "Query SHOW DB on the DICT server at HOST:PORT.
 Return a list of (DB-NAME . DESCRIPTION) cons cells."
-  (let* ((proc (johnson-dict--ensure-connection host port)))
-    (johnson-dict--send proc "SHOW DB")
-    (let ((response (johnson-dict--read-response proc)))
-      (when (= (car response) 110)
-        ;; Read the terminating 250 status.
-        (johnson-dict--read-response proc)
-        ;; Parse body lines: each is "db-name description"
-        (let ((result nil))
-          (dolist (line (cdr response))
-            (when (string-match "\\`\\(\\S-+\\)\\s-+\"?\\(.*?\\)\"?\\'" line)
-              (push (cons (match-string 1 line) (match-string 2 line))
-                    result)))
-          (nreverse result))))))
+  (johnson-dict--call-with-connection
+   host port
+   (lambda (proc)
+     (johnson-dict--send proc "SHOW DB")
+     (let ((response (johnson-dict--read-response proc)))
+       (when (= (car response) 110)
+         ;; Read the terminating 250 status.
+         (johnson-dict--read-response proc)
+         ;; Parse body lines: each is "db-name description"
+         (let ((result nil))
+           (dolist (line (cdr response))
+             (when (string-match "\\`\\(\\S-+\\)\\s-+\"?\\(.*?\\)\"?\\'" line)
+               (push (cons (match-string 1 line) (match-string 2 line))
+                     result)))
+           (nreverse result)))))))
 
 (defun johnson-dict--define (host port db word)
   "Look up WORD in database DB on the DICT server at HOST:PORT.
 Return a list of definition strings."
-  (let* ((proc (johnson-dict--ensure-connection host port)))
-    (johnson-dict--send proc (format "DEFINE %s \"%s\""
-                                     (johnson-dict--sanitize-param db)
-                                     (johnson-dict--sanitize-param word)))
-    (johnson-dict--read-full-define-response proc)))
+  (johnson-dict--call-with-connection
+   host port
+   (lambda (proc)
+     (johnson-dict--send proc (format "DEFINE %s \"%s\""
+                                      (johnson-dict--sanitize-param db)
+                                      (johnson-dict--sanitize-param word)))
+     (johnson-dict--read-full-define-response proc))))
 
 (defun johnson-dict--match (host port db strategy word)
   "Match WORD in database DB using STRATEGY on HOST:PORT.
 Return a list of matching word strings."
-  (let* ((proc (johnson-dict--ensure-connection host port)))
-    (johnson-dict--send proc (format "MATCH %s %s \"%s\""
-                                     (johnson-dict--sanitize-param db)
-                                     strategy
-                                     (johnson-dict--sanitize-param word)))
-    (let ((response (johnson-dict--read-response proc)))
-      (when (= (car response) 152)
-        ;; Read the terminating 250 status.
-        (johnson-dict--read-response proc)
-        ;; Parse body lines: each is "db-name word"
-        (let ((result nil))
-          (dolist (line (cdr response))
-            (when (string-match "\\`\\S-+\\s-+\"?\\(.*?\\)\"?\\'" line)
-              (push (match-string 1 line) result)))
-          (nreverse result))))))
+  (johnson-dict--call-with-connection
+   host port
+   (lambda (proc)
+     (johnson-dict--send proc (format "MATCH %s %s \"%s\""
+                                      (johnson-dict--sanitize-param db)
+                                      strategy
+                                      (johnson-dict--sanitize-param word)))
+     (let ((response (johnson-dict--read-response proc)))
+       (when (= (car response) 152)
+         ;; Read the terminating 250 status.
+         (johnson-dict--read-response proc)
+         ;; Parse body lines: each is "db-name word"
+         (let ((result nil))
+           (dolist (line (cdr response))
+             (when (string-match "\\`\\S-+\\s-+\"?\\(.*?\\)\"?\\'" line)
+               (push (match-string 1 line) result)))
+           (nreverse result)))))))
 
 ;;;; Path parsing
 

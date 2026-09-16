@@ -1086,6 +1086,48 @@ buffers, and timers are cleaned up even on failure."
     (should (johnson-test-support-wait-for #'johnson-worker-ready-p 10
                                            johnson-worker--process))))
 
+(ert-deftest johnson-worker-test-crash-output-reaches-diagnostics ()
+  "A crashing child's final stderr line and partial line are recorded."
+  (johnson-worker-test--with-live-client
+    (let ((johnson-worker-command-function
+           (lambda ()
+             (list "sh" "-c"
+                   (concat "echo 'worker crash text' >&2; "
+                           "printf 'partial tail' >&2; exit 255")))))
+      (johnson-worker-start #'johnson-worker-test--record-message)
+      (should (johnson-test-support-wait-for
+               (lambda () (eq johnson-worker--state 'failed)) 10))
+      (should (= (length (johnson-worker-test--core-messages-of-type
+                          'worker-exit))
+                 1))
+      (should (get-buffer johnson-worker--diagnostics-buffer-name))
+      (let ((diagnostics
+             (with-current-buffer johnson-worker--diagnostics-buffer-name
+               (buffer-string))))
+        (should (string-match-p "worker crash text" diagnostics))
+        (should (string-match-p "partial tail" diagnostics))))))
+
+(ert-deftest johnson-worker-test-crash-final-frame-is-dispatched ()
+  "A valid frame the child emits right before dying is still handled."
+  (johnson-worker-test--with-live-client
+    (let ((johnson-worker-command-function
+           (lambda ()
+             (list "sh" "-c"
+                   (format "printf '%%s' %s; exit 3"
+                           (shell-quote-argument
+                            (johnson-protocol-encode
+                             '(:type protocol-error
+                               :message "child complained"))))))))
+      (johnson-worker-start #'johnson-worker-test--record-message)
+      (should (johnson-test-support-wait-for
+               (lambda () (eq johnson-worker--state 'failed)) 10))
+      (let ((errors (johnson-worker-test--core-messages-of-type
+                     'protocol-error)))
+        (should (= (length errors) 1))
+        (should (string-match-p "child complained"
+                                (plist-get (car errors) :message))))
+      (should-not (johnson-worker-test--core-messages-of-type 'worker-exit)))))
+
 (ert-deftest johnson-worker-test-late-sentinel-leaves-replacement-alone ()
   (johnson-worker-test--with-live-client
     (johnson-worker-start #'johnson-worker-test--record-message)

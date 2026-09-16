@@ -51,6 +51,98 @@
         t)
     (error nil)))
 
+;;;; Fake local server
+
+(defun johnson-dict-test--start-fake-server ()
+  "Start a DICT-like server on the loopback interface and return it.
+The server greets each client with a 220 banner, answers CLIENT with
+250, and answers DEFINE per `johnson-dict-test--fake-handle'.  Accepted
+client processes are collected in the server's `clients' property so
+`johnson-dict-test--with-fake-server' can delete them.  The port is the
+server's `:service' contact."
+  (make-network-process
+   :name "johnson-dict-test-server" :server t :host "127.0.0.1"
+   :service t :family 'ipv4 :noquery t
+   :filter #'johnson-dict-test--fake-filter
+   :log (lambda (server client _message)
+          (set-process-query-on-exit-flag client nil)
+          (process-put server 'clients
+                       (cons client (process-get server 'clients)))
+          (process-send-string client "220 fake dict server\r\n"))))
+
+(defun johnson-dict-test--fake-filter (proc string)
+  "Split STRING from client PROC into CRLF lines and handle each."
+  (let ((pending (concat (process-get proc 'pending) string)))
+    (while (string-match "\\`\\(.*?\\)\r\n" pending)
+      (let ((line (match-string 1 pending)))
+        (setq pending (substring pending (match-end 0)))
+        (johnson-dict-test--fake-handle proc line)))
+    (process-put proc 'pending pending)))
+
+(defun johnson-dict-test--fake-handle (proc line)
+  "Answer command LINE from client PROC.
+A DEFINE of \"slow\" is answered one second later, a DEFINE of \"drop\"
+closes the connection without answering, and any other DEFINE is
+answered at once with one definition reading \"DEF OF WORD\"."
+  (cond ((string-prefix-p "CLIENT" line)
+         (process-send-string proc "250 ok\r\n"))
+        ((string-match "\\`DEFINE \\S-+ \"\\(.*\\)\"\\'" line)
+         (let ((word (match-string 1 line)))
+           (cond ((equal word "slow")
+                  (run-at-time 1 nil #'johnson-dict-test--fake-define-reply
+                               proc word))
+                 ((equal word "drop") (delete-process proc))
+                 (t (johnson-dict-test--fake-define-reply proc word)))))
+        ((string-prefix-p "QUIT" line)
+         (process-send-string proc "221 bye\r\n"))))
+
+(defun johnson-dict-test--fake-define-reply (proc word)
+  "Send client PROC a complete one-definition DEFINE response for WORD."
+  (when (process-live-p proc)
+    (process-send-string
+     proc
+     (format (concat "150 1 definitions retrieved\r\n"
+                     "151 \"%s\" db \"Test\"\r\nDEF OF %s\r\n.\r\n250 ok\r\n")
+             word word))))
+
+(defmacro johnson-dict-test--with-fake-server (port &rest body)
+  "Run BODY with PORT bound to a fake DICT server's port.
+The connection and result caches are fresh; connections, accepted
+clients, and the server are deleted afterwards, even when BODY fails."
+  (declare (indent 1) (debug (symbolp body)))
+  `(let* ((johnson-dict--connection-cache (make-hash-table :test #'equal))
+          (johnson-dict--result-cache (make-hash-table :test #'equal))
+          (server (johnson-dict-test--start-fake-server))
+          (,port (process-contact server :service)))
+     (unwind-protect
+         (progn ,@body)
+       (johnson-dict--disconnect-all)
+       (mapc #'delete-process (process-get server 'clients))
+       (delete-process server))))
+
+(ert-deftest johnson-dict-test-timeout-drops-connection ()
+  "A timed-out DEFINE drops the connection so its late reply is never read."
+  (johnson-dict-test--with-fake-server port
+    (let ((johnson-dict--timeout 0.3))
+      (should-error (johnson-dict--define "127.0.0.1" port "db" "slow")
+                    :type 'error))
+    (should-not (gethash (johnson-dict--cache-key "127.0.0.1" port)
+                         johnson-dict--connection-cache))
+    ;; Give the slow reply time to arrive on the old connection.
+    (sleep-for 1)
+    (should (equal (johnson-dict--define "127.0.0.1" port "db" "fast")
+                   '("DEF OF fast")))))
+
+(ert-deftest johnson-dict-test-closed-connection-fails-fast ()
+  "A server dropping the connection fails the command before the timeout."
+  (johnson-dict-test--with-fake-server port
+    (let* ((johnson-dict--timeout 5)
+           (start (float-time))
+           (err (should-error
+                 (johnson-dict--define "127.0.0.1" port "db" "drop"))))
+      (should (string-match-p "closed" (error-message-string err)))
+      (should (< (- (float-time) start) 2)))))
+
 ;;;; Path parsing
 
 (ert-deftest johnson-dict-test-parse-path ()

@@ -249,6 +249,48 @@ Also binds `dict-path' to a dummy path.  Cleans up afterwards."
               (should-not (johnson-db-stale-p dict-file))))
         (delete-file dict-file)))))
 
+(defmacro johnson-db-test--with-damaged-index (dict-path content &rest body)
+  "Run BODY with DICT-PATH bound to a dictionary whose index file is damaged.
+CONTENT is written as the whole index file: an empty string models a
+zero-byte file left by an interrupted open, and any other text models
+a corrupt file that sqlite rejects.  The dictionary file is deleted
+afterwards."
+  (declare (indent 2) (debug (symbolp form body)))
+  `(johnson-db-test--with-temp-cache
+     (let ((,dict-path (make-temp-file "johnson-damaged-test-" nil ".dsl")))
+       (unwind-protect
+           (progn
+             (write-region ,content nil (johnson-db--index-path ,dict-path)
+                           nil 'silent)
+             ,@body)
+         (delete-file ,dict-path)))))
+
+(ert-deftest johnson-db-test-stale-zero-byte-index ()
+  "A zero-byte index file is reported stale rather than signaling."
+  (johnson-db-test--with-damaged-index dict-path ""
+    (should (eq (johnson-db-stale-p dict-path) t))))
+
+(ert-deftest johnson-db-test-stale-corrupt-index ()
+  "An index file that is not a database is reported stale."
+  (johnson-db-test--with-damaged-index dict-path "not a database"
+    (should (eq (johnson-db-stale-p dict-path) t))))
+
+(ert-deftest johnson-db-test-open-recreates-corrupt-index ()
+  "Opening a dictionary whose index file is not a database rebuilds it."
+  (johnson-db-test--with-damaged-index dict-path "not a database"
+    (let ((db (johnson-db-open dict-path)))
+      (unwind-protect
+          (progn
+            (should (= (johnson-db-entry-count db) 0))
+            (johnson-db-insert-entry db "word" 0 4)
+            (should (= (johnson-db-entry-count db) 1)))
+        (johnson-db-close db)))
+    ;; The replacement file is a real database that survives reopening.
+    (let ((db (johnson-db-open dict-path)))
+      (unwind-protect
+          (should (= (johnson-db-entry-count db) 1))
+        (johnson-db-close db)))))
+
 ;;;; Reset
 
 (ert-deftest johnson-db-test-reset-clears-entries ()

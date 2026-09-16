@@ -2575,6 +2575,20 @@ compression levels are rejected with a clear message.
 @item
 MDict: entries can no longer reference files outside the
 dictionary's own folder.
+
+@item
+Retrieval worker: when the worker crashes, its final output,
+including the error text it printed, now reaches the diagnostics
+buffer instead of being lost.
+@item
+DICT protocol: a lookup that times out or is interrupted drops
+its connection, so later lookups can no longer receive the previous
+word's definitions; a server that closes the connection fails the
+lookup at once instead of after the full timeout.
+@item
+Index database: a zero-byte or corrupt index file is detected as
+stale and rebuilt automatically instead of breaking that dictionary
+until the file is deleted by hand.
 @end itemize
 
 @node Future features

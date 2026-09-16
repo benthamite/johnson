@@ -286,12 +286,18 @@ child would reject the oversized frame anyway."
 (defun johnson-worker--sentinel (process event)
   "Clean up after worker PROCESS terminated as described by EVENT.
 Ignore state changes of processes other than the current worker and
-events that leave PROCESS alive.  Clear the client state, retaining the
-diagnostics buffer, and unless the termination was intentional, mark
-the client failed and deliver one `worker-exit' message naming the
-diagnostics buffer."
+events that leave PROCESS alive.  When the termination was not
+intentional, first handle the output the child left in the receive
+buffer, so its final frames and crash text are not lost.  Then clear
+the client state, retaining the diagnostics buffer, and unless the
+termination was intentional, mark the client failed and deliver one
+`worker-exit' message naming the diagnostics buffer.  A protocol
+failure raised while draining counts as intentional, so it stays the
+single failure report."
   (when (and (eq process johnson-worker--process)
              (not (process-live-p process)))
+    (unless johnson-worker--terminating
+      (johnson-worker--drain-final-output))
     (let ((intentional johnson-worker--terminating))
       (johnson-worker--clear-client-state)
       (cond ((not intentional)
@@ -302,6 +308,30 @@ diagnostics buffer."
                     :diagnostics johnson-worker--diagnostics-buffer-name)))
             ((not (eq johnson-worker--state 'failed))
              (setq johnson-worker--state 'stopped))))))
+
+(defun johnson-worker--drain-final-output ()
+  "Handle every line the exited worker left in the receive buffer.
+Dispatch each complete line as the decoder would, until the client
+fails or the buffer runs out of lines, recording any error a line
+raises as a diagnostic.  Then record whatever remains, a trailing
+partial line or lines left after a protocol failure, in the
+diagnostics buffer.  The sentinel calls this before dropping the
+receive buffer, whose pending decode timer would otherwise never run."
+  (let (line)
+    (while (and (not (eq johnson-worker--state 'failed))
+                (buffer-live-p johnson-worker--receive-buffer)
+                (setq line (johnson-worker--take-line)))
+      (condition-case err
+          (johnson-worker--dispatch-line line)
+        (error
+         (johnson-worker--append-diagnostic
+          (format "Error handling final worker line: %s\nLine: %s"
+                  (error-message-string err) line))))))
+  (when (buffer-live-p johnson-worker--receive-buffer)
+    (let ((rest (with-current-buffer johnson-worker--receive-buffer
+                  (buffer-string))))
+      (unless (string-empty-p rest)
+        (johnson-worker--append-diagnostic rest)))))
 
 ;;;; Entry preparation
 

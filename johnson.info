@@ -2437,6 +2437,17 @@ interface layers.  The fixes below each carry a regression test.
    • MDict: entries can no longer reference files outside the
      dictionary's own folder.
 
+   • Retrieval worker: when the worker crashes, its final output,
+     including the error text it printed, now reaches the diagnostics
+     buffer instead of being lost.
+   • DICT protocol: a lookup that times out or is interrupted drops its
+     connection, so later lookups can no longer receive the previous
+     word's definitions; a server that closes the connection fails the
+     lookup at once instead of after the full timeout.
+   • Index database: a zero-byte or corrupt index file is detected as
+     stale and rebuilt automatically instead of breaking that dictionary
+     until the file is deleted by hand.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2833,13 +2844,13 @@ Node: Version 05 --- EPWING99370
 Node: Version 06 --- EPWING improvements and audits100162
 Node: Version 07 --- Progressive rendering100632
 Node: Version 08 (current) --- Robustness fixes101719
-Node: Future features103750
-Node: Contributing104055
-Node: AI assistance104486
-Node: Running the test suite104991
-Node: Indices105373
-Node: Function index105511
-Node: Variable index117553
+Node: Future features104378
+Node: Contributing104683
+Node: AI assistance105114
+Node: Running the test suite105619
+Node: Indices106001
+Node: Function index106139
+Node: Variable index118181
 
 End Tag Table
 
