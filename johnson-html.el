@@ -224,15 +224,13 @@ ATTRS is the raw attribute string from the opening tag."
      (cond
       ;; sound:// links -> audio button
       ((string-match "href\\s-*=\\s-*[\"']sound://\\([^\"']+\\)[\"']" attrs)
-       (let ((filename (url-unhex-string
-                        (subst-char-in-string
-                         ?\\ ?/ (match-string 1 attrs)))))
-         (if (and (not (string-empty-p filename))
-                  johnson-html--current-dict-dir)
-             (let ((audio-path (or (johnson-html--mapped-resource filename)
-                                   (expand-file-name
-                                    filename
-                                    johnson-html--current-dict-dir))))
+       (let* ((filename (url-unhex-string
+                         (subst-char-in-string
+                          ?\\ ?/ (match-string 1 attrs))))
+              (audio-path (or (johnson-html--mapped-resource filename)
+                              (johnson-html--dict-relative-path filename))))
+         (if audio-path
+             (progn
                (delete-region region-start region-end)
                (goto-char region-start)
                (johnson-insert-audio-button
@@ -387,9 +385,8 @@ Replaces tags with text properties."
                  (resolved
                   (cond
                    ;; Try disk relative to dict dir.
-                   ((and johnson-html--current-dict-dir
-                         (let ((f (expand-file-name src johnson-html--current-dict-dir)))
-                           (when (file-exists-p f) f))))
+                   ((let ((f (johnson-html--dict-relative-path src)))
+                      (and f (file-exists-p f) f)))
                    ;; Prepared context: read only the resource mapping.
                    ((johnson-html--prepared-p)
                     (johnson-html--mapped-resource src))
@@ -456,6 +453,19 @@ Replaces tags with text properties."
             (replace-match "\n\n")
             (setq new-end (- new-end len -2))))
         new-end)))))
+
+(defun johnson-html--dict-relative-path (name)
+  "Return resource NAME expanded under the dictionary directory, or nil.
+Return nil when `johnson-html--current-dict-dir' is unset, when NAME is
+empty, absolute or starts with `~', or when the expanded path lies
+outside the dictionary directory, so dictionary markup cannot point
+buttons or images at arbitrary local files."
+  (when (and johnson-html--current-dict-dir
+             (not (string-empty-p name))
+             (not (file-name-absolute-p name)))
+    (let ((path (expand-file-name name johnson-html--current-dict-dir)))
+      (when (file-in-directory-p path johnson-html--current-dict-dir)
+        path))))
 
 (defun johnson-html--prepared-p ()
   "Return non-nil when a prepared resource mapping is active."

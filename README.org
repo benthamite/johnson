@@ -581,7 +581,9 @@ history buffer.
 The user option ~johnson-completion-min-chars~ sets the minimum number
 of characters you must type before completion candidates are fetched
 from the headword index.  Shorter inputs return no candidates, avoiding
-expensive prefix queries against the full index.
+expensive prefix queries against the full index.  Candidates are
+matched case- and accent-insensitively, so typing =cafe= offers =Café=
+and =café au lait=.
 
 The default value is ~3~ (type: ~natnum~).  You may want to lower this
 for small dictionary collections where prefix queries are fast, or
@@ -2404,6 +2406,26 @@ interface layers.  The fixes below each carry a regression test.
 - [X] Index database: a zero-byte or corrupt index file is detected as
   stale and rebuilt automatically instead of breaking that dictionary
   until the file is deleted by hand.
+
+- [X] Eldoc mode shows dictionary definitions; previously the echo
+  area was cleared immediately after the definition appeared.
+- [X] Headword completion keeps candidates that differ from the input
+  only in case or accents, so typing =cafe= offers =Café=.
+- [X] Full-text indexing no longer fails for a whole dictionary when an
+  entry contains an out-of-range numeric HTML entity.
+- [X] The transient menu binds *Reorder dictionaries* to =O=; it
+  previously shared =r= with *Forward* and was unreachable.
+- [X] =j= (jump to section) and =p= (previous section) work in
+  single-dictionary results, whose only header starts at the top of
+  the buffer.
+- [X] Enabling scan mode while it is already on no longer leaves an
+  extra idle timer running.
+- [X] Full-text search results keep their query separate from the
+  headword state: =g= reruns the search, and bookmarking a search page
+  is refused instead of storing a bogus headword.
+- [X] Sound links and images in HTML dictionaries can no longer
+  reference files outside the dictionary's folder, and companion-zip
+  resource names are passed to =unzip= literally.
 
 ** Future features
 :PROPERTIES:

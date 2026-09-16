@@ -37,6 +37,7 @@
 (defvar johnson-history-persist)
 (defvar johnson-ref-scope)
 (defvar johnson--current-word)
+(defvar johnson--current-fts-query)
 (defvar johnson--current-source-lang)
 (defvar johnson--current-target-lang)
 
@@ -118,7 +119,8 @@
 (defun johnson-transient--set-images (_var val)
   "Set `johnson-display-images' to VAL and refresh."
   (setq johnson-display-images val)
-  (when (and (bound-and-true-p johnson--current-word)
+  (when (and (or (bound-and-true-p johnson--current-word)
+                 (bound-and-true-p johnson--current-fts-query))
              (derived-mode-p 'johnson-mode))
     (johnson-refresh)))
 
@@ -133,14 +135,16 @@
 (defun johnson-transient--set-source-lang (_var val)
   "Set source language to VAL and refresh the results buffer."
   (setq johnson--current-source-lang val)
-  (when (and (bound-and-true-p johnson--current-word)
+  (when (and (or (bound-and-true-p johnson--current-word)
+                 (bound-and-true-p johnson--current-fts-query))
              (derived-mode-p 'johnson-mode))
     (johnson-refresh)))
 
 (defun johnson-transient--set-target-lang (_var val)
   "Set target language to VAL and refresh the results buffer."
   (setq johnson--current-target-lang val)
-  (when (and (bound-and-true-p johnson--current-word)
+  (when (and (or (bound-and-true-p johnson--current-word)
+                 (bound-and-true-p johnson--current-fts-query))
              (derived-mode-p 'johnson-mode))
     (johnson-refresh)))
 
@@ -309,7 +313,7 @@ OBJ determines whether source or target languages are offered."
 	  [:class transient-column
 		  "Dictionaries"
 		  ("d" "List dictionaries" johnson-list-dictionaries)
-		  ("r" "Reorder" johnson-reorder-dictionaries)
+		  ("O" "Reorder" johnson-reorder-dictionaries)
 		  ("I" "Import GoldenDict order" johnson-import-goldendict-order)
 		  ("D" "Browse directory" johnson-browse-dictionary)
 		  ("-d" johnson-transient:dict-dirs)

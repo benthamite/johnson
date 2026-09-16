@@ -300,5 +300,44 @@ Returns the path to the zip file."
             (should-not (get-text-property (point-min) 'johnson-audio-file))))
       (delete-directory dir t))))
 
+;;;; Resource names that unzip would misparse
+
+(ert-deftest johnson-resource-test-extract-refuses-option-like-name ()
+  "A resource name starting with `-' is refused, not passed to unzip."
+  (let* ((dir (make-temp-file "johnson-res-test-" t))
+         (cache-dir (make-temp-file "johnson-res-cache-" t))
+         (johnson-cache-directory cache-dir)
+         (paths (johnson-resource-test--make-fixture-zip dir))
+         (zip-path (nth 1 paths)))
+    (unwind-protect
+        (progn
+          (should-not (johnson--extract-resource zip-path "-x"))
+          (should-not (file-exists-p
+                       (expand-file-name
+                        "-x" (johnson--resource-cache-dir zip-path)))))
+      (delete-directory dir t)
+      (delete-directory cache-dir t))))
+
+(ert-deftest johnson-resource-test-extract-matches-glob-name-literally ()
+  "A resource name containing glob characters extracts that exact member."
+  (let* ((dir (make-temp-file "johnson-res-test-" t))
+         (cache-dir (make-temp-file "johnson-res-cache-" t))
+         (johnson-cache-directory cache-dir)
+         (zip-path (expand-file-name "glob.dsl.files.zip" dir))
+         (bracket (expand-file-name "x[1].mp3" dir))
+         (plain (expand-file-name "x1.mp3" dir)))
+    (with-temp-file bracket (insert "BRACKET"))
+    (with-temp-file plain (insert "PLAIN"))
+    (let ((default-directory dir))
+      (call-process "zip" nil nil nil "-j" zip-path bracket plain))
+    (unwind-protect
+        (let ((cached (johnson--extract-resource zip-path "x[1].mp3")))
+          (should cached)
+          (with-temp-buffer
+            (insert-file-contents cached)
+            (should (equal (buffer-string) "BRACKET"))))
+      (delete-directory dir t)
+      (delete-directory cache-dir t))))
+
 (provide 'johnson-resource-test)
 ;;; johnson-resource-test.el ends here

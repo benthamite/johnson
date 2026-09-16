@@ -717,7 +717,9 @@ history buffer.
 The user option @code{johnson-completion-min-chars} sets the minimum number
 of characters you must type before completion candidates are fetched
 from the headword index.  Shorter inputs return no candidates, avoiding
-expensive prefix queries against the full index.
+expensive prefix queries against the full index.  Candidates are
+matched case- and accent-insensitively, so typing @samp{cafe} offers @samp{Café}
+and @samp{café au lait}.
 
 The default value is @code{3} (type: @code{natnum}).  You may want to lower this
 for small dictionary collections where prefix queries are fast, or
@@ -2589,6 +2591,34 @@ lookup at once instead of after the full timeout.
 Index database: a zero-byte or corrupt index file is detected as
 stale and rebuilt automatically instead of breaking that dictionary
 until the file is deleted by hand.
+
+@item
+Eldoc mode shows dictionary definitions; previously the echo
+area was cleared immediately after the definition appeared.
+@item
+Headword completion keeps candidates that differ from the input
+only in case or accents, so typing @samp{cafe} offers @samp{Café}.
+@item
+Full-text indexing no longer fails for a whole dictionary when an
+entry contains an out-of-range numeric HTML entity.
+@item
+The transient menu binds @strong{Reorder dictionaries} to @samp{O}; it
+previously shared @samp{r} with @strong{Forward} and was unreachable.
+@item
+@samp{j} (jump to section) and @samp{p} (previous section) work in
+single-dictionary results, whose only header starts at the top of
+the buffer.
+@item
+Enabling scan mode while it is already on no longer leaves an
+extra idle timer running.
+@item
+Full-text search results keep their query separate from the
+headword state: @samp{g} reruns the search, and bookmarking a search page
+is refused instead of storing a bogus headword.
+@item
+Sound links and images in HTML dictionaries can no longer
+reference files outside the dictionary's folder, and companion-zip
+resource names are passed to @samp{unzip} literally.
 @end itemize
 
 @node Future features

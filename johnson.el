@@ -349,7 +349,14 @@ Only used when `johnson-dictionary-groups' is non-nil.")
   "Hash table mapping dictionary file paths to open sqlite connections.")
 
 (defvar-local johnson--current-word nil
-  "The currently displayed lookup word.")
+  "The currently displayed lookup word, or nil.
+Nil while the results buffer shows a full-text search; see
+`johnson--current-fts-query'.")
+
+(defvar-local johnson--current-fts-query nil
+  "The full-text search query displayed in the results buffer, or nil.
+Set by `johnson-search' and cleared by a headword lookup, so
+`johnson-refresh' can rerun the search instead of a headword lookup.")
 
 (defvar-local johnson--nav-history nil
   "Navigation history list of looked-up words.")
@@ -660,7 +667,7 @@ an @samp{<all>} option for flexible filtering."
           (setq johnson--current-custom-group selection
                 johnson-default-search-scope 'group))
         (message "johnson: scope set to %s" (johnson--format-scope))
-        (when johnson--current-word
+        (when (johnson--displaying-p)
           (johnson-refresh)))
     ;; Auto-detected groups: two-step source/target selection.
     (let* ((all-label "<all>")
@@ -678,7 +685,7 @@ an @samp{<all>} option for flexible filtering."
           (setq johnson-default-search-scope 'group)
         (setq johnson-default-search-scope 'all))
       (message "johnson: scope set to %s" (johnson--format-scope))
-      (when johnson--current-word
+      (when (johnson--displaying-p)
         (johnson-refresh)))))
 
 ;;;; Indexing
@@ -1167,7 +1174,39 @@ database queries across all dictionaries."
               (setq last-candidates (delete-dups candidates))
               (setq last-truncated
                     (>= (length last-candidates) query-limit)))))
-        (complete-with-action action last-candidates string pred)))))
+        (johnson--complete-normalized action last-candidates string pred)))))
+
+(defun johnson--complete-normalized (action candidates string pred)
+  "Perform completion ACTION on CANDIDATES for STRING, matching normalized.
+Like `complete-with-action', except that a candidate matches when its
+`johnson-db-normalize'd form starts with the normalized STRING, so
+headwords that differ from the input only in case or diacritics are
+kept.  PRED, when non-nil, must accept a candidate for it to match.
+ACTION t returns all matches; `lambda' tests whether STRING is a
+candidate; nil returns t for a unique exact match, the sole match when
+there is one, the longest common prefix of the matches when it extends
+STRING, STRING itself when matches exist, and nil otherwise."
+  (let* ((normalized (johnson-db-normalize string))
+         (matches (cl-remove-if-not
+                   (lambda (candidate)
+                     (and (string-prefix-p normalized
+                                           (johnson-db-normalize candidate))
+                          (or (null pred) (funcall pred candidate))))
+                   candidates)))
+    (pcase action
+      ('t matches)
+      ('lambda (and (member string candidates) t))
+      ('nil
+       (cond
+        ((null matches) nil)
+        ((and (null (cdr matches)) (equal (car matches) string)) t)
+        ((null (cdr matches)) (car matches))
+        (t (let ((common (try-completion "" matches)))
+             (if (and (stringp common)
+                      (> (length common) (length string)))
+                 common
+               string)))))
+      (_ nil))))
 
 ;;;; Query
 
@@ -1368,6 +1407,7 @@ CONTEXT is the display context and ENTRY the history log object; see
         (setq johnson--nav-history nav-hist)
         (setq johnson--nav-position nav-pos)
         (setq johnson--current-word word)
+        (setq johnson--current-fts-query nil)
         (setq johnson--lookup-id (or (plist-get context :lookup-id)
                                      (cl-incf johnson--lookup-counter)))
         (setq johnson--lookup-plan plan)
@@ -1831,12 +1871,15 @@ A dictionary that produced no section leaves the buffer untouched."
   "Move to the previous dictionary section header."
   (interactive)
   (let ((pos (previous-single-property-change (point) 'johnson-section-header)))
+    ;; POS is the end of the previous header when point is past it; step
+    ;; back to its start, which is `point-min' when the property runs to
+    ;; the buffer start and `previous-single-property-change' returns nil.
+    (when (and pos (not (get-text-property pos 'johnson-section-header)))
+      (setq pos (or (previous-single-property-change pos 'johnson-section-header)
+                    (and (get-text-property (point-min) 'johnson-section-header)
+                         (point-min)))))
     (if pos
-        (progn
-          ;; Go to the start of this header region.
-          (unless (get-text-property pos 'johnson-section-header)
-            (setq pos (previous-single-property-change pos 'johnson-section-header)))
-          (when pos (goto-char pos)))
+        (goto-char pos)
       (message "No previous section"))))
 
 (defun johnson-prev-section-header ()
@@ -1851,10 +1894,13 @@ Alias for `johnson-prev-section', bound to \"P\" for symmetry with
   (interactive)
   (let ((sections nil)
         (pos (point-min)))
-    (while (setq pos (next-single-property-change pos 'johnson-section-header))
+    ;; Examine `point-min' itself: a single-dictionary result has no
+    ;; table of contents, so its only header starts there.
+    (while pos
       (when-let* ((name (get-text-property pos 'johnson-section-header)))
         (unless (equal name "Contents")
-          (push (cons name pos) sections))))
+          (push (cons name pos) sections)))
+      (setq pos (next-single-property-change pos 'johnson-section-header)))
     (if sections
         (let* ((sections (nreverse sections))
                (names (mapcar #'car sections))
@@ -1985,14 +2031,21 @@ identity."
   (johnson-lookup))
 
 (defun johnson-refresh ()
-  "Re-display the current word."
+  "Re-display the current word, or rerun the current full-text search."
   (interactive)
-  (when johnson--current-word
+  (cond
+   (johnson--current-fts-query
+    (johnson-search johnson--current-fts-query))
+   (johnson--current-word
     (let ((word johnson--current-word)
           (johnson--navigating-history t))
       (johnson--display-lookup
        word (johnson--lookup-plan word (johnson--dictionaries-by-priority))
-       '(:no-history t)))))
+       '(:no-history t))))))
+
+(defun johnson--displaying-p ()
+  "Return non-nil when the current buffer shows a lookup or full-text search."
+  (or johnson--current-word johnson--current-fts-query))
 
 ;;;; Navigation history
 
@@ -2500,13 +2553,16 @@ Skip extraction if already cached or previously failed."
          (cached (expand-file-name (file-name-nondirectory filename) cache-dir))
          (neg-marker (concat cached ".missing")))
     (cond
+     ;; unzip parses a member argument starting with `-' as an option.
+     ((string-prefix-p "-" filename) nil)
      ((file-exists-p cached) cached)
      ((file-exists-p neg-marker) nil)
      (t
       (make-directory (file-name-directory cached) t)
       (with-temp-buffer
         (set-buffer-multibyte nil)
-        (let ((code (call-process "unzip" nil t nil "-p" zip-path filename)))
+        (let ((code (call-process "unzip" nil t nil "-p" zip-path
+                                  (johnson--unzip-member-pattern filename))))
           (when (and (zerop code) (> (buffer-size) 0))
             (let ((coding-system-for-write 'no-conversion))
               (write-region (point-min) (point-max) cached nil 'silent)))))
@@ -2514,6 +2570,13 @@ Skip extraction if already cached or previously failed."
           cached
         (write-region "" nil neg-marker nil 'silent)
         nil)))))
+
+(defun johnson--unzip-member-pattern (filename)
+  "Return FILENAME escaped for use as a literal unzip member pattern.
+unzip treats `*', `?', `[' and `\\' in member arguments as wildcard
+syntax; a backslash before each makes the archive member named
+FILENAME match literally."
+  (replace-regexp-in-string "[*?[\\\\]" "\\\\\\&" filename))
 
 (defun johnson--find-resource-zips (dir)
   "Return all `.dsl.files.zip' archives in DIR, or nil."
@@ -2659,7 +2722,7 @@ is missing.  Respects `johnson-display-images'."
   (interactive)
   (setq johnson-display-images (not johnson-display-images))
   (message "Images %s" (if johnson-display-images "enabled" "disabled"))
-  (when (and johnson--current-word (derived-mode-p 'johnson-mode))
+  (when (and (johnson--displaying-p) (derived-mode-p 'johnson-mode))
     (johnson-refresh)))
 
 ;;;; Wildcard search
@@ -2721,7 +2784,12 @@ Returns plain text suitable for FTS indexing or eldoc display."
     (while (re-search-forward "&quot;" nil t) (replace-match "\"" t t))
     (goto-char (point-min))
     (while (re-search-forward "&#\\([0-9]+\\);" nil t)
-      (replace-match (string (string-to-number (match-string 1))) t t))
+      ;; Leave entities outside the character range in place: `string'
+      ;; signals on them, which would abort FTS indexing of the whole
+      ;; dictionary.
+      (let ((code (string-to-number (match-string 1))))
+        (when (and (> code 0) (<= code (max-char)))
+          (replace-match (string code) t t))))
     ;; Phase 3: collapse whitespace and trim.
     (goto-char (point-min))
     (while (re-search-forward "[ \t\n\r]+" nil t)
@@ -2762,7 +2830,8 @@ Requires `johnson-fts-enabled' to have been non-nil during indexing."
               (johnson-mode))
             (johnson--reset-render-state)
             (erase-buffer)
-            (setq johnson--current-word (format "[FTS: %s]" query))
+            (setq johnson--current-word nil)
+            (setq johnson--current-fts-query query)
             (insert (propertize (format "Full-text search: \"%s\" (%d results)\n\n"
                                         query (length results))
                                 'face 'johnson-section-header-face))
@@ -2797,11 +2866,12 @@ Requires `johnson-fts-enabled' to have been non-nil during indexing."
 
 (defun johnson-eldoc-function (callback &rest _args)
   "Eldoc documentation function for johnson dictionaries.
-CALLBACK is called with the definition string."
+CALLBACK is called with the definition string.  Return non-nil when a
+definition was delivered through CALLBACK, nil otherwise."
   (when-let* ((word (thing-at-point 'word t)))
     (let ((cached (gethash word johnson--eldoc-cache)))
       (if cached
-          (funcall callback cached)
+          (johnson--eldoc-deliver callback cached)
         (condition-case nil
             (progn
               (johnson--ensure-dictionaries)
@@ -2829,9 +2899,16 @@ CALLBACK is called with the definition string."
                       (when (> (hash-table-count johnson--eldoc-cache) 50)
                         (clrhash johnson--eldoc-cache))
                       (puthash word truncated johnson--eldoc-cache)
-                      (funcall callback truncated))))))
-          (error nil)))))
-  nil)
+                      (johnson--eldoc-deliver callback truncated))))))
+          (error nil))))))
+
+(defun johnson--eldoc-deliver (callback doc)
+  "Pass DOC to the eldoc CALLBACK and return non-nil.
+The non-nil return tells `eldoc--invoke-strategy' that the callback
+carries the documentation; returning nil after calling CALLBACK makes
+the default strategy clear the echo area it just filled."
+  (funcall callback doc)
+  t)
 
 ;;;###autoload
 (define-minor-mode johnson-eldoc-mode
@@ -2920,6 +2997,12 @@ When enabled, looking up words via selection or idle timer."
   :global t
   :lighter " JScan"
   :group 'johnson
+  ;; Tear down first in both directions: enabling an already enabled
+  ;; mode reruns this body, and must not leak the previous idle timer.
+  (remove-hook 'activate-mark-hook #'johnson-scan--on-selection)
+  (when johnson--scan-idle-timer
+    (cancel-timer johnson--scan-idle-timer)
+    (setq johnson--scan-idle-timer nil))
   (if johnson-scan-mode
       (progn
         (when (memq johnson-scan-trigger '(selection both))
@@ -2928,10 +3011,6 @@ When enabled, looking up words via selection or idle timer."
           (setq johnson--scan-idle-timer
                 (run-with-idle-timer johnson-scan-idle-delay t
                                      #'johnson-scan--on-idle))))
-    (remove-hook 'activate-mark-hook #'johnson-scan--on-selection)
-    (when johnson--scan-idle-timer
-      (cancel-timer johnson--scan-idle-timer)
-      (setq johnson--scan-idle-timer nil))
     (setq johnson--scan-last-word nil)))
 
 ;;;; Bookmarks

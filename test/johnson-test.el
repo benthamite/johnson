@@ -471,5 +471,177 @@ Cleans up afterwards."
                                   (buffer-substring-no-properties
                                    (point-min) (point-max)))))))))
 
+;;;; Eldoc
+
+(ert-deftest johnson-test-eldoc-keeps-synchronous-doc ()
+  "Eldoc's default strategy keeps a definition delivered via the callback.
+The hook function must not return nil after calling CALLBACK, or
+`eldoc--invoke-strategy' clears the echo area it just filled."
+  (require 'eldoc)
+  (let ((johnson--eldoc-cache (make-hash-table :test #'equal))
+        (displayed nil)
+        (cleared nil))
+    (puthash "apple" "a round fruit" johnson--eldoc-cache)
+    (with-temp-buffer
+      (insert "apple")
+      (goto-char (point-min))
+      (setq-local eldoc-documentation-functions
+                  (list #'johnson-eldoc-function))
+      (let ((eldoc-documentation-strategy #'eldoc-documentation-default)
+            (eldoc-display-functions
+             (list (lambda (docs _interactive)
+                     (setq displayed (mapcar #'car docs))))))
+        (cl-letf (((symbol-function 'eldoc--message)
+                   (lambda (&optional string)
+                     (unless string (setq cleared t)))))
+          (eldoc--invoke-strategy t))))
+    (should (equal displayed '("a round fruit")))
+    (should-not cleared)))
+
+;;;; Completion table
+
+(ert-deftest johnson-test-completion-table-keeps-normalized-matches ()
+  "Completion keeps candidates that match only after normalization.
+The database matches by case- and accent-folded prefix; the table must
+not drop those rows again with a raw-string prefix filter."
+  (johnson-test--with-env
+    (let* ((dict-path (expand-file-name "completion-test.dsl"
+                                        temp-cache))
+           (johnson-db--completion-db nil)
+           (johnson-completion-min-chars 3))
+      (with-temp-file dict-path (insert "x"))
+      (let ((db (johnson-db-open dict-path)))
+        (johnson-db-insert-entries-batch
+         db '(("Café" 0 1) ("café au lait" 2 1) ("cafeteria" 3 1)))
+        (johnson-db-close db))
+      (johnson-db-rebuild-completion-index (list dict-path))
+      (unwind-protect
+          (let* ((table (johnson--completion-table))
+                 (all (funcall table "cafe" nil t)))
+            (should (member "Café" all))
+            (should (member "café au lait" all))
+            (should (member "cafeteria" all))
+            ;; A lone normalized match completes to the raw headword.
+            (should (equal (funcall table "cafe a" nil nil) "café au lait"))
+            ;; Exact-match testing still uses the raw headword.
+            (should (funcall table "Café" nil 'lambda))
+            (should-not (funcall table "cafe" nil 'lambda)))
+        (johnson-db-close-completion-db)))))
+
+;;;; Plain-text conversion
+
+(ert-deftest johnson-test-plain-text-ignores-oversized-entity ()
+  "A numeric entity beyond `max-char' is left in place instead of erroring."
+  (should (equal (johnson--entry-to-plain-text "a &#5000000; b" "mdict")
+                 "a &#5000000; b"))
+  (should (equal (johnson--entry-to-plain-text "a &#65; b" "mdict") "a A b")))
+
+;;;; Transient menu
+
+(defun johnson-test--layout-keys (tree)
+  "Return every `:key' string found in the transient layout TREE."
+  (let ((keys nil))
+    (cl-labels ((walk (node)
+                  (cond
+                   ((and (consp node) (plist-member node :key)
+                         (stringp (plist-get node :key)))
+                    (push (plist-get node :key) keys))
+                   ((consp node) (walk (car node)) (walk (cdr node)))
+                   ((vectorp node) (mapc #'walk node)))))
+      (walk tree))
+    (nreverse keys)))
+
+(ert-deftest johnson-test-menu-keys-are-unique ()
+  "No key in `johnson-menu' is bound to two different suffixes."
+  (require 'johnson-transient)
+  (let* ((keys (johnson-test--layout-keys
+                (get 'johnson-menu 'transient--layout)))
+         (dupes (cl-remove-if-not
+                 (lambda (k) (> (cl-count k keys :test #'equal) 1))
+                 (delete-dups (copy-sequence keys)))))
+    (should (member "O" keys))
+    (should (equal dupes nil))))
+
+;;;; Section navigation
+
+(ert-deftest johnson-test-section-navigation-header-at-point-min ()
+  "A header at the buffer start is reachable by `j' and `p'.
+Single-dictionary results render no table of contents, so their only
+header starts at `point-min'."
+  (with-temp-buffer
+    (johnson--insert-section-header "Oxford")
+    (insert "\nentry text\n\n")
+    (goto-char (point-max))
+    (johnson-prev-section)
+    (should (= (point) (point-min)))
+    (goto-char (point-max))
+    (let ((offered nil))
+      (cl-letf (((symbol-function 'completing-read)
+                 (lambda (_prompt names &rest _)
+                   (setq offered names) (car names))))
+        (johnson-jump-to-section))
+      (should (equal offered '("Oxford")))
+      (should (= (point) (point-min))))))
+
+;;;; Scan mode
+
+(ert-deftest johnson-test-scan-mode-reenable-does-not-leak-timer ()
+  "Enabling `johnson-scan-mode' twice leaves one idle timer, disabling none."
+  (let ((johnson-scan-trigger 'idle)
+        (johnson--scan-idle-timer nil))
+    (cl-flet ((timers ()
+                (cl-count #'johnson-scan--on-idle timer-idle-list
+                          :key #'timer--function)))
+      (unwind-protect
+          (progn
+            (johnson-scan-mode 1)
+            (johnson-scan-mode 1)
+            (should (= (timers) 1))
+            (johnson-scan-mode -1)
+            (should (= (timers) 0)))
+        (johnson-scan-mode -1)
+        (cancel-function-timers #'johnson-scan--on-idle)))))
+
+;;;; Full-text search buffer state
+
+(ert-deftest johnson-test-fts-buffer-keeps-query-separately ()
+  "FTS results keep their query out of `johnson--current-word'.
+Refreshing re-runs the full-text search and bookmarking refuses the
+pseudo-headword."
+  (johnson-test--with-env
+    (let ((queries nil)
+          (johnson--bookmarks nil)
+          (johnson--bookmarks-loaded t))
+      (cl-letf (((symbol-function 'johnson--query-all-fts)
+                 (lambda (query)
+                   (push query queries)
+                   (list (list (list :name "Fake" :path "/fake")
+                               "apple" ">>>fruit<<< snippet"))))
+                ((symbol-function 'johnson--ensure-indexed)
+                 (lambda () t))
+                ((symbol-function 'johnson--save-bookmarks) #'ignore))
+        (save-window-excursion
+          (johnson-search "fruit")
+          (with-current-buffer "*johnson*"
+            (should (equal johnson--current-fts-query "fruit"))
+            (should-not johnson--current-word)
+            (should (string-match-p "Full-text search: \"fruit\" (1 results)"
+                                    (buffer-substring-no-properties
+                                     (point-min) (point-max))))
+            (johnson-refresh)
+            (should (equal queries '("fruit" "fruit")))
+            (should-error (johnson-bookmark-add) :type 'user-error)
+            (should-not johnson--bookmarks)))))))
+
+;;;; Resource extraction argument safety
+
+(ert-deftest johnson-test-unzip-member-pattern-escapes-globs ()
+  "Unzip glob characters in a resource name are escaped literally."
+  (should (equal (johnson--unzip-member-pattern "a[1]*?.mp3")
+                 "a\\[1]\\*\\?.mp3"))
+  (should (equal (johnson--unzip-member-pattern "back\\slash")
+                 "back\\\\slash"))
+  (should (equal (johnson--unzip-member-pattern "plain.mp3") "plain.mp3")))
+
 (provide 'johnson-test)
 ;;; johnson-test.el ends here

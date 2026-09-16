@@ -422,5 +422,56 @@ scan position rewound behind the current href and re-matched forever."
       (should (equal (get-text-property (point-min) 'johnson-audio-file)
                      "/cache/audio.mp3")))))
 
+;;;; Resource path confinement
+
+(defun johnson-html-test--audio-files ()
+  "Return the audio file paths of every audio button in the current buffer."
+  (let ((files nil) (pos (point-min)))
+    (while pos
+      (when-let* ((file (get-text-property pos 'johnson-audio-file)))
+        (push file files))
+      (setq pos (next-single-property-change pos 'johnson-audio-file)))
+    (nreverse files)))
+
+(ert-deftest johnson-html-test-sound-link-rejects-escaping-paths ()
+  "sound:// names that leave the dictionary directory get no audio button."
+  (let ((dir (make-temp-file "johnson-html-test-" t)))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((johnson-html--current-dict-dir (file-name-as-directory dir)))
+            (insert "<a href=\"sound://../outside.wav\">a</a> "
+                    "<a href=\"sound:///etc/passwd\">b</a> "
+                    "<a href=\"sound://~/secret.wav\">c</a> "
+                    "<a href=\"sound://sub/inside.wav\">d</a>")
+            (johnson-html-render-region (point-min) (point-max))
+            (should (equal (johnson-html-test--audio-files)
+                           (list (expand-file-name "sub/inside.wav" dir))))))
+      (delete-directory dir t))))
+
+(ert-deftest johnson-html-test-img-rejects-escaping-paths ()
+  "<img src> names that leave the dictionary directory are not resolved."
+  (let* ((parent (make-temp-file "johnson-html-test-" t))
+         (dir (file-name-as-directory (expand-file-name "dict" parent))))
+    (make-directory dir)
+    (with-temp-file (expand-file-name "outside.png" parent) (insert "x"))
+    (with-temp-file (expand-file-name "inside.png" dir) (insert "x"))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((johnson-html--current-dict-dir dir)
+                (johnson-display-images nil))
+            (insert (format "<img src=\"../outside.png\"><img src=\"%s\">"
+                            (expand-file-name "outside.png" parent)))
+            (johnson-html-render-region (point-min) (point-max))
+            (should (equal (buffer-substring-no-properties (point-min)
+                                                           (point-max))
+                           ""))
+            (erase-buffer)
+            (insert "<img src=\"inside.png\">")
+            (johnson-html-render-region (point-min) (point-max))
+            (should (equal (buffer-substring-no-properties (point-min)
+                                                           (point-max))
+                           "[image: inside.png]"))))
+      (delete-directory parent t))))
+
 (provide 'johnson-html-test)
 ;;; johnson-html-test.el ends here

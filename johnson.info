@@ -670,7 +670,9 @@ File: johnson.info,  Node: Completion behavior,  Next: Rendering performance,  P
 The user option ‘johnson-completion-min-chars’ sets the minimum number
 of characters you must type before completion candidates are fetched
 from the headword index.  Shorter inputs return no candidates, avoiding
-expensive prefix queries against the full index.
+expensive prefix queries against the full index.  Candidates are matched
+case- and accent-insensitively, so typing ‘cafe’ offers ‘Café’ and ‘café
+au lait’.
 
    The default value is ‘3’ (type: ‘natnum’).  You may want to lower
 this for small dictionary collections where prefix queries are fast, or
@@ -2448,6 +2450,26 @@ interface layers.  The fixes below each carry a regression test.
      stale and rebuilt automatically instead of breaking that dictionary
      until the file is deleted by hand.
 
+   • Eldoc mode shows dictionary definitions; previously the echo area
+     was cleared immediately after the definition appeared.
+   • Headword completion keeps candidates that differ from the input
+     only in case or accents, so typing ‘cafe’ offers ‘Café’.
+   • Full-text indexing no longer fails for a whole dictionary when an
+     entry contains an out-of-range numeric HTML entity.
+   • The transient menu binds *Reorder dictionaries* to ‘O’; it
+     previously shared ‘r’ with *Forward* and was unreachable.
+   • ‘j’ (jump to section) and ‘p’ (previous section) work in
+     single-dictionary results, whose only header starts at the top of
+     the buffer.
+   • Enabling scan mode while it is already on no longer leaves an extra
+     idle timer running.
+   • Full-text search results keep their query separate from the
+     headword state: ‘g’ reruns the search, and bookmarking a search
+     page is refused instead of storing a bogus headword.
+   • Sound links and images in HTML dictionaries can no longer reference
+     files outside the dictionary's folder, and companion-zip resource
+     names are passed to ‘unzip’ literally.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2778,79 +2800,79 @@ Node: Scan-popup mode21840
 Node: Bookmarks23027
 Node: History buffer23637
 Node: Completion behavior24475
-Node: Rendering performance25173
-Node: Commands28625
-Node: Looking up words29253
-Node: Indexing dictionaries31537
-Node: Managing groups and scope33214
-Node: Navigating the results buffer34304
-Node: Following cross-references36686
-Node: Navigation history37595
-Node: Copying entries39003
-Node: Dictionary list40255
-Node: Cache management41666
-Node: Toggling images43392
-Node: Searching definitions43898
-Node: Eldoc integration commands44629
-Node: Scan-popup mode commands45534
-Node: Managing bookmarks46311
-Node: Browsing history47456
-Node: Browsing dictionary files48386
-Node: Clearing the index48932
-Node: Reordering dictionaries49628
-Node: Importing GoldenDict order50791
-Node: Transient menu51638
-Node: Functions52498
-Node: Format registration53201
-Node: Completion at point56771
-Node: Database lifecycle57674
-Node: Metadata storage58573
-Node: Headword normalization59744
-Node: Entry insertion60581
-Node: Querying entries61593
-Node: Staleness detection and reset62903
-Node: Wildcard and full-text search queries64333
-Node: Completion index65691
-Node: DSL format detection67003
-Node: DSL metadata parsing67966
-Node: DSL index building68977
-Node: DSL entry retrieval71005
-Node: DSL entry rendering71911
-Node: StarDict backend74114
-Node: MDict backend75841
-Node: BGL backend77438
-Node: DICT protocol backend78627
-Node: Dictzip backend80056
-Node: HTML rendering81070
-Node: RIPEMD-128 hashing82625
-Node: Audio playback functions83394
-Node: EPWING backend84220
-Node: EBZIP backend85979
-Node: Faces86925
-Node: Text styling faces87441
-Node: Content type faces88145
-Node: Link faces89406
-Node: Section header face90065
-Node: Color faces90653
-Node: UI faces92057
-Node: Tips92756
-Node: Looking up words in PDF documents92894
-Node: Roadmap94491
-Node: Version 01 --- DSL95228
-Node: Version 02 --- StarDict and compressed DSL96228
-Node: Version 03 --- MDict and DSL abbreviations97521
-Node: Version 04 --- BGL DICT and more98019
-Node: Version 05 --- EPWING99370
-Node: Version 06 --- EPWING improvements and audits100162
-Node: Version 07 --- Progressive rendering100632
-Node: Version 08 (current) --- Robustness fixes101719
-Node: Future features104378
-Node: Contributing104683
-Node: AI assistance105114
-Node: Running the test suite105619
-Node: Indices106001
-Node: Function index106139
-Node: Variable index118181
+Node: Rendering performance25294
+Node: Commands28746
+Node: Looking up words29374
+Node: Indexing dictionaries31658
+Node: Managing groups and scope33335
+Node: Navigating the results buffer34425
+Node: Following cross-references36807
+Node: Navigation history37716
+Node: Copying entries39124
+Node: Dictionary list40376
+Node: Cache management41787
+Node: Toggling images43513
+Node: Searching definitions44019
+Node: Eldoc integration commands44750
+Node: Scan-popup mode commands45655
+Node: Managing bookmarks46432
+Node: Browsing history47577
+Node: Browsing dictionary files48507
+Node: Clearing the index49053
+Node: Reordering dictionaries49749
+Node: Importing GoldenDict order50912
+Node: Transient menu51759
+Node: Functions52619
+Node: Format registration53322
+Node: Completion at point56892
+Node: Database lifecycle57795
+Node: Metadata storage58694
+Node: Headword normalization59865
+Node: Entry insertion60702
+Node: Querying entries61714
+Node: Staleness detection and reset63024
+Node: Wildcard and full-text search queries64454
+Node: Completion index65812
+Node: DSL format detection67124
+Node: DSL metadata parsing68087
+Node: DSL index building69098
+Node: DSL entry retrieval71126
+Node: DSL entry rendering72032
+Node: StarDict backend74235
+Node: MDict backend75962
+Node: BGL backend77559
+Node: DICT protocol backend78748
+Node: Dictzip backend80177
+Node: HTML rendering81191
+Node: RIPEMD-128 hashing82746
+Node: Audio playback functions83515
+Node: EPWING backend84341
+Node: EBZIP backend86100
+Node: Faces87046
+Node: Text styling faces87562
+Node: Content type faces88266
+Node: Link faces89527
+Node: Section header face90186
+Node: Color faces90774
+Node: UI faces92178
+Node: Tips92877
+Node: Looking up words in PDF documents93015
+Node: Roadmap94612
+Node: Version 01 --- DSL95349
+Node: Version 02 --- StarDict and compressed DSL96349
+Node: Version 03 --- MDict and DSL abbreviations97642
+Node: Version 04 --- BGL DICT and more98140
+Node: Version 05 --- EPWING99491
+Node: Version 06 --- EPWING improvements and audits100283
+Node: Version 07 --- Progressive rendering100753
+Node: Version 08 (current) --- Robustness fixes101840
+Node: Future features105694
+Node: Contributing105999
+Node: AI assistance106430
+Node: Running the test suite106935
+Node: Indices107317
+Node: Function index107455
+Node: Variable index119497
 
 End Tag Table
 
