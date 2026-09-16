@@ -6,7 +6,7 @@
 ;; Assisted-by: various LLMs (Claude, Codex)
 ;; Maintainer: Pablo Stafforini <pablostafforini@gmail.com>
 ;; URL: https://github.com/benthamite/johnson
-;; Version: 0.7.0
+;; Version: 0.8.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: dictionaries, i18n
 
