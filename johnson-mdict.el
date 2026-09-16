@@ -796,7 +796,9 @@ Returns the final entry data string, following up to
 `johnson-mdict--max-link-depth' redirects.  DEPTH tracks
 recursion level.  Uses the SQLite index for fast lookup."
   (let ((d (or depth 0))
-        (target (string-trim target)))
+        ;; Indexed headwords are cleaned by the shared indexing path, so
+        ;; a target that carries markup must be cleaned to match them.
+        (target (or (johnson-html-clean-headword target) "")))
     (when (>= d johnson-mdict--max-link-depth)
       (error "MDict: @@@LINK= redirect loop for %s" target))
     ;; Look up the target headword via the SQLite index.

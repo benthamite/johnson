@@ -2734,6 +2734,10 @@ indexing reports how many such lines were reclassified.
 Headwords are stored without HTML markup for every format, so
 @samp{Belén<sup>1</sup>} indexes as @samp{Belén} and @samp{H<sub>2</sub>O} as
 @samp{H2O}, and markup-only keys are dropped.
+
+@item
+MDict: @samp{@@@@@@LINK=} redirect targets are cleaned the same way as
+indexed headwords, so links to keys that carried markup still resolve.
 @end itemize
 
 @node Future features

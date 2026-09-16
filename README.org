@@ -2526,6 +2526,9 @@ interface layers.  The fixes below each carry a regression test.
   =Belén<sup>1</sup>= indexes as =Belén= and =H<sub>2</sub>O= as
   =H2O=, and markup-only keys are dropped.
 
+- [X] MDict: =@@@LINK== redirect targets are cleaned the same way as
+  indexed headwords, so links to keys that carried markup still resolve.
+
 ** Future features
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-future

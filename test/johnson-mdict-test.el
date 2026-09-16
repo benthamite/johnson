@@ -558,5 +558,41 @@
     (should (string-suffix-p "-x.png" name))
     (should (equal name (johnson-mdict--resource-cache-name "/img/x.png")))))
 
+;;;; Headword cleaning
+
+(ert-deftest johnson-mdict-test-build-index-passes-raw-keys ()
+  "The backend hands raw keys to the callback; cleaning is done upstream."
+  (johnson-mdict-test--cleanup)
+  (let ((path "/nonexistent/cleaning.mdx")
+        (calls nil))
+    (cl-letf (((symbol-function 'johnson-mdict--parse-keyword-section)
+               (lambda (_path)
+                 (list (cons "H<sub>2</sub> Receptor Antagonists" 0)
+                       (cons "R &amp; D" 250)
+                       (cons "<div class=\"calibre1\">" 400)
+                       (cons "plain" 500)))))
+      (unwind-protect
+          (progn
+            (johnson-mdict-build-index
+             path (lambda (headword offset size)
+                    (push (list headword offset size) calls)))
+            (should (equal (nreverse calls)
+                           '(("H<sub>2</sub> Receptor Antagonists" 0 0)
+                             ("R &amp; D" 250 0)
+                             ("<div class=\"calibre1\">" 400 0)
+                             ("plain" 500 0)))))
+        (johnson-mdict-test--cleanup)))))
+
+(ert-deftest johnson-mdict-test-resolve-link-cleans-target ()
+  "Link targets are cleaned with the shared headword cleaner before lookup."
+  (let ((queries nil))
+    (cl-letf (((symbol-function 'johnson-db-open) (lambda (_path) 'db))
+              ((symbol-function 'johnson-db-close) (lambda (_db) nil))
+              ((symbol-function 'johnson-db-query-exact)
+               (lambda (_db word) (push word queries) nil)))
+      (johnson-mdict--resolve-link "/nonexistent/link.mdx"
+                                   " H<sub>2</sub> Receptor Antagonists ")
+      (should (equal queries '("H2 Receptor Antagonists"))))))
+
 (provide 'johnson-mdict-test)
 ;;; johnson-mdict-test.el ends here

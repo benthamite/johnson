@@ -2568,6 +2568,10 @@ interface layers.  The fixes below each carry a regression test.
      ‘Belén<sup>1</sup>’ indexes as ‘Belén’ and ‘H<sub>2</sub>O’ as
      ‘H2O’, and markup-only keys are dropped.
 
+   • MDict: ‘@@@LINK=’ redirect targets are cleaned the same way as
+     indexed headwords, so links to keys that carried markup still
+     resolve.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2966,13 +2970,13 @@ Node: Version 05 --- EPWING102308
 Node: Version 06 --- EPWING improvements and audits103100
 Node: Version 07 --- Progressive rendering103570
 Node: Version 08 (current) --- Robustness fixes104657
-Node: Future features111503
-Node: Contributing111808
-Node: AI assistance112239
-Node: Running the test suite112744
-Node: Indices113126
-Node: Function index113264
-Node: Variable index125444
+Node: Future features111659
+Node: Contributing111964
+Node: AI assistance112395
+Node: Running the test suite112900
+Node: Indices113282
+Node: Function index113420
+Node: Variable index125600
 
 End Tag Table
 
