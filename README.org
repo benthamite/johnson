@@ -2503,6 +2503,15 @@ interface layers.  The fixes below each carry a regression test.
   indexing prompt, so fixes that change what gets indexed apply
   without manual reindexing.
 
+- [X] DSL: headword lines that carry formatting tags (part of speech,
+  feminine endings, italics) are indexed as the clean headword, so
+  entries such as =lexicógrafo= are found instead of being stored as
+  fragments of the tags.
+- [X] DSL: body text that a converter left without indentation
+  (recognisable by margin tags or excessive length) is kept inside its
+  entry instead of being indexed as a multi-kilobyte headword;
+  indexing reports how many such lines were reclassified.
+
 ** Future features
 :PROPERTIES:
 :CUSTOM_ID: h:roadmap-future

@@ -2546,6 +2546,15 @@ interface layers.  The fixes below each carry a regression test.
      prompt, so fixes that change what gets indexed apply without manual
      reindexing.
 
+   • DSL: headword lines that carry formatting tags (part of speech,
+     feminine endings, italics) are indexed as the clean headword, so
+     entries such as ‘lexicógrafo’ are found instead of being stored as
+     fragments of the tags.
+   • DSL: body text that a converter left without indentation
+     (recognisable by margin tags or excessive length) is kept inside
+     its entry instead of being indexed as a multi-kilobyte headword;
+     indexing reports how many such lines were reclassified.
+
 
 File: johnson.info,  Node: Future features,  Prev: Version 08 (current) --- Robustness fixes,  Up: Roadmap
 
@@ -2942,13 +2951,13 @@ Node: Version 05 --- EPWING101764
 Node: Version 06 --- EPWING improvements and audits102556
 Node: Version 07 --- Progressive rendering103026
 Node: Version 08 (current) --- Robustness fixes104113
-Node: Future features110245
-Node: Contributing110550
-Node: AI assistance110981
-Node: Running the test suite111486
-Node: Indices111868
-Node: Function index112006
-Node: Variable index124048
+Node: Future features110757
+Node: Contributing111062
+Node: AI assistance111493
+Node: Running the test suite111998
+Node: Indices112380
+Node: Function index112518
+Node: Variable index124560
 
 End Tag Table
 

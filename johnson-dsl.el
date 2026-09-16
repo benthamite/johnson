@@ -514,16 +514,50 @@ parts ((opt)), and escaped characters.  Returns a list of strings."
   ;; Strip DSL media/link markers ({{...}}) which should never appear
   ;; in headwords but may if body text lacks proper indentation.
   (let* ((cleaned (replace-regexp-in-string "{{\\(?:[^}]\\|}[^}]\\)*}}" "" headword))
+         ;; Remove formatting tags before any brace or paren expansion, so
+         ;; the "/" of a closing tag is never taken for an alternation.
+         (cleaned (johnson-dsl--strip-headword-tags cleaned))
          ;; First split on {/} markers.
          (split (johnson-dsl--split-on-slash cleaned))
          ;; Then expand alternations and optionals on each part.
          (expanded (cl-mapcan #'johnson-dsl--expand-alternations split))
          (expanded (cl-mapcan #'johnson-dsl--expand-optionals expanded))
-         (expanded (mapcar #'johnson-dsl--unescape-headword expanded)))
+         (expanded (mapcar #'johnson-dsl--unescape-headword expanded))
+         (expanded (delete "" (mapcar #'string-trim expanded))))
     ;; Cap to prevent exponential blowup from pathological input.
     (when (> (length expanded) johnson-dsl--max-headword-variants)
       (setq expanded (seq-take expanded johnson-dsl--max-headword-variants)))
-    (or expanded (list (johnson-dsl--unescape-headword headword)))))
+    expanded))
+
+(defconst johnson-dsl--headword-annotation-re
+  (concat "\\[\\(p\\|com\\|c\\(?: [^]]*\\)?\\)\\]"
+          "[^][{}]*"
+          "\\[/\\(?:p\\|com\\|c\\)\\]")
+  "Regexp matching a `[p]', `[com]' or `[c]' element in a headword line.
+The element must not contain another tag or cross a brace boundary.")
+
+(defun johnson-dsl--strip-headword-tags (headword)
+  "Remove DSL formatting tags from HEADWORD, keeping escaped brackets.
+Part-of-speech `[p]', comment `[com]' and color `[c]' elements annotate
+the headword (Spanish dictionaries write `lexicógrafo[p]f.[/p] [c]- fa[/c]'
+for the part of speech and the feminine ending), so they are dropped with
+their content when they do not cross a brace boundary.  Every other tag
+is removed but its text kept, since tags like `[i]' wrap letters of the
+headword itself."
+  (let* ((protected (replace-regexp-in-string
+                     "\\\\\\]" "\0RBRK\0"
+                     (replace-regexp-in-string "\\\\\\[" "\0LBRK\0" headword)))
+         (previous nil))
+    ;; Nested annotations such as `[p][p]m.[/p][/p]' need repeated passes.
+    (while (not (equal previous protected))
+      (setq previous protected)
+      (setq protected (replace-regexp-in-string
+                       johnson-dsl--headword-annotation-re "" protected)))
+    (setq protected (replace-regexp-in-string "\\[/?[a-z!*'][^]]*\\]" ""
+                                              protected))
+    (replace-regexp-in-string
+     "\0RBRK\0" "\\\\]"
+     (replace-regexp-in-string "\0LBRK\0" "\\\\[" protected))))
 
 ;;;; Index building
 
@@ -534,6 +568,7 @@ where char-offset and char-length are character positions in the decoded
 buffer (1-based offset, suitable for `buffer-substring-no-properties')."
   (let* ((buf (johnson-dsl--get-buffer path))
          (skipped 0)
+         (continued 0)
          (count 0))
     (with-current-buffer buf
       (save-excursion
@@ -566,9 +601,15 @@ buffer (1-based offset, suitable for `buffer-substring-no-properties')."
               (unless body-start
                 (setq body-start (point)))
               (forward-line 1)
-              ;; Consume remaining body lines.
+              ;; Consume remaining body lines, including body text that
+              ;; a converter left at column 0 without indentation.
               (while (and (not (eobp))
-                          (looking-at "^\\(?:[\t ]\\|\\[\\)"))
+                          (or (looking-at "^\\(?:[\t ]\\|\\[\\)")
+                              (and (johnson-dsl--body-continuation-p
+                                    (buffer-substring-no-properties
+                                     (line-beginning-position)
+                                     (line-end-position)))
+                                   (cl-incf continued))))
                 (forward-line 1))
               ;; End of body.  Trim trailing blank lines.
               (let ((body-end (point)))
@@ -607,12 +648,30 @@ buffer (1-based offset, suitable for `buffer-substring-no-properties')."
               (forward-line 1)))))))
     (when (> skipped 0)
       (message "johnson-dsl: %d entries skipped due to parse errors" skipped))
+    (when (> continued 0)
+      (message "johnson-dsl: %d unindented body lines treated as entry continuation in %s"
+               continued (file-name-nondirectory path)))
     nil))
 
 (defun johnson-dsl--opens-comment-p (line)
   "Return non-nil when LINE opens a {{ ... }} comment that it does not close."
   (string-match-p "{{" (replace-regexp-in-string
                         "{{\\(?:[^}]\\|}[^}]\\)*}}" "" line)))
+
+(defconst johnson-dsl--max-headword-length 256
+  "Longest headword, in characters, that a column-0 line may hold.
+A longer line that follows an entry body is body text lacking indentation.")
+
+(defun johnson-dsl--body-continuation-p (line)
+  "Return non-nil when the column-0 LINE is body text rather than a headword.
+Margin tags (`[m1]', `[/m]') are paragraph markup that never occurs in a
+headword, and a headword never exceeds `johnson-dsl--max-headword-length'
+once its tags are stripped.  Other closing tags are not evidence: Corominas
+writes `Enfe[i]š[/i]tillar' and Harrap's `dureza [p]f[/p]' as headword
+lines directly after a body."
+  (or (string-match-p "\\[/?m[0-9]*\\]" line)
+      (> (length (string-trim (johnson-dsl--strip-headword-tags line)))
+         johnson-dsl--max-headword-length)))
 
 ;;;; Entry retrieval
 

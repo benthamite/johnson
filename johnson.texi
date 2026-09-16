@@ -2708,6 +2708,17 @@ Indexes carry a format version; indexes built by an earlier
 version are detected on first use and rebuilt through the usual
 indexing prompt, so fixes that change what gets indexed apply
 without manual reindexing.
+
+@item
+DSL: headword lines that carry formatting tags (part of speech,
+feminine endings, italics) are indexed as the clean headword, so
+entries such as @samp{lexicógrafo} are found instead of being stored as
+fragments of the tags.
+@item
+DSL: body text that a converter left without indentation
+(recognisable by margin tags or excessive length) is kept inside its
+entry instead of being indexed as a multi-kilobyte headword;
+indexing reports how many such lines were reclassified.
 @end itemize
 
 @node Future features

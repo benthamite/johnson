@@ -697,5 +697,117 @@ position rewound behind the current tag and re-matched forever."
           (should (eq (johnson-dsl--detect-encoding path) 'utf-16le)))
       (delete-file path))))
 
+;;;; Formatting tags in headword lines (regression: split on "/" of closing tags)
+
+(ert-deftest johnson-dsl-test-expand-headword-drops-annotation-tags ()
+  "Part-of-speech and color annotations in a headword line are not headwords.
+Spanish dictionaries write `lexicógrafo[p]f.[/p] [c]- fa[/c]' (Larousse
+wraps the same in braces: `abad{[p]f.[/p] [c]- desa[/c]}').  The [p]
+element is the part of speech and the [c] element the feminine ending
+shown next to the headword; neither is a form a user would look up, so
+both elements are dropped with their content and only the headword proper
+is indexed."
+  (should (equal (johnson-dsl--expand-headword "lexicógrafo[p]f.[/p] [c]- fa[/c]")
+                 '("lexicógrafo")))
+  (should (equal (johnson-dsl--expand-headword "abad{[p]f.[/p] [c]- desa[/c]}")
+                 '("abad")))
+  (should (equal (johnson-dsl--expand-headword "cupo. [p][p]m.[/p][/p]")
+                 '("cupo."))))
+
+(ert-deftest johnson-dsl-test-expand-headword-keeps-formatted-text ()
+  "Formatting tags are stripped but the text they wrap stays in the headword."
+  (should (equal (johnson-dsl--expand-headword "Enfe[i]š[/i]tillar")
+                 '("Enfeštillar")))
+  (should (equal (johnson-dsl--expand-headword "{[i]}Alabama{[/i]} Dispute")
+                 '("Alabama Dispute")))
+  (should (equal (johnson-dsl--expand-headword "dureza [p]f[/p]")
+                 '("dureza"))))
+
+(ert-deftest johnson-dsl-test-expand-headword-tags-keep-escaped-brackets ()
+  "Escaped brackets survive tag stripping and are unescaped as before."
+  (should (equal (johnson-dsl--expand-headword "word \\[x\\] [p]m.[/p]")
+                 '("word [x]"))))
+
+(ert-deftest johnson-dsl-test-expand-headword-trims-whitespace ()
+  "Surrounding whitespace is trimmed from every variant and empties dropped."
+  (should (equal (johnson-dsl--expand-headword "Lexicography ")
+                 '("Lexicography")))
+  (should (equal (johnson-dsl--expand-headword "go(es) ")
+                 '("go" "goes")))
+  (should-not (johnson-dsl--expand-headword "[p]m.[/p]")))
+
+(ert-deftest johnson-dsl-test-build-index-tagged-headword-keeps-body ()
+  "A tagged headword line indexes the clean headword with the intact body."
+  (johnson-dsl-test--kill-cache-buffers)
+  (let ((path (make-temp-file "johnson-dsl-tagged-" nil ".dsl"))
+        (entries nil))
+    (unwind-protect
+        (progn
+          (with-temp-file path
+            (insert "#NAME \"Tagged\"\n#INDEX_LANGUAGE \"Spanish\"\n"
+                    "#CONTENTS_LANGUAGE \"Spanish\"\n\n"
+                    "lexicógrafo[p]f.[/p] [c]- fa[/c]\n"
+                    "\t[m1]Persona que compone diccionarios.[/m]\n"
+                    "Lexicography \n\t[m1]The craft.[/m]\n"))
+          (johnson-dsl-build-index path (lambda (hw offset length)
+                                          (push (list hw offset length) entries)))
+          (should (equal (mapcar #'car entries) '("Lexicography" "lexicógrafo")))
+          (let ((entry (cl-find "lexicógrafo" entries :key #'car :test #'equal)))
+            (should (equal (johnson-dsl-retrieve-entry path (nth 1 entry) (nth 2 entry))
+                           "\t[m1]Persona que compone diccionarios.[/m]\n"))))
+      (johnson-dsl-test--kill-cache-buffers)
+      (delete-file path))))
+
+;;;; Unindented body lines (regression: article text indexed as headwords)
+
+(ert-deftest johnson-dsl-test-body-continuation-p ()
+  "Margin tags or excessive length mark a column-0 line as body text.
+Closing tags alone do not: Corominas writes `Enfe[i]š[/i]tillar' and
+Harrap's `dureza [p]f[/p]' as headword lines directly after a body."
+  (should (johnson-dsl--body-continuation-p
+           "Neugriechisch[/b][/c][/m]</li><li><a href=\"#x\">[m0][b]▪"))
+  (should (johnson-dsl--body-continuation-p "text [m1]more"))
+  (should (johnson-dsl--body-continuation-p (make-string 300 ?x)))
+  (should-not (johnson-dsl--body-continuation-p "dureza [p]f[/p]"))
+  (should-not (johnson-dsl--body-continuation-p "Enfe[i]š[/i]tillar"))
+  (should-not (johnson-dsl--body-continuation-p "beta")))
+
+(ert-deftest johnson-dsl-test-build-index-unindented-body-continuation ()
+  "A column-0 body line after a body extends the entry and is reported once."
+  (johnson-dsl-test--kill-cache-buffers)
+  (let ((path (make-temp-file "johnson-dsl-unindented-" nil ".dsl"))
+        (entries nil)
+        (messages nil))
+    (unwind-protect
+        (progn
+          (with-temp-file path
+            (insert "#NAME \"Pauly\"\n#INDEX_LANGUAGE \"German\"\n"
+                    "#CONTENTS_LANGUAGE \"German\"\n\n"
+                    "alpha\n\t[m1]first body[/m]\n\t\n"
+                    "Neugriechisch[/b][/c][/m]</li><li>continuation text\n"
+                    "\t[m1]more body[/m]\n"
+                    (make-string 300 ?x) "\n"
+                    "beta\n\t[m1]second body[/m]\n"
+                    "dureza [p]f[/p]\n\t[m1]third body[/m]\n"))
+          (cl-letf (((symbol-function 'message)
+                     (lambda (fmt &rest args)
+                       (push (apply #'format-message fmt args) messages))))
+            (johnson-dsl-build-index path (lambda (hw offset length)
+                                            (push (list hw offset length) entries))))
+          (should (equal (mapcar #'car (reverse entries))
+                         '("alpha" "beta" "dureza")))
+          (let* ((alpha (cl-find "alpha" entries :key #'car :test #'equal))
+                 (body (johnson-dsl-retrieve-entry path (nth 1 alpha) (nth 2 alpha))))
+            (should (string-match-p "continuation text" body))
+            (should (string-match-p "more body" body))
+            (should (string-match-p "xxxx" body))
+            (should-not (string-match-p "second body" body)))
+          (should (= 1 (cl-count-if
+                        (lambda (m) (and (string-match-p "2 " m)
+                                         (string-match-p (file-name-nondirectory path) m)))
+                        messages))))
+      (johnson-dsl-test--kill-cache-buffers)
+      (delete-file path))))
+
 (provide 'johnson-dsl-test)
 ;;; johnson-dsl-test.el ends here
