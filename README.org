@@ -289,6 +289,25 @@ The directory is created automatically if it does not exist when a
 database is first opened via ~johnson-db-open~
 ([[#h:database-lifecycle][Database lifecycle]]).
 
+#+vindex: johnson-max-open-databases
+Lookups keep each dictionary's index open between uses, but never
+more than ~johnson-max-open-databases~ of them (default ~64~).  Each
+open index holds a file descriptor, so without a bound a large
+collection would hold one descriptor per dictionary for the whole
+session.  When a lookup needs an index beyond the limit, the least
+recently used one is closed and reopened on its next use.  Reopening
+an index costs about as much as querying it, so with hundreds of
+dictionaries a lookup takes a few tens of milliseconds longer than it
+would with every index held open.  Raise the limit if you have
+descriptors to spare:
+
+#+begin_src emacs-lisp
+(setopt johnson-max-open-databases 500)
+#+end_src
+
+~johnson-close-caches~ closes every open index at once
+([[#h:cache-management][Cache management]]).
+
 ** Audio playback
 :PROPERTIES:
 :CUSTOM_ID: h:audio-playback
@@ -1383,7 +1402,9 @@ object.  This is the primary entry point for obtaining a database handle.
 
 The function ~johnson-db-close~ closes a sqlite database connection.
 Pass the connection object previously returned by ~johnson-db-open~.
-In practice, the core module caches database connections in a hash table
+In practice, the core module caches database connections in a hash table,
+closes the least recently used one whenever the cache would exceed
+~johnson-max-open-databases~ ([[#h:cache-directory][Cache directory]]),
 and closes them all at once via ~johnson-close-caches~
 ([[#h:cache-management][Cache management]]).
 

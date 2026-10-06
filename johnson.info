@@ -414,6 +414,22 @@ is excluded from backups, or alongside other application caches:
 database is first opened via ‘johnson-db-open’ (*note Database
 lifecycle::).
 
+   Lookups keep each dictionary's index open between uses, but never
+more than ‘johnson-max-open-databases’ of them (default ‘64’).  Each
+open index holds a file descriptor, so without a bound a large
+collection would hold one descriptor per dictionary for the whole
+session.  When a lookup needs an index beyond the limit, the least
+recently used one is closed and reopened on its next use.  Reopening an
+index costs about as much as querying it, so with hundreds of
+dictionaries a lookup takes a few tens of milliseconds longer than it
+would with every index held open.  Raise the limit if you have
+descriptors to spare:
+
+     (setopt johnson-max-open-databases 500)
+
+   ‘johnson-close-caches’ closes every open index at once (*note Cache
+management::).
+
 
 File: johnson.info,  Node: Audio playback,  Next: DICT protocol,  Prev: Cache directory,  Up: User options
 
@@ -1455,9 +1471,10 @@ primary entry point for obtaining a database handle.
 
    The function ‘johnson-db-close’ closes a sqlite database connection.
 Pass the connection object previously returned by ‘johnson-db-open’.  In
-practice, the core module caches database connections in a hash table
-and closes them all at once via ‘johnson-close-caches’ (*note Cache
-management::).
+practice, the core module caches database connections in a hash table,
+closes the least recently used one whenever the cache would exceed
+‘johnson-max-open-databases’ (*note Cache directory::), and closes them
+all at once via ‘johnson-close-caches’ (*note Cache management::).
 
 
 File: johnson.info,  Node: Metadata storage,  Next: Headword normalization,  Prev: Database lifecycle,  Up: Functions
@@ -2857,6 +2874,7 @@ File: johnson.info,  Node: Variable index,  Prev: Function index,  Up: Indices
 * johnson-history-max:                   Lookup history.       (line  6)
 * johnson-history-persist:               History buffer.       (line  6)
 * johnson-italic-face:                   Text styling faces.   (line  6)
+* johnson-max-open-databases:            Cache directory.      (line 23)
 * johnson-optional-face:                 Content type faces.   (line  6)
 * johnson-ref-face:                      Link faces.           (line  6)
 * johnson-ref-scope:                     Cross-reference scope.
@@ -2892,91 +2910,91 @@ Node: Cross-reference scope10612
 Node: Display ordering11323
 Node: Lookup history12737
 Node: Cache directory14064
-Node: Audio playback15009
-Node: Companion zip archives16420
-Node: DICT protocol17344
-Node: EPWING18418
-Node: Images20089
-Node: Wildcard search20763
-Node: Full-text search21579
-Node: Eldoc integration22305
-Node: Scan-popup mode22865
-Node: Bookmarks24052
-Node: History buffer24767
-Node: Completion behavior25605
-Node: Rendering performance26673
-Node: Commands30125
-Node: Looking up words30753
-Node: Indexing dictionaries33037
-Node: Managing groups and scope34714
-Node: Navigating the results buffer35804
-Node: Following cross-references38186
-Node: Navigation history39095
-Node: Copying entries40503
-Node: Dictionary list41755
-Node: Cache management43166
-Node: Toggling images44892
-Node: Searching definitions45398
-Node: Eldoc integration commands46129
-Node: Scan-popup mode commands47034
-Node: Managing bookmarks47811
-Node: Browsing history49129
-Node: Browsing dictionary files50059
-Node: Clearing the index50605
-Node: Reordering dictionaries51301
-Node: Importing GoldenDict order52464
-Node: Transient menu53311
-Node: Functions54171
-Node: Format registration54874
-Node: Completion at point58444
-Node: Database lifecycle59347
-Node: Metadata storage60246
-Node: Headword normalization61417
-Node: Entry insertion62798
-Node: Querying entries63939
-Node: Staleness detection and reset65249
-Node: Wildcard and full-text search queries67271
-Node: Completion index68629
-Node: DSL format detection69941
-Node: DSL metadata parsing70904
-Node: DSL index building71915
-Node: DSL entry retrieval73943
-Node: DSL entry rendering74849
-Node: StarDict backend77052
-Node: MDict backend78779
-Node: BGL backend80376
-Node: DICT protocol backend81565
-Node: Dictzip backend82994
-Node: HTML rendering84008
-Node: RIPEMD-128 hashing85563
-Node: Audio playback functions86332
-Node: EPWING backend87158
-Node: EBZIP backend88917
-Node: Faces89863
-Node: Text styling faces90379
-Node: Content type faces91083
-Node: Link faces92344
-Node: Section header face93003
-Node: Color faces93591
-Node: UI faces94995
-Node: Tips95694
-Node: Looking up words in PDF documents95832
-Node: Roadmap97429
-Node: Version 01 --- DSL98166
-Node: Version 02 --- StarDict and compressed DSL99166
-Node: Version 03 --- MDict and DSL abbreviations100459
-Node: Version 04 --- BGL DICT and more100957
-Node: Version 05 --- EPWING102308
-Node: Version 06 --- EPWING improvements and audits103100
-Node: Version 07 --- Progressive rendering103570
-Node: Version 08 (current) --- Robustness fixes104657
-Node: Future features111659
-Node: Contributing111964
-Node: AI assistance112395
-Node: Running the test suite112900
-Node: Indices113282
-Node: Function index113420
-Node: Variable index125600
+Node: Audio playback15778
+Node: Companion zip archives17189
+Node: DICT protocol18113
+Node: EPWING19187
+Node: Images20858
+Node: Wildcard search21532
+Node: Full-text search22348
+Node: Eldoc integration23074
+Node: Scan-popup mode23634
+Node: Bookmarks24821
+Node: History buffer25536
+Node: Completion behavior26374
+Node: Rendering performance27442
+Node: Commands30894
+Node: Looking up words31522
+Node: Indexing dictionaries33806
+Node: Managing groups and scope35483
+Node: Navigating the results buffer36573
+Node: Following cross-references38955
+Node: Navigation history39864
+Node: Copying entries41272
+Node: Dictionary list42524
+Node: Cache management43935
+Node: Toggling images45661
+Node: Searching definitions46167
+Node: Eldoc integration commands46898
+Node: Scan-popup mode commands47803
+Node: Managing bookmarks48580
+Node: Browsing history49898
+Node: Browsing dictionary files50828
+Node: Clearing the index51374
+Node: Reordering dictionaries52070
+Node: Importing GoldenDict order53233
+Node: Transient menu54080
+Node: Functions54940
+Node: Format registration55643
+Node: Completion at point59213
+Node: Database lifecycle60116
+Node: Metadata storage61143
+Node: Headword normalization62314
+Node: Entry insertion63695
+Node: Querying entries64836
+Node: Staleness detection and reset66146
+Node: Wildcard and full-text search queries68168
+Node: Completion index69526
+Node: DSL format detection70838
+Node: DSL metadata parsing71801
+Node: DSL index building72812
+Node: DSL entry retrieval74840
+Node: DSL entry rendering75746
+Node: StarDict backend77949
+Node: MDict backend79676
+Node: BGL backend81273
+Node: DICT protocol backend82462
+Node: Dictzip backend83891
+Node: HTML rendering84905
+Node: RIPEMD-128 hashing86460
+Node: Audio playback functions87229
+Node: EPWING backend88055
+Node: EBZIP backend89814
+Node: Faces90760
+Node: Text styling faces91276
+Node: Content type faces91980
+Node: Link faces93241
+Node: Section header face93900
+Node: Color faces94488
+Node: UI faces95892
+Node: Tips96591
+Node: Looking up words in PDF documents96729
+Node: Roadmap98326
+Node: Version 01 --- DSL99063
+Node: Version 02 --- StarDict and compressed DSL100063
+Node: Version 03 --- MDict and DSL abbreviations101356
+Node: Version 04 --- BGL DICT and more101854
+Node: Version 05 --- EPWING103205
+Node: Version 06 --- EPWING improvements and audits103997
+Node: Version 07 --- Progressive rendering104467
+Node: Version 08 (current) --- Robustness fixes105554
+Node: Future features112556
+Node: Contributing112861
+Node: AI assistance113292
+Node: Running the test suite113797
+Node: Indices114179
+Node: Function index114317
+Node: Variable index126497
 
 End Tag Table
 

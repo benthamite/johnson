@@ -99,6 +99,7 @@ cleaned up even when BODY fails."
            (johnson--dictionaries nil)
            (johnson--indexed-p t)
            (johnson--db-cache (make-hash-table :test #'equal))
+           (johnson--db-recency nil)
            (johnson--navigating-history nil)
            (johnson--current-source-lang nil)
            (johnson--current-target-lang nil)

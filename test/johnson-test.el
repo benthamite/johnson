@@ -59,6 +59,7 @@
   (when (get-buffer "*johnson*")
     (kill-buffer "*johnson*"))
   (clrhash johnson--db-cache)
+  (setq johnson--db-recency nil)
   (setq johnson--dictionaries nil)
   (setq johnson--indexed-p nil)
   (setq johnson--formats nil)
@@ -82,6 +83,7 @@ Cleans up afterwards."
           (johnson--search-scope nil)
           (johnson--discovered-p nil)
           (johnson--db-cache (make-hash-table :test #'equal))
+          (johnson--db-recency nil)
           (johnson--navigating-history nil)
           (johnson-history nil)
           (johnson-default-search-scope 'all)
@@ -929,6 +931,95 @@ Offsets and lengths are stored unchanged."
       ;; The child indexing script applies the same cleaner.
       (should (string-match-p "johnson-html-clean-headword"
                               (johnson--index-subprocess-script))))))
+
+;;;; Open database bound
+
+(defun johnson-test--fake-dict-paths (n)
+  "Return N distinct dictionary paths under `johnson-cache-directory'."
+  (cl-loop for i below n
+           collect (expand-file-name (format "dict-%d.dsl" i)
+                                     johnson-cache-directory)))
+
+(defun johnson-test--db-closed-p (db)
+  "Return non-nil when the sqlite connection DB has been closed."
+  (condition-case nil
+      (progn (sqlite-select db "SELECT 1") nil)
+    (error t)))
+
+(defun johnson-test--open-cache-descriptors ()
+  "Return how many index files in the cache this Emacs holds open.
+Count the distinct `johnson-cache-directory' sqlite files that lsof
+reports for this process, or return nil when lsof is unavailable."
+  (when-let* ((lsof (executable-find "lsof")))
+    (let ((cache (file-truename johnson-cache-directory))
+          (files nil))
+      (dolist (line (process-lines-ignore-status
+                     lsof "-Fn" "-p" (number-to-string (emacs-pid))))
+        (when (and (string-prefix-p "n" line)
+                   (string-suffix-p ".sqlite" line)
+                   (string-prefix-p cache (file-truename (substring line 1))))
+          (cl-pushnew (substring line 1) files :test #'equal)))
+      (length files))))
+
+(ert-deftest johnson-test-get-db-bounds-open-databases ()
+  "Many dictionaries never hold more than `johnson-max-open-databases' open."
+  (johnson-test--with-env
+    (let* ((johnson-max-open-databases 5)
+           (paths (johnson-test--fake-dict-paths 20))
+           (dbs (progn (mapc #'johnson--get-db paths)
+                       (mapcar #'johnson--get-db paths))))
+      (should (= (hash-table-count johnson--db-cache) 5))
+      (should (equal johnson--db-recency (reverse (last paths 5))))
+      (should (johnson-test--db-closed-p (car dbs)))
+      (should-not (johnson-test--db-closed-p (car (last dbs))))
+      (when-let* ((open (johnson-test--open-cache-descriptors)))
+        (should (= open 5))))))
+
+(ert-deftest johnson-test-get-db-evicts-least-recently-used ()
+  "A cache hit protects a connection from the next eviction."
+  (johnson-test--with-env
+    (let* ((johnson-max-open-databases 2)
+           (paths (johnson-test--fake-dict-paths 3))
+           (a (johnson--get-db (nth 0 paths)))
+           (b (johnson--get-db (nth 1 paths))))
+      (should (eq (johnson--get-db (nth 0 paths)) a))
+      (johnson--get-db (nth 2 paths))
+      (should-not (gethash (nth 1 paths) johnson--db-cache))
+      (should (johnson-test--db-closed-p b))
+      (should (eq (gethash (nth 0 paths) johnson--db-cache) a))
+      (should-not (johnson-test--db-closed-p a)))))
+
+(ert-deftest johnson-test-get-db-reopens-evicted-index ()
+  "An evicted index is reopened on next use with its entries intact."
+  (johnson-test--with-env
+    (let* ((johnson-max-open-databases 1)
+           (paths (johnson-test--fake-dict-paths 2)))
+      (johnson-db-insert-entries-batch (johnson--get-db (car paths))
+                                       '(("apple" 0 10)))
+      (johnson--get-db (cadr paths))
+      (should-not (gethash (car paths) johnson--db-cache))
+      (should (equal (johnson-db-query-exact (johnson--get-db (car paths))
+                                             "apple")
+                     '(("apple" 0 10)))))))
+
+(ert-deftest johnson-test-get-db-zero-limit-keeps-current ()
+  "A zero limit still returns an open connection for the current lookup."
+  (johnson-test--with-env
+    (let* ((johnson-max-open-databases 0)
+           (paths (johnson-test--fake-dict-paths 2)))
+      (johnson--get-db (car paths))
+      (let ((db (johnson--get-db (cadr paths))))
+        (should-not (johnson-test--db-closed-p db))
+        (should (= (hash-table-count johnson--db-cache) 1))))))
+
+(ert-deftest johnson-test-close-all-dbs-clears-recency ()
+  "Closing all connections empties both the cache and the recency list."
+  (johnson-test--with-env
+    (let ((db (johnson--get-db (car (johnson-test--fake-dict-paths 1)))))
+      (johnson--close-all-dbs)
+      (should (johnson-test--db-closed-p db))
+      (should (zerop (hash-table-count johnson--db-cache)))
+      (should-not johnson--db-recency))))
 
 (provide 'johnson-test)
 ;;; johnson-test.el ends here

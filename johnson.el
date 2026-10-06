@@ -175,6 +175,16 @@ indexing time."
   :type 'boolean
   :group 'johnson)
 
+(defcustom johnson-max-open-databases 64
+  "Maximum number of dictionary index databases kept open at once.
+Each open sqlite connection holds a file descriptor.  When a lookup
+needs a database beyond this limit, the least recently used connection
+is closed; it is reopened on its next use.  Reopening an index costs
+about as much as querying it, so a limit below the number of
+dictionaries keeps lookups fast while bounding descriptor use."
+  :type 'natnum
+  :group 'johnson)
+
 (defcustom johnson-eldoc-max-length 80
   "Maximum length of eldoc definition strings."
   :type 'integer
@@ -365,7 +375,11 @@ found no dictionaries.  Cleared by `johnson-close-caches'.")
   "Non-nil when navigating history (suppresses nav-push).")
 
 (defvar johnson--db-cache (make-hash-table :test #'equal)
-  "Hash table mapping dictionary file paths to open sqlite connections.")
+  "Hash table mapping dictionary file paths to open sqlite connections.
+`johnson--get-db' keeps at most `johnson-max-open-databases' of them.")
+
+(defvar johnson--db-recency nil
+  "Dictionary paths in `johnson--db-cache', most recently used first.")
 
 (defvar-local johnson--current-word nil
   "The currently displayed lookup word, or nil.
@@ -512,11 +526,34 @@ context."
 ;;;; Database access
 
 (defun johnson--get-db (dict-path)
-  "Return an open sqlite connection for DICT-PATH, opening if needed."
-  (or (gethash dict-path johnson--db-cache)
-      (let ((db (johnson-db-open dict-path)))
-        (puthash dict-path db johnson--db-cache)
-        db)))
+  "Return an open sqlite connection for DICT-PATH, opening if needed.
+Mark DICT-PATH as most recently used.  When opening a connection takes
+the cache past `johnson-max-open-databases', close the least recently
+used ones."
+  (let ((db (gethash dict-path johnson--db-cache)))
+    (if db
+        (setq johnson--db-recency
+              (cons dict-path (delete dict-path johnson--db-recency)))
+      (setq db (johnson-db-open dict-path))
+      (puthash dict-path db johnson--db-cache)
+      (push dict-path johnson--db-recency)
+      (johnson--evict-dbs))
+    db))
+
+(defun johnson--evict-dbs ()
+  "Close least recently used connections beyond `johnson-max-open-databases'.
+Always keep the most recently used connection, even when the limit is
+zero, so the caller's connection stays open."
+  (dolist (path (copy-sequence (nthcdr (max 1 johnson-max-open-databases)
+                                       johnson--db-recency)))
+    (johnson--close-db path)))
+
+(defun johnson--close-db (dict-path)
+  "Close and forget the cached connection for DICT-PATH, if any."
+  (when-let* ((db (gethash dict-path johnson--db-cache)))
+    (condition-case nil (johnson-db-close db) (error nil)))
+  (remhash dict-path johnson--db-cache)
+  (setq johnson--db-recency (delete dict-path johnson--db-recency)))
 
 (defun johnson--close-all-dbs ()
   "Close all cached database connections."
@@ -524,6 +561,7 @@ context."
              (condition-case nil (johnson-db-close db) (error nil)))
            johnson--db-cache)
   (clrhash johnson--db-cache)
+  (setq johnson--db-recency nil)
   (johnson-db-close-completion-db))
 
 ;;;; Dictionary discovery
@@ -2315,10 +2353,7 @@ index mutation."
       ;; Force staleness by deleting the index file first.
       (let ((index-path (johnson-db--index-path id)))
         (when (file-exists-p index-path)
-          (let ((db (gethash id johnson--db-cache)))
-            (when db
-              (condition-case nil (johnson-db-close db) (error nil))))
-          (remhash id johnson--db-cache)
+          (johnson--close-db id)
           (delete-file index-path)))
       (johnson--index-one-dict-sync dict (get-buffer-create " *johnson-reindex*"))
       (message "Re-indexed %s" name))
