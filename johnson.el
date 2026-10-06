@@ -175,13 +175,15 @@ indexing time."
   :type 'boolean
   :group 'johnson)
 
-(defcustom johnson-max-open-databases 64
+(defcustom johnson-max-open-databases 512
   "Maximum number of dictionary index databases kept open at once.
 Each open sqlite connection holds a file descriptor.  When a lookup
 needs a database beyond this limit, the least recently used connection
-is closed; it is reopened on its next use.  Reopening an index costs
-about as much as querying it, so a limit below the number of
-dictionaries keeps lookups fast while bounding descriptor use."
+is closed; it is reopened on its next use.  Every lookup queries every
+dictionary, so a limit below the number of dictionaries reopens
+indexes on each lookup, making it a few tens of milliseconds slower.
+The default exceeds the size of most collections and only guards
+against unbounded descriptor use."
   :type 'natnum
   :group 'johnson)
 

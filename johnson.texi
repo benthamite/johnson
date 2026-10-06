@@ -433,18 +433,19 @@ database is first opened via @code{johnson-db-open}
 
 @vindex johnson-max-open-databases
 Lookups keep each dictionary's index open between uses, but never
-more than @code{johnson-max-open-databases} of them (default @code{64}).  Each
+more than @code{johnson-max-open-databases} of them (default @code{512}).  Each
 open index holds a file descriptor, so without a bound a large
 collection would hold one descriptor per dictionary for the whole
 session.  When a lookup needs an index beyond the limit, the least
-recently used one is closed and reopened on its next use.  Reopening
-an index costs about as much as querying it, so with hundreds of
-dictionaries a lookup takes a few tens of milliseconds longer than it
-would with every index held open.  Raise the limit if you have
-descriptors to spare:
+recently used one is closed and reopened on its next use.  Every
+lookup queries every dictionary, so a limit below the number of
+dictionaries reopens indexes on each lookup, which makes it a few tens
+of milliseconds slower.  The default exceeds most collections and only
+guards against unbounded growth; lower it to trade lookup speed for
+descriptors:
 
 @lisp
-(setopt johnson-max-open-databases 500)
+(setopt johnson-max-open-databases 64)
 @end lisp
 
 @code{johnson-close-caches} closes every open index at once
