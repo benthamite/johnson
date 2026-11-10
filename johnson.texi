@@ -133,7 +133,7 @@ Roadmap
 * Version 0.1 --- DSL: Version 01 --- DSL. 
 * Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL. 
 * Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations. 
-* Version 0.4 --- BGL, DICT, and more: Version 04 --- BGL DICT and more. 
+* Version 0.4 --- BGL@comma{} DICT@comma{} and more: Version 04 --- BGL DICT and more. 
 * Version 0.5 --- EPWING: Version 05 --- EPWING. 
 * Version 0.6 --- EPWING improvements and audits: Version 06 --- EPWING improvements and audits. 
 * Version 0.7 --- Progressive rendering: Version 07 --- Progressive rendering. 
@@ -157,41 +157,41 @@ Indices
 @chapter Overview
 
 @samp{johnson} is a multi-format dictionary UI for Emacs.  It
-provides the functionality of programs such as GoldenDict and StarDict,
+provides the functionality of programs such as GoldenDict and StarDict@comma{}
 allowing you to look up words across multiple dictionaries simultaneously
 and view formatted definitions in a dedicated Emacs buffer.
 
 The package is implemented entirely in Emacs Lisp with no external
-dependencies, relying on Emacs 29.1's built-in sqlite support for
-efficient headword indexing.  Dictionary files are parsed natively,
+dependencies@comma{} relying on Emacs 29.1's built-in sqlite support for
+efficient headword indexing.  Dictionary files are parsed natively@comma{}
 without calling external tools.
 
-In version 0.6, the package supports the DSL (ABBYY Lingvo),
-StarDict, MDict, BGL (Babylon), and EPWING (JIS X 4081) formats,
+In version 0.6@comma{} the package supports the DSL (ABBYY Lingvo)@comma{}
+StarDict@comma{} MDict@comma{} BGL (Babylon)@comma{} and EPWING (JIS X 4081) formats@comma{}
 including dictzip-compressed files (@samp{.dsl.dz} and @samp{.dict.dz}) and
 encrypted MDict files.  It also provides a DICT protocol client
 (RFC 2229) for querying remote dictionary servers.
 
 The architecture is modular.  The core module (@samp{johnson.el}) provides
-the lookup engine, results buffer, navigation, history, and a
-plist-based format registry (@ref{Format registration}).
-The sqlite index management is delegated to @samp{johnson-db.el}, which
+the lookup engine@comma{} results buffer@comma{} navigation@comma{} history@comma{} and a
+plist-based format registry (@ref{Format registration, , Format registration}).
+The sqlite index management is delegated to @samp{johnson-db.el}@comma{} which
 maintains one database per dictionary file in a configurable cache
-directory (@ref{Cache directory}).  Shared infrastructure
-for dictzip decompression lives in @samp{johnson-dictzip.el}, and EBZIP
+directory (@ref{Cache directory, , Cache directory}).  Shared infrastructure
+for dictzip decompression lives in @samp{johnson-dictzip.el}@comma{} and EBZIP
 decompression for compressed EPWING books in @samp{johnson-ebzip.el}.
 Each dictionary format is handled by a separate backend
-module---@samp{johnson-dsl.el}, @samp{johnson-stardict.el},
-@samp{johnson-mdict.el}, @samp{johnson-bgl.el}, @samp{johnson-epwing.el}, and
+module---@samp{johnson-dsl.el}@comma{} @samp{johnson-stardict.el}@comma{}
+@samp{johnson-mdict.el}@comma{} @samp{johnson-bgl.el}@comma{} @samp{johnson-epwing.el}@comma{} and
 @samp{johnson-dict.el}---that registers itself with the core via the
 format registry.
 
-A typical workflow consists of three steps.  First, configure
+A typical workflow consists of three steps.  First@comma{} configure
 @code{johnson-dictionary-directories} to point at your dictionary files
-(@ref{Dictionary discovery}).  Second, run @samp{M-x johnson-index} to scan
-and index all discovered dictionaries (@ref{Indexing dictionaries}).
-Third, use @samp{M-x johnson-lookup} to look up words with dynamic
-completion (@ref{Looking up words}).
+(@ref{Dictionary discovery, , Dictionary discovery}).  Second@comma{} run @samp{M-x johnson-index} to scan
+and index all discovered dictionaries (@ref{Indexing dictionaries, , Indexing dictionaries}).
+Third@comma{} use @samp{M-x johnson-lookup} to look up words with dynamic
+completion (@ref{Looking up words, , Looking up words}).
 
 Here is a sample configuration using @samp{use-package} with @samp{:vc}:
 
@@ -210,26 +210,26 @@ Here is a sample configuration using @samp{use-package} with @samp{:vc}:
   ("C-c d" . johnson-lookup))
 @end lisp
 
-Results are displayed in a @samp{*johnson*} buffer using @code{johnson-mode}, a
+Results are displayed in a @samp{*johnson*} buffer using @code{johnson-mode}@comma{} a
 read-only major mode derived from @code{special-mode}.  Each dictionary that
-contains a match for the queried word gets its own collapsible section,
-displayed in priority order (@ref{Display ordering}).  The buffer
+contains a match for the queried word gets its own collapsible section@comma{}
+displayed in priority order (@ref{Display ordering, , Display ordering}).  The buffer
 supports Info-like navigation: press @samp{n} and @samp{p} to move between
-sections, @samp{TAB} to collapse or expand a section, @samp{RET} to follow
-cross-references, @samp{l} and @samp{r} to navigate back and forward through
-lookup history, @samp{I} to toggle inline images, @samp{S} to search within
-definitions, @samp{b} to bookmark an entry, @samp{M} to remove a bookmark, and
+sections@comma{} @samp{TAB} to collapse or expand a section@comma{} @samp{RET} to follow
+cross-references@comma{} @samp{l} and @samp{r} to navigate back and forward through
+lookup history@comma{} @samp{I} to toggle inline images@comma{} @samp{S} to search within
+definitions@comma{} @samp{b} to bookmark an entry@comma{} @samp{M} to remove a bookmark@comma{} and
 @samp{H} to browse the full lookup history.
 
 Dictionaries are organized into groups by language pair
-(e.g., ``English → Spanish'').  Groups are auto-detected from dictionary
+(e.g.@comma{} ``English → Spanish'').  Groups are auto-detected from dictionary
 metadata but can be customized via @code{johnson-dictionary-groups}
-(@ref{Search scope and groups}).
+(@ref{Search scope and groups, , Search scope and groups}).
 
 The package also provides a dictionary list buffer via @samp{M-x
-johnson-list-dictionaries}, showing all discovered dictionaries with
+johnson-list-dictionaries}@comma{} showing all discovered dictionaries with
 their indexing status and entry counts
-(@ref{Dictionary list}).
+(@ref{Dictionary list, , Dictionary list}).
 
 The development repository is on @uref{https://github.com/benthamite/johnson, GitHub}.
 
@@ -263,18 +263,18 @@ The development repository is on @uref{https://github.com/benthamite/johnson, Gi
 @vindex johnson-dictionary-directories
 The user option @code{johnson-dictionary-directories} specifies the
 directories to scan recursively for dictionary files.  When the package
-discovers dictionaries, it walks each directory in this list and
+discovers dictionaries@comma{} it walks each directory in this list and
 identifies files using the registered format backends' detection
 functions.  Files matching the @samp{_abrv} naming convention (abbreviation
 tables) are automatically skipped.
 
-Discovery runs once per session, even when it finds no dictionaries;
+Discovery runs once per session@comma{} even when it finds no dictionaries;
 run @code{johnson-close-caches} or @code{johnson-index} to scan the directories
 again after adding files.
 
 The default value is @samp{("~/.local/share/dictionaries/")}.  You should
 change this to point at wherever your dictionary files are stored.  The
-value is a list of directory paths (type: @code{(repeat directory)}), so you
+value is a list of directory paths (type: @code{(repeat directory)})@comma{} so you
 can specify multiple directories if your dictionaries are spread across
 different locations:
 
@@ -291,11 +291,11 @@ different locations:
 @vindex johnson-dictionary-groups
 The user option @code{johnson-default-search-scope} sets the search scope in
 effect until you choose one interactively.  When set to @code{all} (the
-default), lookups search across all discovered dictionaries, ignoring
-group and language filters.  When set to @code{group}, lookups search only
+default)@comma{} lookups search across all discovered dictionaries@comma{} ignoring
+group and language filters.  When set to @code{group}@comma{} lookups search only
 within the active dictionary group: the first entry of
 @code{johnson-dictionary-groups} when that option is set and no group has
-been chosen yet, otherwise the group or language pair chosen with
+been chosen yet@comma{} otherwise the group or language pair chosen with
 @code{johnson-select-group}.  Interactive choices are recorded for the
 session and never modify this option.
 
@@ -304,18 +304,18 @@ session and never modify this option.
 @end lisp
 
 You can switch between these modes interactively via
-@code{johnson-select-group} (@ref{Managing groups and scope}), or
+@code{johnson-select-group} (@ref{Managing groups and scope, , Managing groups and scope})@comma{} or
 by setting the source and target language from the transient menu
-(@ref{Transient menu}).
+(@ref{Transient menu, , Transient menu}).
 
 The user option @code{johnson-dictionary-groups} lets you define custom
-dictionary groups.  When this option is @code{nil} (the default), groups are
+dictionary groups.  When this option is @code{nil} (the default)@comma{} groups are
 auto-detected from dictionary metadata: each dictionary is assigned to a
-group based on its source and target language pair, such as ``English →
+group based on its source and target language pair@comma{} such as ``English →
 Spanish''.
 
 Set this option when you want to create custom groupings that differ from
-the language-pair default.  For instance, you could group specialized
+the language-pair default.  For instance@comma{} you could group specialized
 medical dictionaries across different language pairs into a single
 ``Medical'' group:
 
@@ -328,7 +328,7 @@ medical dictionaries across different language pairs into a single
                       "Legal Terms EN-ES"))))
 @end lisp
 
-When @code{johnson-dictionary-groups} is non-nil, @emph{only} the groups listed
+When @code{johnson-dictionary-groups} is non-nil@comma{} @emph{only} the groups listed
 here are available; the auto-detected language-pair groups are not used.
 
 @node Cross-reference scope
@@ -337,15 +337,15 @@ here are available; the auto-detected language-pair groups are not used.
 @vindex johnson-ref-scope
 The user option @code{johnson-ref-scope} controls the scope when following
 cross-reference links (via @code{johnson-follow-ref}).  When set to @code{all}
-(the default), following a cross-reference performs a lookup across all
-dictionaries, just like @code{johnson-lookup}.  When set to @code{same}, the
+(the default)@comma{} following a cross-reference performs a lookup across all
+dictionaries@comma{} just like @code{johnson-lookup}.  When set to @code{same}@comma{} the
 lookup is restricted to the dictionary containing the link.
 
 @lisp
 (setopt johnson-ref-scope 'same)
 @end lisp
 
-If the target word is not found in the originating dictionary, the
+If the target word is not found in the originating dictionary@comma{} the
 command falls back to a full lookup across all dictionaries.
 
 @node Display ordering
@@ -355,22 +355,22 @@ command falls back to a full lookup across all dictionaries.
 The user option @code{johnson-dictionary-priorities} controls the display
 order of dictionary sections in the results buffer.  It is an alist
 mapping keys to integer priorities.  Each key is matched first against
-the dictionary's metadata name (from the format-specific header), and
+the dictionary's metadata name (from the format-specific header)@comma{} and
 then against each ancestor folder name of the dictionary file up to
-the configured @code{johnson-dictionary-directories} root, innermost first.
-Lower numbers display first.  The default priority is 0, so
+the configured @code{johnson-dictionary-directories} root@comma{} innermost first.
+Lower numbers display first.  The default priority is 0@comma{} so
 dictionaries without an explicit priority entry are all treated
 equally and appear in discovery order.
 
-The folder-name fallback means a stable, descriptive directory name
-(e.g., @samp{Oxford English Dictionary 2 (2009)}) is usually a more
-convenient key than the metadata name, which can vary by format and
+The folder-name fallback means a stable@comma{} descriptive directory name
+(e.g.@comma{} @samp{Oxford English Dictionary 2 (2009)}) is usually a more
+convenient key than the metadata name@comma{} which can vary by format and
 release.  Ancestor lookup also handles dictionaries stored one or more
-directories below their human-named folder (e.g., a @samp{.dsl} file under
+directories below their human-named folder (e.g.@comma{} a @samp{.dsl} file under
 a @samp{dic/} subdirectory).
 
-For example, to make the ``Oxford English-Spanish'' dictionary always
-appear before ``Collins English-Spanish'', assign it a lower priority:
+For example@comma{} to make the ``Oxford English-Spanish'' dictionary always
+appear before ``Collins English-Spanish''@comma{} assign it a lower priority:
 
 @lisp
 (setopt johnson-dictionary-priorities
@@ -386,7 +386,7 @@ appear before ``Collins English-Spanish'', assign it a lower priority:
 The user option @code{johnson-history-max} sets the maximum number of entries
 retained in the lookup history.  The default value is @code{100} (type:
 @code{natnum}).  Setting it to @code{0} disables history.  The persistent
-history log (@ref{Browsing history}) keeps ten times this many entries.
+history log (@ref{Browsing history, , Browsing history}) keeps ten times this many entries.
 
 @lisp
 (setopt johnson-history-max 200)
@@ -394,18 +394,18 @@ history log (@ref{Browsing history}) keeps ten times this many entries.
 
 The variable @code{johnson-history} stores the list of previously looked-up
 words and serves as the history list for @code{completing-read} in
-@code{johnson-lookup} (@ref{Looking up words}).  You can access
+@code{johnson-lookup} (@ref{Looking up words, , Looking up words}).  You can access
 previous lookups via @samp{M-p} and @samp{M-n} in the completion prompt.  If
-@code{savehist-mode} is active, this history persists across Emacs sessions.
+@code{savehist-mode} is active@comma{} this history persists across Emacs sessions.
 
-When the history exceeds @code{johnson-history-max} entries, the oldest
+When the history exceeds @code{johnson-history-max} entries@comma{} the oldest
 entries are discarded.
 
 The persistent history log and the bookmarks file are written
 atomically: the data goes to a temporary file in the same directory
-that is then renamed over the target, so an interrupted write never
-truncates the file.  Before each write, entries added by another Emacs
-session since this one last read the file are merged in, while entries
+that is then renamed over the target@comma{} so an interrupted write never
+truncates the file.  Before each write@comma{} entries added by another Emacs
+session since this one last read the file are merged in@comma{} while entries
 removed in this session stay removed.
 
 @node Cache directory
@@ -414,14 +414,14 @@ removed in this session stay removed.
 @vindex johnson-cache-directory
 The user option @code{johnson-cache-directory} specifies the directory where
 sqlite index files are stored.  Each dictionary gets its own sqlite
-database file in this directory, named by the MD5 hash of the dictionary
+database file in this directory@comma{} named by the MD5 hash of the dictionary
 file's absolute path.  This hashing scheme prevents collisions when
 multiple dictionaries share similar names or reside in different
 directories.
 
 The default value is @samp{~/.cache/johnson/}.  You may want to change this
-if you prefer to store caches on a faster drive, in a location that is
-excluded from backups, or alongside other application caches:
+if you prefer to store caches on a faster drive@comma{} in a location that is
+excluded from backups@comma{} or alongside other application caches:
 
 @lisp
 (setopt johnson-cache-directory "~/.local/cache/johnson/")
@@ -429,17 +429,17 @@ excluded from backups, or alongside other application caches:
 
 The directory is created automatically if it does not exist when a
 database is first opened via @code{johnson-db-open}
-(@ref{Database lifecycle}).
+(@ref{Database lifecycle, , Database lifecycle}).
 
 @vindex johnson-max-open-databases
-Lookups keep each dictionary's index open between uses, but never
+Lookups keep each dictionary's index open between uses@comma{} but never
 more than @code{johnson-max-open-databases} of them (default @code{512}).  Each
-open index holds a file descriptor, so without a bound a large
+open index holds a file descriptor@comma{} so without a bound a large
 collection would hold one descriptor per dictionary for the whole
-session.  When a lookup needs an index beyond the limit, the least
+session.  When a lookup needs an index beyond the limit@comma{} the least
 recently used one is closed and reopened on its next use.  Every
-lookup queries every dictionary, so a limit below the number of
-dictionaries reopens indexes on each lookup, which makes it a few tens
+lookup queries every dictionary@comma{} so a limit below the number of
+dictionaries reopens indexes on each lookup@comma{} which makes it a few tens
 of milliseconds slower.  The default exceeds most collections and only
 guards against unbounded growth; lower it to trade lookup speed for
 descriptors:
@@ -449,7 +449,7 @@ descriptors:
 @end lisp
 
 @code{johnson-close-caches} closes every open index at once
-(@ref{Cache management}).
+(@ref{Cache management, , Cache management}).
 
 @node Audio playback
 @section Audio playback
@@ -459,22 +459,22 @@ descriptors:
 @findex johnson-play-sound
 @findex johnson-play-audio-at-point
 @findex johnson-insert-audio-button
-Some dictionary entries contain embedded audio files, such as
-pronunciation recordings.  When they do, the results buffer shows a
+Some dictionary entries contain embedded audio files@comma{} such as
+pronunciation recordings.  When they do@comma{} the results buffer shows a
 play button (@samp{▶}) that plays the audio on click.  The command
 @code{johnson-play-audio-at-point} does the same for the button at
 point and can be called interactively.
 
 The user option @code{johnson-audio-player} controls which program is
-used for playback.  The default is @code{auto}, which tries Emacs's
-built-in @code{play-sound-file} first; if that fails (e.g., because
-the Emacs binary lacks sound support), it falls back to the first
+used for playback.  The default is @code{auto}@comma{} which tries Emacs's
+built-in @code{play-sound-file} first; if that fails (e.g.@comma{} because
+the Emacs binary lacks sound support)@comma{} it falls back to the first
 available external player listed in
-@code{johnson-audio-external-players}.  On macOS, @samp{afplay} is
-always available, so audio playback should work out of the box with no
+@code{johnson-audio-external-players}.  On macOS@comma{} @samp{afplay} is
+always available@comma{} so audio playback should work out of the box with no
 configuration.
 
-If you want to use a specific external player, set
+If you want to use a specific external player@comma{} set
 @code{johnson-audio-player} to a string naming the command:
 
 @lisp
@@ -482,7 +482,7 @@ If you want to use a specific external player, set
 @end lisp
 
 The user option @code{johnson-audio-external-players} is the list of
-external commands that @code{auto} mode tries, in order.  The default
+external commands that @code{auto} mode tries@comma{} in order.  The default
 list is @samp{("afplay" "mpv" "paplay" "aplay")}.  You can customize
 this list if your preferred player is not included or if you want to
 change the priority order.
@@ -497,14 +497,14 @@ change the priority order.
 @findex johnson-clear-resource-cache
 Many DSL dictionaries bundle audio in a companion
 @samp{.dsl.files.zip} archive rather than storing individual files on
-disk (e.g., @samp{MyDict.dsl} -> @samp{MyDict.dsl.files.zip}).
+disk (e.g.@comma{} @samp{MyDict.dsl} -> @samp{MyDict.dsl.files.zip}).
 When a play button is clicked and the referenced audio file does not
-exist on disk, @samp{johnson} automatically checks for a companion zip
+exist on disk@comma{} @samp{johnson} automatically checks for a companion zip
 archive and extracts the file on demand.  Extracted files are cached
 under the @samp{resources/} subdirectory of @code{johnson-cache-directory}
 so subsequent plays are instant.
 
-This feature requires the @samp{unzip} command-line utility, which
+This feature requires the @samp{unzip} command-line utility@comma{} which
 is available by default on macOS and most Linux distributions.
 
 The command @code{johnson-clear-resource-cache} deletes all extracted
@@ -518,7 +518,7 @@ force re-extraction.
 @vindex johnson-dict-servers
 The user option @code{johnson-dict-enabled} is a master switch that
 controls whether the DICT protocol client is active.  When @code{nil}
-(the default), no DICT servers are contacted and no remote
+(the default)@comma{} no DICT servers are contacted and no remote
 dictionaries appear in the dictionary list.  Set it to @code{t} to
 enable the DICT protocol backend:
 
@@ -528,7 +528,7 @@ enable the DICT protocol backend:
 
 The user option @code{johnson-dict-servers} specifies the list of DICT
 servers to query.  Each element is a @samp{(HOST . PORT)} pair.  The
-default value is @samp{(("dict.org" . 2628))}, which points to the
+default value is @samp{(("dict.org" . 2628))}@comma{} which points to the
 public dict.org server on the standard DICT port.
 
 You can add additional servers:
@@ -548,14 +548,14 @@ using the RFC 2229 protocol over a TCP connection.
 
 The @samp{johnson-epwing} backend handles EPWING (JIS X 4081) and EB
 format electronic dictionaries.  These are common Japanese dictionary
-formats originally distributed on CD-ROM, characterized by a
+formats originally distributed on CD-ROM@comma{} characterized by a
 directory-based structure with a @samp{CATALOGS} (EPWING) or @samp{CATALOG}
 (EB) file at the top level and @samp{HONMON} data files in subbook
 directories.
 
-EPWING dictionaries are discovered automatically: during discovery,
-johnson scans dictionary directories for @samp{CATALOGS=/=CATALOG} files,
-parses them to enumerate subbooks, and creates one dictionary entry
+EPWING dictionaries are discovered automatically: during discovery@comma{}
+johnson scans dictionary directories for @samp{CATALOGS=/=CATALOG} files@comma{}
+parses them to enumerate subbooks@comma{} and creates one dictionary entry
 per subbook.  No special configuration is required beyond adding the
 EPWING book directory to @code{johnson-dictionary-directories}.
 
@@ -573,8 +573,8 @@ JIS X 0208 (EUC-JP) and ISO 8859-1 character encodings.
 @item
 B-tree search index traversal for headword extraction.
 @item
-Text formatting: bold, italic, emphasis, references, sub/superscript,
-indentation, and newlines.
+Text formatting: bold@comma{} italic@comma{} emphasis@comma{} references@comma{} sub/superscript@comma{}
+indentation@comma{} and newlines.
 @item
 EBZIP decompression for compressed EPWING books (@samp{.ebz} files).
 @item
@@ -591,12 +591,12 @@ as gaps or placeholder characters in the text.
 
 @vindex johnson-display-images
 The user option @code{johnson-display-images} controls whether inline
-images are rendered in dictionary entries.  When @code{t} (the default),
-images embedded in entries are displayed inline.  When @code{nil}, images
+images are rendered in dictionary entries.  When @code{t} (the default)@comma{}
+images embedded in entries are displayed inline.  When @code{nil}@comma{} images
 are suppressed.
 
 Image support works across all format backends that include images:
-DSL @samp{[s]} tags, and HTML @samp{<img>} tags in MDict, StarDict, and
+DSL @samp{[s]} tags@comma{} and HTML @samp{<img>} tags in MDict@comma{} StarDict@comma{} and
 BGL entries.
 
 @lisp
@@ -604,7 +604,7 @@ BGL entries.
 @end lisp
 
 You can toggle image display interactively via
-@code{johnson-toggle-images} (@ref{Toggling images}).
+@code{johnson-toggle-images} (@ref{Toggling images, , Toggling images}).
 
 @node Wildcard search
 @section Wildcard search
@@ -623,7 +623,7 @@ completion interface responsive.
 Wildcard patterns use @samp{?} to match a single character and @samp{*}
 to match zero or more characters.  Wildcards are auto-detected in
 @code{johnson-lookup}: if the query contains @samp{?} or @samp{*}
-characters, matching headwords are collected and presented for
+characters@comma{} matching headwords are collected and presented for
 selection rather than performing a direct lookup.
 
 @node Full-text search
@@ -632,8 +632,8 @@ selection rather than performing a direct lookup.
 @vindex johnson-fts-enabled
 The user option @code{johnson-fts-enabled} controls whether full-text
 search data is built during indexing.  The default value is @code{nil}.
-When set to @code{t} before indexing, the indexer stores definition text
-in a way that enables searching within dictionary entries, not just
+When set to @code{t} before indexing@comma{} the indexer stores definition text
+in a way that enables searching within dictionary entries@comma{} not just
 headwords.
 
 @lisp
@@ -641,8 +641,8 @@ headwords.
 @end lisp
 
 You must re-index your dictionaries after enabling this option for
-the full-text data to be built.  Once enabled, the
-@code{johnson-search} command (@ref{Searching definitions})
+the full-text data to be built.  Once enabled@comma{} the
+@code{johnson-search} command (@ref{Searching definitions, , Searching definitions})
 becomes available for searching within definitions.
 
 @node Eldoc integration
@@ -658,8 +658,8 @@ truncated with an ellipsis.
 (setopt johnson-eldoc-max-length 120)
 @end lisp
 
-To enable eldoc integration, activate @code{johnson-eldoc-mode} in
-the desired buffer (@ref{Eldoc integration commands}).
+To enable eldoc integration@comma{} activate @code{johnson-eldoc-mode} in
+the desired buffer (@ref{Eldoc integration commands, , Eldoc integration commands}).
 
 @node Scan-popup mode
 @section Scan-popup mode
@@ -700,11 +700,11 @@ is @code{5.0}.
 (setopt johnson-scan-popup-duration 10.0)
 @end lisp
 
-The popup display uses posframe if available, otherwise falls back
-to tooltip, and finally to the echo area.
+The popup display uses posframe if available@comma{} otherwise falls back
+to tooltip@comma{} and finally to the echo area.
 
-To enable scan-popup mode, activate @code{johnson-scan-mode}
-(@ref{Scan-popup mode commands}).
+To enable scan-popup mode@comma{} activate @code{johnson-scan-mode}
+(@ref{Scan-popup mode commands, , Scan-popup mode commands}).
 
 @node Bookmarks
 @section Bookmarks
@@ -719,10 +719,10 @@ bookmarked dictionary entries are persisted.  The default value is
 @end lisp
 
 Bookmarks allow you to save dictionary entries for later reference.
-Each bookmark records the headword, dictionary name, and date.  The file
+Each bookmark records the headword@comma{} dictionary name@comma{} and date.  The file
 is written atomically and merged with concurrent sessions' additions
-(@ref{Lookup history}).
-See @ref{Managing bookmarks} for the commands that add, remove, and
+(@ref{Lookup history, , Lookup history}).
+See @ref{Managing bookmarks, , Managing bookmarks} for the commands that add@comma{} remove@comma{} and
 list bookmarks.
 
 @node History buffer
@@ -739,15 +739,15 @@ value is @samp{~/.cache/johnson/history.el}.
 @end lisp
 
 The user option @code{johnson-history-persist} controls whether lookup
-history is saved to disk.  When @code{t} (the default), history entries
+history is saved to disk.  When @code{t} (the default)@comma{} history entries
 are written to @code{johnson-history-file} and restored on startup.
-When @code{nil}, history exists only for the current Emacs session.
+When @code{nil}@comma{} history exists only for the current Emacs session.
 
 @lisp
 (setopt johnson-history-persist nil)   ; session-only history
 @end lisp
 
-See @ref{Browsing history} for commands that display and manage the
+See @ref{Browsing history, , Browsing history} for commands that display and manage the
 history buffer.
 
 @node Completion behavior
@@ -756,16 +756,16 @@ history buffer.
 @vindex johnson-completion-min-chars
 The user option @code{johnson-completion-min-chars} sets the minimum number
 of characters you must type before completion candidates are fetched
-from the headword index.  Shorter inputs return no candidates, avoiding
+from the headword index.  Shorter inputs return no candidates@comma{} avoiding
 expensive prefix queries against the full index.  Candidates are
-matched case- and accent-insensitively, so typing @samp{cafe} offers @samp{Café}
+matched case- and accent-insensitively@comma{} so typing @samp{cafe} offers @samp{Café}
 and @samp{café au lait}.  Forms of one headword that differ only in case or
-accents, as when one dictionary stores @samp{LEXICOGRAPHER} and another
-@samp{lexicographer}, appear as a single candidate: the form most
-dictionaries use, or the least capitalized one when they tie.
+accents@comma{} as when one dictionary stores @samp{LEXICOGRAPHER} and another
+@samp{lexicographer}@comma{} appear as a single candidate: the form most
+dictionaries use@comma{} or the least capitalized one when they tie.
 
 The default value is @code{3} (type: @code{natnum}).  You may want to lower this
-for small dictionary collections where prefix queries are fast, or
+for small dictionary collections where prefix queries are fast@comma{} or
 raise it if completion feels sluggish with very large indexes:
 
 @lisp
@@ -786,18 +786,18 @@ inserts ready entries in bounded ordinary-timer slices and checks for
 pending input before every unit.
 
 The table of contents lists the local dictionaries known to match when
-the lookup starts.  Remote DICT sections cannot be known in advance,
-so their items are appended to the table of contents progressively, as
-each server reports a match (@ref{DICT protocol}).
+the lookup starts.  Remote DICT sections cannot be known in advance@comma{}
+so their items are appended to the table of contents progressively@comma{} as
+each server reports a match (@ref{DICT protocol, , DICT protocol}).
 
 The user option @code{johnson-render-batch-size} (default @code{1}) is the floor
 of each insertion slice: the minimum number of queued render units
-(section headers, streamed entries, and section closings) a slice
-inserts before its time budget applies.  After inserting that minimum,
+(section headers@comma{} streamed entries@comma{} and section closings) a slice
+inserts before its time budget applies.  After inserting that minimum@comma{}
 Johnson keeps draining ready units until
 @code{johnson-render-batch-time-budget} (default @code{0.05} seconds) expires or
 user input arrives.  Raise the time budget to make all results
-available sooner, at the cost of longer pauses when individual entries
+available sooner@comma{} at the cost of longer pauses when individual entries
 are slow to render:
 
 @lisp
@@ -805,16 +805,16 @@ are slow to render:
 @end lisp
 
 The user option @code{johnson-render-scheduling-delay} (default @code{0.01})
-sets the delay, in seconds, before the next insertion slice is
-scheduled.  The slices run on ordinary timers, not idle timers, so
+sets the delay@comma{} in seconds@comma{} before the next insertion slice is
+scheduled.  The slices run on ordinary timers@comma{} not idle timers@comma{} so
 results keep streaming in while you type; each slice checks for
 pending input first and yields immediately when there is any.  The
-option's former name, @code{johnson-render-idle-delay}, is kept as an
+option's former name@comma{} @code{johnson-render-idle-delay}@comma{} is kept as an
 obsolete alias.
 
-When the retrieval child fails, the failure is explicit: Johnson never
+When the retrieval child fails@comma{} the failure is explicit: Johnson never
 falls back to retrieving entries in the interactive Emacs silently.
-The loading line is replaced with one of the following messages, each
+The loading line is replaced with one of the following messages@comma{} each
 naming the command that opens the diagnostics buffer holding the
 details:
 
@@ -830,15 +830,15 @@ the worker.  Interrupts during configuration or retrieval retain the
 failure behavior above because partially completed work cannot be
 resumed safely.
 
-The worker also disables @code{debug-on-event}, whose default @code{sigusr2}
+The worker also disables @code{debug-on-event}@comma{} whose default @code{sigusr2}
 value would otherwise arm the batch debugger: a @samp{SIGUSR2} broadcast by
 process name at the interactive Emacs (for example @samp{pkill -SIGUSR2
-Emacs}) also reaches the worker child, and an armed debugger would
+Emacs}) also reaches the worker child@comma{} and an armed debugger would
 exit it with status 255 at its next activity.
 
 @findex johnson-worker-show-diagnostics
 The command @code{johnson-worker-show-diagnostics} pops to that diagnostics
-buffer, whose space-prefixed name keeps it out of ordinary buffer
+buffer@comma{} whose space-prefixed name keeps it out of ordinary buffer
 switching.
 
 An error in a single dictionary does not abort the lookup: the failing
@@ -846,7 +846,7 @@ dictionary renders as an error section and the remaining dictionaries
 continue streaming.
 
 The retrieval child's lifetime is decoupled from the results buffer;
-see @ref{Cache management} for when the worker is
+see @ref{Cache management, , Cache management} for when the worker is
 stopped and shut down.
 
 @node Commands
@@ -882,44 +882,44 @@ stopped and shut down.
 @findex johnson-new-search
 @findex johnson-refresh
 The command @code{johnson-lookup} is the primary entry point for dictionary
-lookups.  When called interactively, it prompts for a word with
-@code{completing-read}, defaulting to the word at point.  The completion
+lookups.  When called interactively@comma{} it prompts for a word with
+@code{completing-read}@comma{} defaulting to the word at point.  The completion
 table is backed by sqlite prefix queries across all in-scope
-dictionaries, providing dynamic suggestions as you type.  Each candidate
+dictionaries@comma{} providing dynamic suggestions as you type.  Each candidate
 is annotated with the number of dictionaries containing it when there
-are multiple matches (e.g., @samp{(3 dicts)}).
+are multiple matches (e.g.@comma{} @samp{(3 dicts)}).
 
-If the dictionaries have not been indexed yet, @code{johnson-lookup} prompts
-you to index them first.  When indexing is already in progress, the
+If the dictionaries have not been indexed yet@comma{} @code{johnson-lookup} prompts
+you to index them first.  When indexing is already in progress@comma{} the
 lookup is deferred and will resume automatically once indexing completes.
 
-If the query contains wildcard characters (@samp{?} or @samp{*}),
+If the query contains wildcard characters (@samp{?} or @samp{*})@comma{}
 @code{johnson-lookup} performs a wildcard search instead of a direct
 lookup.  Matching headwords are collected across all in-scope
 dictionaries (up to @code{johnson-wildcard-max-results}; see
-@ref{Wildcard search}) and presented for selection via
+@ref{Wildcard search, , Wildcard search}) and presented for selection via
 @code{completing-read}.  The selected headword is then looked up
 normally.
 
-After a word is selected, the command queries all dictionaries for exact
-matches (case-insensitive, accent-insensitive via
-@code{johnson-db-normalize}; see @ref{Headword normalization})
+After a word is selected@comma{} the command queries all dictionaries for exact
+matches (case-insensitive@comma{} accent-insensitive via
+@code{johnson-db-normalize}; see @ref{Headword normalization, , Headword normalization})
 and displays the results in the @samp{*johnson*} buffer.  The word is pushed
-onto the lookup history (@ref{Lookup history}) and the
-navigation history (@ref{Navigation history}).
+onto the lookup history (@ref{Lookup history, , Lookup history}) and the
+navigation history (@ref{Navigation history, , Navigation history}).
 
 The optional WORD argument allows calling @code{johnson-lookup} from Lisp
 code without prompting.
 
 The command @code{johnson-new-search} re-invokes @code{johnson-lookup} without
-arguments, prompting for a new word.  It is bound to @samp{s} in
+arguments@comma{} prompting for a new word.  It is bound to @samp{s} in
 @code{johnson-mode} for quick access when you want to search for a different
 word while viewing results.
 
 The command @code{johnson-refresh} re-displays the current word by
 re-querying all dictionaries and rebuilding the results buffer.  This is
 useful if you have re-indexed a dictionary and want to see updated
-results.  It is bound to @samp{g} in @code{johnson-mode}.  Unlike a new search,
+results.  It is bound to @samp{g} in @code{johnson-mode}.  Unlike a new search@comma{}
 refreshing does not push a new entry onto the navigation history.
 
 @node Indexing dictionaries
@@ -927,31 +927,31 @@ refreshing does not push a new entry onto the navigation history.
 
 @findex johnson-index
 @findex johnson-stop-indexing
-The command @code{johnson-index} scans all configured dictionary directories,
-discovers dictionary files, and indexes (or re-indexes) those whose
+The command @code{johnson-index} scans all configured dictionary directories@comma{}
+discovers dictionary files@comma{} and indexes (or re-indexes) those whose
 index is stale or missing.  Staleness is determined by comparing the
 file modification time stored in the database against the actual file's
-modification time (@ref{Staleness detection and reset}).
+modification time (@ref{Staleness detection and reset, , Staleness detection and reset}).
 
-Progress is displayed in a dedicated @samp{*johnson-indexing*} buffer,
-showing one line per dictionary with its name, progress counter, and
+Progress is displayed in a dedicated @samp{*johnson-indexing*} buffer@comma{}
+showing one line per dictionary with its name@comma{} progress counter@comma{} and
 result (entry count or error message).
 
-When called interactively, indexing runs asynchronously using
-timer-based cooperative multitasking, so Emacs remains responsive during
-the process.  In batch or noninteractive mode, indexing runs
-synchronously.  If indexing is already in progress, the command signals
+When called interactively@comma{} indexing runs asynchronously using
+timer-based cooperative multitasking@comma{} so Emacs remains responsive during
+the process.  In batch or noninteractive mode@comma{} indexing runs
+synchronously.  If indexing is already in progress@comma{} the command signals
 an error rather than starting a second concurrent run.
 
 The optional CALLBACK argument accepts a function to be called with no
 arguments once indexing completes.  This is used internally to chain
-lookup after indexing, but you can also use it in your own scripts.
+lookup after indexing@comma{} but you can also use it in your own scripts.
 
 Dictionaries that are already up to date are skipped with an ``up to
 date'' message rather than being re-indexed.
 
 The command @code{johnson-stop-indexing} cancels the current asynchronous
-indexing run.  It cancels the timer, clears the indexing queue, and
+indexing run.  It cancels the timer@comma{} clears the indexing queue@comma{} and
 reports how many dictionaries were processed before stopping.  This is
 useful if indexing is taking too long or if you want to abort and fix a
 problem before continuing.
@@ -962,17 +962,17 @@ problem before continuing.
 @findex johnson-select-group
 The command @code{johnson-select-group} lets you choose the active dictionary
 group by source and target language.  It prompts you in two steps: first
-for the source language, then for the target language.  Each step offers
-an @samp{<all>} option, enabling flexible filtering.  For example,
+for the source language@comma{} then for the target language.  Each step offers
+an @samp{<all>} option@comma{} enabling flexible filtering.  For example@comma{}
 @samp{<all> → French} selects all dictionaries with French as the target
-language regardless of source, while @samp{Spanish → <all>} selects all
+language regardless of source@comma{} while @samp{Spanish → <all>} selects all
 dictionaries with Spanish as the source language.  It is bound to @samp{G} in
 @code{johnson-mode}.
 
 Selecting @samp{<all>} for both source and target sets the search scope to
-@code{all}, meaning lookups search across every discovered dictionary.  Any
-other combination sets the scope to @code{group}, restricting lookups to
-matching dictionaries.  If called from the results buffer, the current
+@code{all}@comma{} meaning lookups search across every discovered dictionary.  Any
+other combination sets the scope to @code{group}@comma{} restricting lookups to
+matching dictionaries.  If called from the results buffer@comma{} the current
 lookup is automatically refreshed to reflect the new scope.
 
 @node Navigating the results buffer
@@ -988,17 +988,17 @@ lookup is automatically refreshed to reflect the new scope.
 @findex johnson-expand-all
 @findex johnson-ace-link
 The command @code{johnson-next-section} moves point to the next dictionary
-section header in the results buffer.  If point is already on a header,
+section header in the results buffer.  If point is already on a header@comma{}
 it moves past it to find the next one.  When there are no more sections
-below, it displays ``No more sections''.  It is bound to @samp{n} in
+below@comma{} it displays ``No more sections''.  It is bound to @samp{n} in
 @code{johnson-mode}.
 
 The command @code{johnson-prev-section} moves point to the previous
-dictionary section header.  When there is no previous section, it
+dictionary section header.  When there is no previous section@comma{} it
 displays ``No previous section''.  It is bound to @samp{p} in @code{johnson-mode}.
 
 The command @code{johnson-prev-section-header} is an alias for
-@code{johnson-prev-section}, bound to @samp{P} for symmetry with navigation
+@code{johnson-prev-section}@comma{} bound to @samp{P} for symmetry with navigation
 keybindings.
 
 The command @code{johnson-jump-to-section} prompts with completion for a
@@ -1009,20 +1009,20 @@ specific dictionary without scrolling.
 The command @code{johnson-toggle-section} collapses or expands the dictionary
 section at point.  Collapsed sections hide their content using an
 overlay with the @code{invisible} property and display a @samp{[+]} indicator.
-Expanding the section removes the overlay, revealing the full entry
+Expanding the section removes the overlay@comma{} revealing the full entry
 content.  The command works whether point is on the section header or
 within the section body.  It is bound to @samp{TAB} in @code{johnson-mode}.
 
 The command @code{johnson-toggle-all-sections} toggles all sections at once:
-if any section is currently expanded, it collapses all of them;
-otherwise, it expands all of them.  This mirrors Org mode's global
+if any section is currently expanded@comma{} it collapses all of them;
+otherwise@comma{} it expands all of them.  This mirrors Org mode's global
 cycling behavior.  It is bound to @samp{S-TAB} (@samp{<backtab>}) in
 @code{johnson-mode}.
 
 The command @code{johnson-collapse-all} collapses every section in the
 results buffer.  The command @code{johnson-expand-all} expands every section.
 These commands are available from the transient menu
-(@ref{Transient menu}).
+(@ref{Transient menu, , Transient menu}).
 
 The command @code{johnson-ace-link} uses @samp{avy} to jump to a visible link in
 the results buffer.  All cross-reference buttons and URL buttons are
@@ -1034,16 +1034,16 @@ selection.  It is bound to @samp{o} in @code{johnson-mode}.
 
 @findex johnson-follow-ref
 The command @code{johnson-follow-ref} activates the cross-reference button at
-point.  In DSL dictionaries, cross-references are created by @samp{[ref]} tags
+point.  In DSL dictionaries@comma{} cross-references are created by @samp{[ref]} tags
 or @samp{<<...>>} markers and rendered as clickable text buttons.  By
-default, activating a cross-reference triggers a new @code{johnson-lookup}
+default@comma{} activating a cross-reference triggers a new @code{johnson-lookup}
 for the referenced word across all loaded dictionaries.  When
-@code{johnson-ref-scope} is set to @code{same}, the lookup is restricted to the
-dictionary containing the link; if no match is found there, the command
+@code{johnson-ref-scope} is set to @code{same}@comma{} the lookup is restricted to the
+dictionary containing the link; if no match is found there@comma{} the command
 falls back to a full lookup
-(@ref{Cross-reference scope}).
+(@ref{Cross-reference scope, , Cross-reference scope}).
 
-If there is no button at point, the command displays ``No cross-reference
+If there is no button at point@comma{} the command displays ``No cross-reference
 at point''.  It is bound to @samp{RET} in @code{johnson-mode}.
 
 @node Navigation history
@@ -1051,28 +1051,28 @@ at point''.  It is bound to @samp{RET} in @code{johnson-mode}.
 
 @findex johnson-history-back
 @findex johnson-history-forward
-The results buffer maintains a buffer-local navigation history, similar
+The results buffer maintains a buffer-local navigation history@comma{} similar
 to the history in Info mode or eww.  Each lookup pushes the word onto
 the history list.  Following a cross-reference also creates a history
 entry.
 
 The command @code{johnson-history-back} navigates to the previous word in the
-history, re-executing the lookup for that word.  When at the beginning
-of the history, it displays ``Beginning of history''.  It is bound to @samp{l}
+history@comma{} re-executing the lookup for that word.  When at the beginning
+of the history@comma{} it displays ``Beginning of history''.  It is bound to @samp{l}
 in @code{johnson-mode}.
 
 The command @code{johnson-history-forward} navigates to the next word in the
-history (after going back).  When at the end of the history, it displays
+history (after going back).  When at the end of the history@comma{} it displays
 ``End of history''.  It is bound to @samp{r} in @code{johnson-mode}.
 
 Navigation history is separate from the lookup history stored in
-@code{johnson-history} (@ref{Lookup history}).  The lookup history
-is a global list used for @code{completing-read} recall (@samp{M-p=/=M-n}), while
+@code{johnson-history} (@ref{Lookup history, , Lookup history}).  The lookup history
+is a global list used for @code{completing-read} recall (@samp{M-p=/=M-n})@comma{} while
 the navigation history is buffer-local to the @samp{*johnson*} buffer and
 tracks the sequence of words viewed in that buffer.
 
-When navigating back or forward, the lookup is performed with history
-push suppressed (via the internal @code{johnson--navigating-history} flag),
+When navigating back or forward@comma{} the lookup is performed with history
+push suppressed (via the internal @code{johnson--navigating-history} flag)@comma{}
 preventing duplicate entries from cluttering the history.
 
 @node Copying entries
@@ -1080,13 +1080,13 @@ preventing duplicate entries from cluttering the history.
 
 @findex johnson-copy-entry
 The command @code{johnson-copy-entry} copies the current dictionary section's
-entry as plain text to the kill ring.  All text properties, faces, and
+entry as plain text to the kill ring.  All text properties@comma{} faces@comma{} and
 markup are stripped; only the raw text content is copied.
 
 The ``current section'' is determined by point position: whichever
 dictionary section the cursor is inside.  Section boundaries are
 identified by the section content overlays.  If point is not within any
-section (e.g., between sections or on a header line), the command
+section (e.g.@comma{} between sections or on a header line)@comma{} the command
 displays ``No section at point''.
 
 It is bound to @samp{w} in @code{johnson-mode}.
@@ -1097,9 +1097,9 @@ the section at point to the kill ring.  This is useful for obtaining the exact
 string needed by @code{johnson-dictionary-priorities}.
 
 The command first checks for a @code{johnson-section-header} text property
-(present on header lines), then falls back to the @code{johnson-section}
+(present on header lines)@comma{} then falls back to the @code{johnson-section}
 overlay property (present throughout the section body).  If neither is
-found, it displays ``No dictionary section at point''.
+found@comma{} it displays ``No dictionary section at point''.
 
 It is bound to @samp{W} in @code{johnson-mode}.
 
@@ -1111,25 +1111,25 @@ It is bound to @samp{W} in @code{johnson-mode}.
 @findex johnson-dict-list-show-details
 The command @code{johnson-list-dictionaries} opens a @samp{*johnson-dictionaries*}
 buffer displaying all discovered dictionaries in a tabulated list.  The
-buffer uses @code{johnson-dict-list-mode}, a major mode derived from
+buffer uses @code{johnson-dict-list-mode}@comma{} a major mode derived from
 @code{tabulated-list-mode}.
 
-The table shows six columns: Name (the dictionary's display name),
-Format (e.g., ``DSL''), Languages (the source-to-target language pair),
-Entries (the number of indexed headwords), Status (``Indexed'', ``Needs
-reindex'', or ``Not indexed''), and Path (the abbreviated file path).  The
+The table shows six columns: Name (the dictionary's display name)@comma{}
+Format (e.g.@comma{} ``DSL'')@comma{} Languages (the source-to-target language pair)@comma{}
+Entries (the number of indexed headwords)@comma{} Status (``Indexed''@comma{} ``Needs
+reindex''@comma{} or ``Not indexed'')@comma{} and Path (the abbreviated file path).  The
 list is sorted by name by default and can be re-sorted by clicking on
 column headers.
 
 The command @code{johnson-dict-list-reindex} re-indexes the dictionary at
-point in the tabulated list.  It deletes the existing index file, forces
-a fresh index build, and refreshes the list to show the updated entry
+point in the tabulated list.  It deletes the existing index file@comma{} forces
+a fresh index build@comma{} and refreshes the list to show the updated entry
 count and status.  It is bound to @samp{i} in @code{johnson-dict-list-mode}.
 
 The command @code{johnson-dict-list-show-details} opens a
 @samp{*johnson-dict-details*} buffer showing detailed information about the
-dictionary at point: its name, format, source and target languages,
-group, priority, file path, index path, entry count, and whether the
+dictionary at point: its name@comma{} format@comma{} source and target languages@comma{}
+group@comma{} priority@comma{} file path@comma{} index path@comma{} entry count@comma{} and whether the
 index is stale.  It is bound to @samp{RET} in @code{johnson-dict-list-mode}.
 
 @node Cache management
@@ -1138,36 +1138,36 @@ index is stale.  It is bound to @samp{RET} in @code{johnson-dict-list-mode}.
 @findex johnson-close-caches
 The command @code{johnson-close-caches} kills all dictionary file cache
 buffers and closes all open sqlite database connections.  It also resets
-the internal dictionary list and indexed state, so the next lookup will
+the internal dictionary list and indexed state@comma{} so the next lookup will
 trigger a fresh discovery and staleness check.
 
 This is useful if you have added or removed dictionary files and want to
-force a clean rediscovery, or if you want to reclaim the memory used by
+force a clean rediscovery@comma{} or if you want to reclaim the memory used by
 cached dictionary buffers.
 
 The command reports how many cache buffers were closed and confirms that
 all database connections were closed.
 
 The retrieval worker is a persistent child Emacs that keeps backend
-caches warm across lookups (@ref{Rendering performance}).
-Commands that mutate the caches or indexes stop the worker first, so
-no retrieval overlaps the mutation: @code{johnson-index},
-@code{johnson-dict-list-reindex}, and @code{johnson-close-caches} all stop it,
+caches warm across lookups (@ref{Rendering performance, , Rendering performance}).
+Commands that mutate the caches or indexes stop the worker first@comma{} so
+no retrieval overlaps the mutation: @code{johnson-index}@comma{}
+@code{johnson-dict-list-reindex}@comma{} and @code{johnson-close-caches} all stop it@comma{}
 and @code{johnson-clear-index} stops it through @code{johnson-close-caches}
-(@ref{Clearing the index}).  The next lookup starts a
+(@ref{Clearing the index, , Clearing the index}).  The next lookup starts a
 fresh worker automatically.
 
 Killing the @samp{*johnson*} buffer does not stop the worker: it stays
-alive so a later lookup can reuse its caches.  When Emacs exits, a
-@code{kill-emacs-hook} function shuts the worker down, sending it a
+alive so a later lookup can reuse its caches.  When Emacs exits@comma{} a
+@code{kill-emacs-hook} function shuts the worker down@comma{} sending it a
 protocol shutdown when it is idle and terminating it immediately when
 it is blocked in a retrieval.
 
 @findex johnson-clear-resource-cache
 The command @code{johnson-clear-resource-cache} deletes the
-@samp{resources/} subdirectory of @code{johnson-cache-directory},
+@samp{resources/} subdirectory of @code{johnson-cache-directory}@comma{}
 removing all audio files extracted from companion zip archives
-(@ref{Audio playback}).
+(@ref{Audio playback, , Audio playback}).
 
 @node Toggling images
 @section Toggling images
@@ -1175,9 +1175,9 @@ removing all audio files extracted from companion zip archives
 @findex johnson-toggle-images
 The command @code{johnson-toggle-images} toggles the display of
 inline images in the results buffer.  When images are currently
-shown, the command hides them; when hidden, it re-renders the
+shown@comma{} the command hides them; when hidden@comma{} it re-renders the
 buffer with images visible.  The toggle affects the value of
-@code{johnson-display-images} (@ref{Images}).
+@code{johnson-display-images} (@ref{Images, , Images}).
 
 It is bound to @samp{I} in @code{johnson-mode}.
 
@@ -1187,13 +1187,13 @@ It is bound to @samp{I} in @code{johnson-mode}.
 @findex johnson-search
 The command @code{johnson-search} performs a full-text search across
 all indexed dictionary definitions.  It prompts for a search query
-and displays results in a tabulated list showing the headword,
-dictionary name, and a snippet of the matching definition with
+and displays results in a tabulated list showing the headword@comma{}
+dictionary name@comma{} and a snippet of the matching definition with
 highlighted matches.
 
 Full-text search must be enabled via @code{johnson-fts-enabled}
-(@ref{Full-text search}) before indexing for this command to
-produce results.  If full-text data has not been indexed, the
+(@ref{Full-text search, , Full-text search}) before indexing for this command to
+produce results.  If full-text data has not been indexed@comma{} the
 command signals an error.
 
 It is bound to @samp{S} in @code{johnson-mode}.
@@ -1204,20 +1204,20 @@ It is bound to @samp{S} in @code{johnson-mode}.
 @findex johnson-eldoc-mode
 @findex johnson-eldoc-function
 The command @code{johnson-eldoc-mode} is a buffer-local minor mode
-that adds dictionary definitions to eldoc.  When enabled, moving
+that adds dictionary definitions to eldoc.  When enabled@comma{} moving
 point over a word displays a brief dictionary definition in the
 eldoc area (typically the echo area or an eldoc buffer).  The
 lighter is @samp{" JDict"}.
 
 The maximum length of the displayed definition is controlled by
-@code{johnson-eldoc-max-length} (@ref{Eldoc integration}).
+@code{johnson-eldoc-max-length} (@ref{Eldoc integration, , Eldoc integration}).
 
 @lisp
 ;; Enable in text-mode buffers
 (add-hook 'text-mode-hook #'johnson-eldoc-mode)
 @end lisp
 
-Internally, the mode registers @code{johnson-eldoc-function} as an eldoc
+Internally@comma{} the mode registers @code{johnson-eldoc-function} as an eldoc
 documentation function.  This function looks up the word at point and
 passes a brief definition string to the eldoc callback.
 
@@ -1229,13 +1229,13 @@ The command @code{johnson-scan-mode} is a global minor mode that
 shows popup dictionary definitions when you select text or after an
 idle delay.  The lighter is @samp{" JScan"}.
 
-The trigger behavior, idle delay, and popup duration are controlled
-by the user options @code{johnson-scan-trigger},
-@code{johnson-scan-idle-delay}, and
-@code{johnson-scan-popup-duration} (@ref{Scan-popup mode}).
+The trigger behavior@comma{} idle delay@comma{} and popup duration are controlled
+by the user options @code{johnson-scan-trigger}@comma{}
+@code{johnson-scan-idle-delay}@comma{} and
+@code{johnson-scan-popup-duration} (@ref{Scan-popup mode, , Scan-popup mode}).
 
 The popup display uses posframe if the @samp{posframe} package is
-available, otherwise falls back to tooltip, and finally to the
+available@comma{} otherwise falls back to tooltip@comma{} and finally to the
 echo area.
 
 @lisp
@@ -1252,25 +1252,25 @@ echo area.
 @findex johnson-bookmark-list-delete
 The command @code{johnson-bookmark-add} bookmarks the dictionary
 entry at point for later reference.  The bookmark records the
-headword, dictionary name, and current date.  Bookmarks are
-persisted to @code{johnson-bookmarks-file} (@ref{Bookmarks}).
+headword@comma{} dictionary name@comma{} and current date.  Bookmarks are
+persisted to @code{johnson-bookmarks-file} (@ref{Bookmarks, , Bookmarks}).
 
 It is bound to @samp{b} in @code{johnson-mode}.
 
 The command @code{johnson-bookmark-remove} removes the bookmark for
 the dictionary entry at point.  When the same headword is bookmarked in
-several dictionaries, the bookmark of the dictionary section at point
+several dictionaries@comma{} the bookmark of the dictionary section at point
 is removed; outside every section the headword alone decides.  If the
-entry is not bookmarked, the command displays a message indicating so.
+entry is not bookmarked@comma{} the command displays a message indicating so.
 
 It is bound to @samp{M} in @code{johnson-mode}.
 
 The command @code{johnson-bookmark-list} opens a
 @samp{*johnson-bookmarks*} buffer displaying all bookmarked entries
-in a tabulated list.  The table has three columns: Headword,
-Dictionary, and Date.
+in a tabulated list.  The table has three columns: Headword@comma{}
+Dictionary@comma{} and Date.
 
-In the bookmarks buffer, the command @code{johnson-bookmark-list-goto}
+In the bookmarks buffer@comma{} the command @code{johnson-bookmark-list-goto}
 re-looks up the bookmarked headword.  It is bound to @samp{RET}.  The
 command @code{johnson-bookmark-list-delete} deletes the bookmark at point
 and is bound to @samp{d}.
@@ -1283,21 +1283,21 @@ and is bound to @samp{d}.
 @findex johnson-history-clear
 The command @code{johnson-history-list} opens a
 @samp{*johnson-history*} buffer displaying the full lookup history
-in a tabulated list with three columns: Headword, Time (the
-timestamp of the lookup), and Results (the number of dictionary
+in a tabulated list with three columns: Headword@comma{} Time (the
+timestamp of the lookup)@comma{} and Results (the number of dictionary
 matches).
 
 It is bound to @samp{H} in @code{johnson-mode}.
 
-In the history buffer, the command @code{johnson-history-list-goto} re-looks
+In the history buffer@comma{} the command @code{johnson-history-list-goto} re-looks
 up the headword at point.  It is bound to @samp{RET}.
 
 The command @code{johnson-history-clear} clears all lookup history
 after prompting for confirmation.  This removes both the in-memory
-history and, if persistence is enabled, the history file on disk.
+history and@comma{} if persistence is enabled@comma{} the history file on disk.
 
 History persistence is controlled by @code{johnson-history-persist}
-and @code{johnson-history-file} (@ref{History buffer}).
+and @code{johnson-history-file} (@ref{History buffer, , History buffer}).
 
 @node Browsing dictionary files
 @section Browsing dictionary files
@@ -1305,11 +1305,11 @@ and @code{johnson-history-file} (@ref{History buffer}).
 @findex johnson-browse-dictionary
 The command @code{johnson-browse-dictionary} opens Dired on the directory
 containing the dictionary file for the section at point.  This is
-useful when you want to inspect companion files (abbreviation tables,
-audio archives, resource files) that reside alongside the dictionary.
+useful when you want to inspect companion files (abbreviation tables@comma{}
+audio archives@comma{} resource files) that reside alongside the dictionary.
 
 This command is available from the transient menu
-(@ref{Transient menu}).
+(@ref{Transient menu, , Transient menu}).
 
 @node Clearing the index
 @section Clearing the index
@@ -1318,12 +1318,12 @@ This command is available from the transient menu
 The command @code{johnson-clear-index} deletes all sqlite index files in the
 cache directory and resets internal state.  Dictionaries will be
 re-indexed on the next lookup.  This is a more thorough reset than
-@code{johnson-close-caches} (@ref{Cache management}), which closes
+@code{johnson-close-caches} (@ref{Cache management, , Cache management})@comma{} which closes
 connections without deleting files.
 
 Use this command when you suspect index corruption or when you want to
 force a complete rebuild of every dictionary index.  This command is
-available from the transient menu (@ref{Transient menu}).
+available from the transient menu (@ref{Transient menu, , Transient menu}).
 
 @node Reordering dictionaries
 @section Reordering dictionaries
@@ -1335,9 +1335,9 @@ available from the transient menu (@ref{Transient menu}).
 The command @code{johnson-reorder-dictionaries} opens a
 @samp{*johnson-reorder*} buffer listing all discovered dictionaries.  You
 can rearrange them to define a custom display order that is then saved
-as @code{johnson-dictionary-priorities} (@ref{Display ordering}).
+as @code{johnson-dictionary-priorities} (@ref{Display ordering, , Display ordering}).
 
-The buffer uses @code{johnson-reorder-mode}, which provides:
+The buffer uses @code{johnson-reorder-mode}@comma{} which provides:
 
 @itemize
 @item
@@ -1348,14 +1348,14 @@ point up one position.
 point down one position.
 @item
 @samp{C-c C-c} (@code{johnson-reorder-save}) --- save the current ordering.
-When saving, you are prompted to choose between saving via
-@code{customize-save-variable} (persists across sessions), setting for the
-current session only, or copying the value to the kill ring so you can
+When saving@comma{} you are prompted to choose between saving via
+@code{customize-save-variable} (persists across sessions)@comma{} setting for the
+current session only@comma{} or copying the value to the kill ring so you can
 paste it into your init file manually.
 @end itemize
 
 This command is available from the transient menu
-(@ref{Transient menu}).
+(@ref{Transient menu, , Transient menu}).
 
 @node Importing GoldenDict order
 @section Importing GoldenDict order
@@ -1363,17 +1363,17 @@ This command is available from the transient menu
 @findex johnson-import-goldendict-order
 The command @code{johnson-import-goldendict-order} imports the dictionary
 display order from a GoldenDict configuration file.  It prompts for the
-path to the configuration file, parses the dictionary order, and opens
-the reorder buffer (@ref{Reordering dictionaries}) with
+path to the configuration file@comma{} parses the dictionary order@comma{} and opens
+the reorder buffer (@ref{Reordering dictionaries, , Reordering dictionaries}) with
 dictionaries sorted according to GoldenDict's order.
 
 Dictionaries that could not be matched to any discovered johnson
 dictionary are appended at the end and highlighted with
-@code{johnson-reorder-unmatched-face} (@ref{UI faces}).
+@code{johnson-reorder-unmatched-face} (@ref{UI faces, , UI faces}).
 This lets you identify dictionaries that need manual attention.
 
 This command is available from the transient menu
-(@ref{Transient menu}).
+(@ref{Transient menu, , Transient menu}).
 
 @node Transient menu
 @section Transient menu
@@ -1388,14 +1388,14 @@ Toggleable options are placed within the group they relate to:
 
 @itemize
 @item
-Column 1: @strong{Search} (with source/target language, FTS, and ref scope
-options), @strong{Navigate sections}, @strong{Display sections}.
+Column 1: @strong{Search} (with source/target language@comma{} FTS@comma{} and ref scope
+options)@comma{} @strong{Navigate sections}@comma{} @strong{Display sections}.
 @item
-Column 2: @strong{History} (with persist option), @strong{Bookmarks}, @strong{Copy},
+Column 2: @strong{History} (with persist option)@comma{} @strong{Bookmarks}@comma{} @strong{Copy}@comma{}
 @strong{Media} (with images option).
 @item
-Column 3: @strong{Dictionaries} (with directories option), @strong{Index}, @strong{Modes}
-(eldoc, scan).
+Column 3: @strong{Dictionaries} (with directories option)@comma{} @strong{Index}@comma{} @strong{Modes}
+(eldoc@comma{} scan).
 @end itemize
 
 The transient menu is defined in @samp{johnson-transient.el}.
@@ -1440,17 +1440,17 @@ backend with the core.  It accepts a plist with the following keys:
 
 @itemize
 @item
-@code{:name} --- a unique string identifying the format (e.g., @samp{"dsl"}).
+@code{:name} --- a unique string identifying the format (e.g.@comma{} @samp{"dsl"}).
 @item
 @code{:extensions} --- a list of file extension strings used to filter files
-during directory scanning (e.g., @samp{("dsl")}).
+during directory scanning (e.g.@comma{} @samp{("dsl")}).
 @item
 @code{:detect} --- a function @samp{(PATH) → BOOLEAN} that determines whether
 a file at PATH is a dictionary in this format.
 @item
 @code{:parse-metadata} --- a function @samp{(PATH) → PLIST} that extracts
-metadata from the dictionary file, returning at minimum @code{:name},
-@code{:source-lang}, and @code{:target-lang}.
+metadata from the dictionary file@comma{} returning at minimum @code{:name}@comma{}
+@code{:source-lang}@comma{} and @code{:target-lang}.
 @item
 @code{:build-index} --- a function @samp{(PATH CALLBACK) → NIL} that parses
 the dictionary and calls @samp{(funcall CALLBACK HEADWORD OFFSET LENGTH)}
@@ -1463,26 +1463,26 @@ that retrieves the raw entry text at the given location.
 rendered content into the current buffer at point.
 @end itemize
 
-A format may also register worker hooks, which let its retrieval run
+A format may also register worker hooks@comma{} which let its retrieval run
 inside the persistent retrieval child
-(@ref{Rendering performance}) while rendering
+(@ref{Rendering performance, , Rendering performance}) while rendering
 stays in the interactive Emacs:
 
 @itemize
 @item
 @code{:worker-query} --- the query function the worker runs for formats
-without a file-based index, such as the DICT protocol backend
-(@ref{DICT protocol}); it is called with the
+without a file-based index@comma{} such as the DICT protocol backend
+(@ref{DICT protocol, , DICT protocol}); it is called with the
 request's word in place of the indexed @code{:retrieve-entry} path.
 @item
 @code{:worker-prepare-entry} --- called in the retrieval worker with the
-dictionary plist, the database match, and the raw entry string;
+dictionary plist@comma{} the database match@comma{} and the raw entry string;
 returns a serializable packet of the form
 @samp{(:raw RAW :context CONTEXT)}.
 @item
 @code{:render-entry-with-context} --- called in the interactive Emacs
 with the packet's RAW and CONTEXT values; it must rely only on
-CONTEXT, never on global state set at retrieval time.
+CONTEXT@comma{} never on global state set at retrieval time.
 @item
 @code{:worker-config} --- returns extra serializable configuration the
 parent sends to the worker at startup.
@@ -1498,20 +1498,20 @@ context.
 @vindex johnson-worker-command-function
 Worker-side execution requires the format's library to be loadable by
 the retrieval child Emacs.  Johnson's bundled formats are loaded
-automatically, because the child loads @samp{johnson} itself at startup.  A
+automatically@comma{} because the child loads @samp{johnson} itself at startup.  A
 third-party format must extend @code{johnson-worker-command-function} so
 that the command it returns also loads the format's library in the
 child.  A format the child cannot load does not abort the lookup: each
 of its dictionaries renders as an error section naming the format that
 is not registered in the worker.
 
-If a format with the same @code{:name} is already registered, it is replaced.
-This allows format backends to re-register themselves (e.g., after
+If a format with the same @code{:name} is already registered@comma{} it is replaced.
+This allows format backends to re-register themselves (e.g.@comma{} after
 reloading the file during development).
 
 Backend modules typically call this function inside a
-@code{with-eval-after-load} form for @samp{johnson}, ensuring the core is loaded
-before registration occurs.  For an example, see how @samp{johnson-dsl.el}
+@code{with-eval-after-load} form for @samp{johnson}@comma{} ensuring the core is loaded
+before registration occurs.  For an example@comma{} see how @samp{johnson-dsl.el}
 registers the DSL format at the end of the file.
 
 @node Completion at point
@@ -1521,9 +1521,9 @@ registers the DSL format at the end of the file.
 The function @code{johnson-completion-at-point-function} provides a
 completion-at-point (CAPF) backend backed by the johnson dictionary
 index.  It completes the word at point using the same dynamic sqlite
-prefix queries as @code{johnson-lookup} (@ref{Looking up words}).
+prefix queries as @code{johnson-lookup} (@ref{Looking up words, , Looking up words}).
 
-To use this function, add it to @code{completion-at-point-functions} in the
+To use this function@comma{} add it to @code{completion-at-point-functions} in the
 major modes where you want dictionary completion:
 
 @lisp
@@ -1534,7 +1534,7 @@ major modes where you want dictionary completion:
 @end lisp
 
 The completion respects the current search scope: if the scope is set to
-@code{group}, only dictionaries in the active group are queried.
+@code{group}@comma{} only dictionaries in the active group are queried.
 
 @node Database lifecycle
 @section Database lifecycle
@@ -1543,18 +1543,18 @@ The completion respects the current search scope: if the scope is set to
 @findex johnson-db-close
 The function @code{johnson-db-open} opens or creates the sqlite database for
 a given dictionary file path.  It ensures the cache directory
-(@ref{Cache directory}) exists, creates the @code{metadata} and
-@code{entries} tables if they do not already exist, creates the index on
-@code{headword_normalized} if absent, and returns the database connection
+(@ref{Cache directory, , Cache directory}) exists@comma{} creates the @code{metadata} and
+@code{entries} tables if they do not already exist@comma{} creates the index on
+@code{headword_normalized} if absent@comma{} and returns the database connection
 object.  This is the primary entry point for obtaining a database handle.
 
 The function @code{johnson-db-close} closes a sqlite database connection.
 Pass the connection object previously returned by @code{johnson-db-open}.
-In practice, the core module caches database connections in a hash table,
+In practice@comma{} the core module caches database connections in a hash table@comma{}
 closes the least recently used one whenever the cache would exceed
-@code{johnson-max-open-databases} (@ref{Cache directory}),
+@code{johnson-max-open-databases} (@ref{Cache directory, , Cache directory})@comma{}
 and closes them all at once via @code{johnson-close-caches}
-(@ref{Cache management}).
+(@ref{Cache management, , Cache management}).
 
 @node Metadata storage
 @section Metadata storage
@@ -1563,23 +1563,23 @@ and closes them all at once via @code{johnson-close-caches}
 @findex johnson-db-get-metadata
 @findex johnson-db-get-all-metadata
 The metadata table stores key-value pairs describing each dictionary:
-its name, format identifier, source and target languages, source file
-path, file modification time, and entry count.  These metadata entries
+its name@comma{} format identifier@comma{} source and target languages@comma{} source file
+path@comma{} file modification time@comma{} and entry count.  These metadata entries
 are written during indexing and read during dictionary discovery and
-staleness detection (@ref{Staleness detection and reset}).
+staleness detection (@ref{Staleness detection and reset, , Staleness detection and reset}).
 
 The function @code{johnson-db-set-metadata} writes a key-value pair to the
-metadata table using @samp{INSERT OR REPLACE} semantics, so existing keys are
+metadata table using @samp{INSERT OR REPLACE} semantics@comma{} so existing keys are
 updated rather than duplicated.  Both KEY and VALUE are strings.
 
 The function @code{johnson-db-get-metadata} retrieves a single metadata value
-by key, returning @code{nil} if the key is not present in the database.
+by key@comma{} returning @code{nil} if the key is not present in the database.
 
 The function @code{johnson-db-get-all-metadata} returns all metadata as an
 alist of @samp{(KEY . VALUE)} pairs.  This is useful for displaying
-comprehensive dictionary details, such as in the dictionary detail
+comprehensive dictionary details@comma{} such as in the dictionary detail
 buffer opened by @code{johnson-dict-list-show-details}
-(@ref{Dictionary list}).
+(@ref{Dictionary list, , Dictionary list}).
 
 @node Headword normalization
 @section Headword normalization
@@ -1587,26 +1587,26 @@ buffer opened by @code{johnson-dict-list-show-details}
 @findex johnson-db-normalize
 The function @code{johnson-db-normalize} transforms a string for
 case-insensitive and accent-insensitive search.  It performs three steps
-in sequence: NFKD decomposition via @code{ucs-normalize-NFKD-string},
-removal of combining diacritical marks (Unicode general category Mn),
+in sequence: NFKD decomposition via @code{ucs-normalize-NFKD-string}@comma{}
+removal of combining diacritical marks (Unicode general category Mn)@comma{}
 and downcasing via @code{downcase}.
 
 This normalization means that searching for @samp{cafe} will match headwords
-such as @samp{café}, @samp{CAFÉ}, and @samp{Café}.  Both user input and headwords are
-normalized with this function before storage and querying, ensuring
+such as @samp{café}@comma{} @samp{CAFÉ}@comma{} and @samp{Café}.  Both user input and headwords are
+normalized with this function before storage and querying@comma{} ensuring
 consistent matching behavior.
 
 @findex johnson-html-clean-headword
-Before a headword reaches the database, the indexing path also passes it
-through @code{johnson-html-clean-headword}, which removes HTML markup for
-every format: digit-only superscripts, which mark homograph senses as in
-@samp{Belén<sup>1</sup>}, are dropped entirely; other tags are stripped with
-their text kept, so @samp{H<sub>2</sub>O} indexes as @samp{H2O}; entities are
+Before a headword reaches the database@comma{} the indexing path also passes it
+through @code{johnson-html-clean-headword}@comma{} which removes HTML markup for
+every format: digit-only superscripts@comma{} which mark homograph senses as in
+@samp{Belén<sup>1</sup>}@comma{} are dropped entirely; other tags are stripped with
+their text kept@comma{} so @samp{H<sub>2</sub>O} indexes as @samp{H2O}; entities are
 decoded; whitespace is collapsed and trimmed.  A headword consisting only
 of markup is not indexed.  DSL bracket tags are handled by the DSL
 backend before this point.
 
-If the input is @code{nil} or an empty string, the function returns an empty
+If the input is @code{nil} or an empty string@comma{} the function returns an empty
 string.
 
 @node Entry insertion
@@ -1615,20 +1615,20 @@ string.
 @findex johnson-db-insert-entry
 @findex johnson-db-insert-entries-batch
 The function @code{johnson-db-insert-entry} inserts a single headword entry
-into the database.  It takes the original HEADWORD text, a BYTE-OFFSET
-(or character offset, depending on the format backend), and an
+into the database.  It takes the original HEADWORD text@comma{} a BYTE-OFFSET
+(or character offset@comma{} depending on the format backend)@comma{} and an
 ENTRY-LENGTH specifying the entry's extent in the dictionary file.  The
 headword is stored with surrounding whitespace (including tabs and
-no-break spaces) removed, and nothing is inserted when it is blank; it
+no-break spaces) removed@comma{} and nothing is inserted when it is blank; it
 is automatically normalized via @code{johnson-db-normalize}
-(@ref{Headword normalization}) before insertion.
+(@ref{Headword normalization, , Headword normalization}) before insertion.
 
-For bulk insertion during indexing, the function
+For bulk insertion during indexing@comma{} the function
 @code{johnson-db-insert-entries-batch} inserts a list of entries in a single
-database transaction, which is dramatically faster than individual
+database transaction@comma{} which is dramatically faster than individual
 inserts for large dictionaries.  Each element in the ENTRIES list is a
 @samp{(HEADWORD BYTE-OFFSET BYTE-LENGTH)} triple.  If an error occurs during
-the transaction, it is rolled back and the error is re-signaled, leaving
+the transaction@comma{} it is rolled back and the error is re-signaled@comma{} leaving
 the database in a consistent state.
 
 @node Querying entries
@@ -1639,12 +1639,12 @@ the database in a consistent state.
 @findex johnson-db-entry-count
 The function @code{johnson-db-query-exact} queries the database for entries
 whose normalized headword exactly matches the normalized form of WORD@.
-It returns a list of @samp{(HEADWORD BYTE-OFFSET BYTE-LENGTH)} triples,
+It returns a list of @samp{(HEADWORD BYTE-OFFSET BYTE-LENGTH)} triples@comma{}
 where HEADWORD is the original non-normalized text.  Multiple triples
-may be returned when a dictionary contains duplicate headwords (e.g.,
+may be returned when a dictionary contains duplicate headwords (e.g.@comma{}
 from headword alternation) or when multiple entries share the same
 normalized form.  This function is used during the lookup flow in
-@code{johnson-lookup} (@ref{Looking up words}).
+@code{johnson-lookup} (@ref{Looking up words, , Looking up words}).
 
 The function @code{johnson-db-query-prefix} queries the database for distinct
 headwords whose normalized form begins with the normalized PREFIX@.  It
@@ -1655,7 +1655,7 @@ This function powers the dynamic completion table used by
 
 The function @code{johnson-db-entry-count} returns the total number of rows
 in the entries table.  It is used for display in the dictionary list
-buffer (@ref{Dictionary list}) and in indexing progress messages.
+buffer (@ref{Dictionary list, , Dictionary list}) and in indexing progress messages.
 
 @node Staleness detection and reset
 @section Staleness detection and reset
@@ -1666,29 +1666,29 @@ buffer (@ref{Dictionary list}) and in indexing progress messages.
 The function @code{johnson-db-stale-p} checks whether the index for a
 dictionary file is stale or does not exist.  It compares the file
 modification time stored in the database metadata (under the key
-@samp{"mtime"}) against the actual file's modification time, and the stored
-@samp{"index-version"} against the constant @code{johnson-db-index-version},
+@samp{"mtime"}) against the actual file's modification time@comma{} and the stored
+@samp{"index-version"} against the constant @code{johnson-db-index-version}@comma{}
 which is bumped whenever a change alters the entries an index stores.
-An index built under another version, or one that sqlite cannot open,
+An index built under another version@comma{} or one that sqlite cannot open@comma{}
 is stale and gets rebuilt.  If the sqlite database file does not exist
-at all, the function returns non-nil.  This
+at all@comma{} the function returns non-nil.  This
 function is called during the indexing flow
-(@ref{Indexing dictionaries}) to determine which
+(@ref{Indexing dictionaries, , Indexing dictionaries}) to determine which
 dictionaries need re-indexing.
 
 The function @code{johnson-db-reset} deletes all entries from a database in
 preparation for re-indexing.  It issues @samp{DELETE FROM entries} but does
-not drop the table or remove metadata.  After a reset, the entry count
+not drop the table or remove metadata.  After a reset@comma{} the entry count
 is zero and new entries can be inserted via
-@code{johnson-db-insert-entries-batch} (@ref{Entry insertion}).
+@code{johnson-db-insert-entries-batch} (@ref{Entry insertion, , Entry insertion}).
 
-The function @code{johnson-db-stale-quick-p} performs a fast,
-filesystem-only staleness check.  Unlike @code{johnson-db-stale-p}, it never
-opens a sqlite database; it checks whether the index file exists,
+The function @code{johnson-db-stale-quick-p} performs a fast@comma{}
+filesystem-only staleness check.  Unlike @code{johnson-db-stale-p}@comma{} it never
+opens a sqlite database; it checks whether the index file exists@comma{}
 whether the dictionary file's modification time is newer than the index
-file's, and whether the cache-wide marker file @samp{index-version} in
+file's@comma{} and whether the cache-wide marker file @samp{index-version} in
 @code{johnson-cache-directory} records the running @code{johnson-db-index-version}.
-That marker is written at the end of every full indexing run, so after
+That marker is written at the end of every full indexing run@comma{} so after
 an upgrade that bumps the version every dictionary is reported stale
 once and rebuilt through the usual indexing prompt.  This makes the
 check suitable for rapid scanning during discovery without the overhead
@@ -1704,20 +1704,20 @@ of opening every database.
 @findex johnson-db-set-fts-indexed
 The function @code{johnson-db-query-wildcard} queries the database for
 headwords matching a wildcard PATTERN@.  The pattern uses @samp{?} for a
-single character and @samp{*} for zero or more characters, which are
+single character and @samp{*} for zero or more characters@comma{} which are
 translated to SQL @samp{_} and @samp{%}.  It returns a list of distinct headword
-strings, with an optional LIMIT (default 200).  This function powers the
-wildcard search feature described in @ref{Wildcard search}.
+strings@comma{} with an optional LIMIT (default 200).  This function powers the
+wildcard search feature described in @ref{Wildcard search, , Wildcard search}.
 
 The function @code{johnson-db-insert-fts} inserts a headword and its
 plain-text definition into the FTS (full-text search) virtual table.
 It is called during indexing when @code{johnson-fts-enabled} is non-nil
-(@ref{Full-text search}).
+(@ref{Full-text search, , Full-text search}).
 
 The function @code{johnson-db-query-fts} queries the FTS table for a search
 term and returns a list of @samp{(HEADWORD SNIPPET)} pairs.  The optional
 LIMIT defaults to 50.  This function powers @code{johnson-search}
-(@ref{Searching definitions}).
+(@ref{Searching definitions, , Searching definitions}).
 
 The function @code{johnson-db-fts-indexed-p} returns non-nil if the database
 has been indexed for full-text search.  The function
@@ -1742,11 +1742,11 @@ the total number of unique headwords aggregated.
 
 The function @code{johnson-db-query-completion} queries the unified
 completion index for headwords matching a PREFIX@.  It returns a list of
-@samp{(HEADWORD DICT-COUNT)} pairs, where DICT-COUNT indicates how many
+@samp{(HEADWORD DICT-COUNT)} pairs@comma{} where DICT-COUNT indicates how many
 dictionaries contain that headword.  The optional LIMIT defaults to 200.
 
 The function @code{johnson-db-get-completion-db} returns the cached
-completion index database connection, opening it on first use.  It
+completion index database connection@comma{} opening it on first use.  It
 returns @code{nil} if the index file does not exist.  The function
 @code{johnson-db-close-completion-db} closes this cached connection.
 
@@ -1760,12 +1760,12 @@ path to the unified completion index database.
 The function @code{johnson-dsl-detect} determines whether a given file path
 is a DSL dictionary file.  It checks for the @samp{.dsl} extension
 (case-insensitively) and then verifies that the first non-BOM content in
-the file starts with @samp{#}, which indicates a DSL metadata header.
+the file starts with @samp{#}@comma{} which indicates a DSL metadata header.
 
 The detection handles all supported encodings: it reads the BOM to
-determine the encoding, skips the appropriate number of BOM bytes, and
+determine the encoding@comma{} skips the appropriate number of BOM bytes@comma{} and
 decodes the initial content to check for the @samp{#} character.  For UTF-16
-files, it reads enough bytes (64) to ensure it captures the first
+files@comma{} it reads enough bytes (64) to ensure it captures the first
 decoded characters.
 
 This function is registered as the @code{:detect} handler in the format
@@ -1778,19 +1778,19 @@ among all files found in the configured directories.
 @findex johnson-dsl-parse-metadata
 The function @code{johnson-dsl-parse-metadata} extracts metadata headers from
 a DSL dictionary file.  It reads only the first few kilobytes of the
-file (4 KB for UTF-8, 8 KB for UTF-16) since headers always appear at
-the top, making this operation efficient even for large files.
+file (4 KB for UTF-8@comma{} 8 KB for UTF-16) since headers always appear at
+the top@comma{} making this operation efficient even for large files.
 
 The function parses three header fields: @samp{#NAME} (the dictionary's
-display name), @samp{#INDEX_LANGUAGE} (the source language), and
+display name)@comma{} @samp{#INDEX_LANGUAGE} (the source language)@comma{} and
 @samp{#CONTENTS_LANGUAGE} (the target language).  Header values are enclosed
 in double quotes in the file.
 
-It returns a plist with keys @code{:name}, @code{:source-lang}, and
-@code{:target-lang}.  If a header is absent, the corresponding value defaults
+It returns a plist with keys @code{:name}@comma{} @code{:source-lang}@comma{} and
+@code{:target-lang}.  If a header is absent@comma{} the corresponding value defaults
 to an empty string.  The core module uses these values for dictionary
 display names and for auto-detecting language-pair groups
-(@ref{Search scope and groups}).
+(@ref{Search scope and groups, , Search scope and groups}).
 
 @node DSL index building
 @section DSL index building
@@ -1798,23 +1798,23 @@ display names and for auto-detecting language-pair groups
 @findex johnson-dsl-build-index
 The function @code{johnson-dsl-build-index} parses an entire DSL dictionary
 file and calls a CALLBACK function for each headword entry found.  The
-callback receives three arguments: the headword string, the character
-offset of the entry body in the decoded buffer (1-based), and the
+callback receives three arguments: the headword string@comma{} the character
+offset of the entry body in the decoded buffer (1-based)@comma{} and the
 character length of the body.
 
 The parsing proceeds in a single pass through a decoded buffer cache.
-It first skips metadata header lines (beginning with @samp{#}), then
-identifies entries by their structure: flush-left lines are headwords,
+It first skips metadata header lines (beginning with @samp{#})@comma{} then
+identifies entries by their structure: flush-left lines are headwords@comma{}
 and indented lines (beginning with a tab or spaces) are the entry body.
 Multiple consecutive flush-left lines before an indented body are treated
 as multiple headwords for the same entry.
 
 Each raw headword is expanded via the internal headword expansion
-pipeline, which handles three kinds of variants:
+pipeline@comma{} which handles three kinds of variants:
 
 @itemize
 @item
-@strong{Split markers}: @samp{colour@{/@}color} produces two separate headwords,
+@strong{Split markers}: @samp{colour@{/@}color} produces two separate headwords@comma{}
 @samp{colour} and @samp{color}.
 
 @item
@@ -1824,18 +1824,18 @@ pipeline, which handles three kinds of variants:
 @strong{Optional parts}: @samp{go(es)} expands to both @samp{go} and @samp{goes}.
 @end itemize
 
-Escaped characters (@samp{\[}, @samp{\]}, @samp{\@{}, @samp{\@}}, @samp{\(}, @samp{\)}) are stripped
+Escaped characters (@samp{\[}@comma{} @samp{\]}@comma{} @samp{\@{}@comma{} @samp{\@}}@comma{} @samp{\(}@comma{} @samp{\)}) are stripped
 after expansion.  Each expanded variant becomes a separate row in the
-database, all pointing to the same entry body.
+database@comma{} all pointing to the same entry body.
 
-If a headword fails to parse, it is skipped and a count of skipped
+If a headword fails to parse@comma{} it is skipped and a count of skipped
 entries is logged as a warning message at the end of the indexing run.
 
 A key design decision is the use of @emph{decoded buffers} rather than raw
 byte access.  Dictionary files are opened with their detected encoding
-(UTF-16LE, UTF-16BE, UTF-8 with BOM, or plain UTF-8) and cached as
+(UTF-16LE@comma{} UTF-16BE@comma{} UTF-8 with BOM@comma{} or plain UTF-8) and cached as
 multibyte Emacs buffers.  The index stores character positions rather
-than byte offsets, which ensures that UTF-16 encoded files work correctly
+than byte offsets@comma{} which ensures that UTF-16 encoded files work correctly
 for both indexing and retrieval.
 
 @node DSL entry retrieval
@@ -1843,19 +1843,19 @@ for both indexing and retrieval.
 
 @findex johnson-dsl-retrieve-entry
 The function @code{johnson-dsl-retrieve-entry} retrieves the raw entry body
-from a DSL dictionary file.  It takes the file path, a character offset
-(CHAR-OFFSET, 1-based), and a character count (NCHARS), and returns the
+from a DSL dictionary file.  It takes the file path@comma{} a character offset
+(CHAR-OFFSET@comma{} 1-based)@comma{} and a character count (NCHARS)@comma{} and returns the
 corresponding substring from the decoded buffer cache.
 
-Because the index stores character positions rather than byte offsets,
-this function works correctly with all supported encodings, including
+Because the index stores character positions rather than byte offsets@comma{}
+this function works correctly with all supported encodings@comma{} including
 UTF-16 files where byte positions would not align with character
 boundaries.
 
 The decoded buffer cache keeps dictionary files open as hidden Emacs
 buffers (named @samp{" *johnson-cache: PATH"}) for fast repeated lookups.
 All cache buffers can be killed via @code{johnson-close-caches}
-(@ref{Cache management}).
+(@ref{Cache management, , Cache management}).
 
 @node DSL entry rendering
 @section DSL entry rendering
@@ -1866,41 +1866,41 @@ into richly formatted content in the current buffer.  It inserts the
 rendered text at point using Emacs text properties and faces rather than
 HTML or shr rendering.
 
-The rendering proceeds in several steps.  First, leading indentation
+The rendering proceeds in several steps.  First@comma{} leading indentation
 (tab or spaces) is stripped from each line.  Media references
 (@samp{@{@{...@}@}}) are removed.  Then the text is inserted into the buffer and
 processed in two passes.
 
-The first pass handles @samp{<<...>>} cross-reference markers, converting
+The first pass handles @samp{<<...>>} cross-reference markers@comma{} converting
 them into clickable buttons with @code{johnson-ref-face}
-(@ref{Link faces}).  Each button invokes @code{johnson-lookup} for the
+(@ref{Link faces, , Link faces}).  Each button invokes @code{johnson-lookup} for the
 referenced word when activated.
 
 The second pass processes DSL tags using a stack-based parser.  The
-parser scans for tag patterns matching @samp{[tag]} and @samp{[/tag]}, maintaining
-a stack of active tags.  When a closing tag is encountered, the
+parser scans for tag patterns matching @samp{[tag]} and @samp{[/tag]}@comma{} maintaining
+a stack of active tags.  When a closing tag is encountered@comma{} the
 corresponding face or text property is applied to the enclosed region.
 The supported tags include:
 
 @itemize
 @item
-@samp{[b]}, @samp{[i]}, @samp{[u]}: text styling (@ref{Text styling faces})
+@samp{[b]}@comma{} @samp{[i]}@comma{} @samp{[u]}: text styling (@ref{Text styling faces, , Text styling faces})
 @item
-@samp{[c]} and @samp{[c NAME]}: color (@ref{Color faces})
+@samp{[c]} and @samp{[c NAME]}: color (@ref{Color faces, , Color faces})
 @item
-@samp{[sup]}, @samp{[sub]}: superscript and subscript via @code{display} properties
+@samp{[sup]}@comma{} @samp{[sub]}: superscript and subscript via @code{display} properties
 @item
-@samp{[ex]}: examples (@ref{Content type faces})
+@samp{[ex]}: examples (@ref{Content type faces, , Content type faces})
 @item
 @samp{[*]}: optional/secondary text
 @item
-@samp{[ref]}: cross-reference buttons (@ref{Link faces})
+@samp{[ref]}: cross-reference buttons (@ref{Link faces, , Link faces})
 @item
 @samp{[url]}: external URL buttons
 @item
 @samp{[lang id=N]}: language identifier (stored as text property)
 @item
-@samp{[trn]}, @samp{[!trn]}: translation blocks (blank line separation);
+@samp{[trn]}@comma{} @samp{[!trn]}: translation blocks (blank line separation);
 @samp{[trn]} remains inline after a phrase/example translation arrow
 @item
 @samp{[com]}: comments
@@ -1910,7 +1910,7 @@ The supported tags include:
 @item
 @samp{[p]}: abbreviation markers (rendered as-is)
 @item
-@samp{[']}: stress marks (@ref{Text styling faces})
+@samp{[']}: stress marks (@ref{Text styling faces, , Text styling faces})
 @item
 @samp{[s]}: media references (content is suppressed)
 @end itemize
@@ -1923,16 +1923,16 @@ The supported tags include:
 @findex johnson-stardict-build-index
 @findex johnson-stardict-retrieve-entry
 @findex johnson-stardict-render-entry
-The StarDict backend (@samp{johnson-stardict.el}) handles @samp{.ifo}, @samp{.idx},
-@samp{.dict}, and @samp{.syn} files.  It supports dictzip-compressed @samp{.dict.dz}
-files via @samp{johnson-dictzip.el} (@ref{Dictzip backend}).
+The StarDict backend (@samp{johnson-stardict.el}) handles @samp{.ifo}@comma{} @samp{.idx}@comma{}
+@samp{.dict}@comma{} and @samp{.syn} files.  It supports dictzip-compressed @samp{.dict.dz}
+files via @samp{johnson-dictzip.el} (@ref{Dictzip backend, , Dictzip backend}).
 
 The function @code{johnson-stardict-detect} checks whether a file is a
 StarDict @samp{.ifo} file by verifying the extension and the presence of
 the @samp{StarDict's dict ifo file} magic line.
 
 The function @code{johnson-stardict-parse-metadata} parses the @samp{.ifo} file
-to extract the dictionary name, source language, and target language.
+to extract the dictionary name@comma{} source language@comma{} and target language.
 
 The function @code{johnson-stardict-build-index} parses the binary @samp{.idx}
 file (or @samp{.idx.gz}) to extract headword entries.  Each entry's byte
@@ -1942,14 +1942,14 @@ auto-detects non-standard 64-bit entry formats in dictionaries whose
 
 The function @code{johnson-stardict-retrieve-entry} reads the raw entry data
 from the @samp{.dict} file at the given byte offset and size.  For
-dictzip-compressed files, it delegates to @code{johnson-dictzip-read}.  It
+dictzip-compressed files@comma{} it delegates to @code{johnson-dictzip-read}.  It
 also records the @code{sametypesequence} setting for use by the renderer.
 
 The function @code{johnson-stardict-render-entry} renders raw StarDict data
 into the current buffer.  It interprets the @code{sametypesequence} field to
-parse data fields, supporting plain text, HTML, Pango markup, phonetic,
+parse data fields@comma{} supporting plain text@comma{} HTML@comma{} Pango markup@comma{} phonetic@comma{}
 and resource content types.  HTML content is rendered using
-@code{johnson-html-render-region} (@ref{HTML rendering}).
+@code{johnson-html-render-region} (@ref{HTML rendering, , HTML rendering}).
 
 @node MDict backend
 @section MDict backend
@@ -1961,16 +1961,16 @@ and resource content types.  HTML content is rendered using
 @findex johnson-mdict-render-entry
 @findex johnson-mdict-clear-caches
 The MDict backend (@samp{johnson-mdict.el}) handles @samp{.mdx} and @samp{.mdd}
-files, including encrypted files (@samp{Encrypted}``2''@samp{).  Encryption
+files@comma{} including encrypted files (@samp{Encrypted}``2''@samp{).  Encryption
 support uses the pure Elisp RIPEMD-128 implementation in
-=johnson-ripemd128.el} (@ref{RIPEMD-128 hashing}).
+=johnson-ripemd128.el} (@ref{RIPEMD-128 hashing, , RIPEMD-128 hashing}).
 
 The function @code{johnson-mdict-detect} checks whether a file is an MDict
 @samp{.mdx} file by verifying the extension.
 
 The function @code{johnson-mdict-parse-metadata} reads the MDict header to
-extract the dictionary name, source language, and target language.  If
-the title field contains HTML, the function falls back to the filename.
+extract the dictionary name@comma{} source language@comma{} and target language.  If
+the title field contains HTML@comma{} the function falls back to the filename.
 
 The function @code{johnson-mdict-build-index} parses the MDict keyword
 blocks to extract headwords and their record offsets.  Entry sizes are
@@ -1983,11 +1983,11 @@ record blocks.
 
 The function @code{johnson-mdict-render-entry} renders MDict HTML content
 into the current buffer using @code{johnson-html-render-region}.  If the
-entry data starts with @samp{@@@@@@LINK=}, the target entry is resolved and
+entry data starts with @samp{@@@@@@LINK=}@comma{} the target entry is resolved and
 rendered instead (following MDict's redirect convention).
 
 The function @code{johnson-mdict-clear-caches} clears all MDict-specific
-caches (header data, record block info, offset caches).
+caches (header data@comma{} record block info@comma{} offset caches).
 
 @node BGL backend
 @section BGL backend
@@ -2005,11 +2005,11 @@ dictionary by verifying the extension and the presence of magic bytes
 (@samp{0x12 0x34}) at the start of the file.
 
 The function @code{johnson-bgl-parse-metadata} reads BGL header records to
-extract the dictionary name, source language, and target language.
+extract the dictionary name@comma{} source language@comma{} and target language.
 
 The function @code{johnson-bgl-build-index} decompresses the BGL file
 (which uses gzip compression) and parses the entry records.  Byte
-offsets reference positions in the decompressed stream, which is cached
+offsets reference positions in the decompressed stream@comma{} which is cached
 in a unibyte buffer.
 
 The function @code{johnson-bgl-retrieve-entry} retrieves the raw definition
@@ -2018,7 +2018,7 @@ decoded string.
 
 The function @code{johnson-bgl-render-entry} renders BGL HTML content into
 the current buffer using @code{johnson-html-render-region}
-(@ref{HTML rendering}).
+(@ref{HTML rendering, , HTML rendering}).
 
 The function @code{johnson-bgl-clear-caches} clears all BGL-specific caches.
 
@@ -2031,27 +2031,27 @@ The function @code{johnson-bgl-clear-caches} clears all BGL-specific caches.
 @findex johnson-dict-render-entry
 @findex johnson-dict-clear-caches
 The DICT protocol backend (@samp{johnson-dict.el}) communicates with remote
-dictionary servers using RFC 2229 over TCP@.  Unlike file-based backends,
+dictionary servers using RFC 2229 over TCP@.  Unlike file-based backends@comma{}
 it does not use the standard @code{:detect} / @code{:build-index} registration
-keys (those are set to @code{ignore}).  Instead, it has its own discovery and
+keys (those are set to @code{ignore}).  Instead@comma{} it has its own discovery and
 query mechanisms.
 
 The function @code{johnson-dict-discover} connects to each server listed in
-@code{johnson-dict-servers} (@ref{DICT protocol}), lists the
-available databases, and returns a list of dictionary plists suitable
+@code{johnson-dict-servers} (@ref{DICT protocol, , DICT protocol})@comma{} lists the
+available databases@comma{} and returns a list of dictionary plists suitable
 for the internal dictionary registry.  Discovered DICT dictionaries
 appear under the ``DICT Servers'' group.
 
 The function @code{johnson-dict-query-exact} queries a DICT server for a
 word and caches the results locally.  It returns a list of
-@samp{(HEADWORD OFFSET LENGTH)} triples, where OFFSET encodes the word and
+@samp{(HEADWORD OFFSET LENGTH)} triples@comma{} where OFFSET encodes the word and
 result index for deterministic cache retrieval.
 
 The function @code{johnson-dict-retrieve-entry} retrieves a previously
 cached DICT definition using the encoded offset string.
 
 The function @code{johnson-dict-render-entry} inserts a DICT definition as
-plain text, since DICT responses do not contain markup.
+plain text@comma{} since DICT responses do not contain markup.
 
 The function @code{johnson-dict-clear-caches} clears all DICT caches and
 disconnects from servers.
@@ -2065,12 +2065,12 @@ disconnects from servers.
 The dictzip module (@samp{johnson-dictzip.el}) provides random-access
 decompression for dictzip-compressed files (@samp{.dsl.dz} and @samp{.dict.dz}).
 Dictzip is a gzip-compatible format that partitions the compressed data
-into fixed-size chunks, enabling decompression of arbitrary byte ranges
+into fixed-size chunks@comma{} enabling decompression of arbitrary byte ranges
 without reading the entire file.
 
 The function @code{johnson-dictzip-read} reads a specified number of bytes
 at a given uncompressed offset from a dictzip file.  It decompresses
-only the chunks that overlap the requested range, caching decompressed
+only the chunks that overlap the requested range@comma{} caching decompressed
 chunks for subsequent reads.
 
 The function @code{johnson-dictzip-read-full} reads the entire uncompressed
@@ -2087,23 +2087,23 @@ headers and decompressed chunks.
 @findex johnson-html-decode-entities-string
 @findex johnson-html-render-region
 The HTML rendering module (@samp{johnson-html.el}) provides shared
-infrastructure for rendering HTML content from StarDict, MDict, and BGL
-entries.  It converts HTML tags into Emacs text properties and faces,
+infrastructure for rendering HTML content from StarDict@comma{} MDict@comma{} and BGL
+entries.  It converts HTML tags into Emacs text properties and faces@comma{}
 without relying on @samp{shr} or an external browser.
 
 The function @code{johnson-html-render-region} processes HTML tags in a
-buffer region, replacing them with appropriate text properties.  It
-handles common tags: @samp{<b>}, @samp{<i>}, @samp{<u>}, @samp{<font>}, @samp{<span>},
-@samp{<div>}, @samp{<br>}, @samp{<p>}, @samp{<img>}, @samp{<a>}, and others.  CSS @samp{color} and
+buffer region@comma{} replacing them with appropriate text properties.  It
+handles common tags: @samp{<b>}@comma{} @samp{<i>}@comma{} @samp{<u>}@comma{} @samp{<font>}@comma{} @samp{<span>}@comma{}
+@samp{<div>}@comma{} @samp{<br>}@comma{} @samp{<p>}@comma{} @samp{<img>}@comma{} @samp{<a>}@comma{} and others.  CSS @samp{color} and
 @samp{font-weight} style attributes are parsed and applied as face
-properties.  It also decodes HTML entities such as @samp{&amp;}, @samp{&lt;},
-@samp{&gt;}, @samp{&nbsp;}, @samp{&quot;}, @samp{&apos;}, and numeric entities like
+properties.  It also decodes HTML entities such as @samp{&amp;}@comma{} @samp{&lt;}@comma{}
+@samp{&gt;}@comma{} @samp{&nbsp;}@comma{} @samp{&quot;}@comma{} @samp{&apos;}@comma{} and numeric entities like
 @samp{&#123;} and @samp{&#xAB;}.
 
 The function @code{johnson-html-decode-entities-string} decodes the same
 set of HTML entities in a bare string and returns the result.  Format
 backends use it for metadata fields that come from raw headers rather
-than entry bodies — for example, the MDict backend decodes entities
+than entry bodies — for example@comma{} the MDict backend decodes entities
 in the @samp{Title} header before storing it as the dictionary name.
 
 The function @code{johnson-html-color-to-face} maps an HTML color name or
@@ -2117,8 +2117,8 @@ back to creating an anonymous face with the specified RGB foreground.
 @findex johnson-ripemd128-hash-hex
 The RIPEMD-128 module (@samp{johnson-ripemd128.el}) provides a pure Elisp
 implementation of the RIPEMD-128 hash algorithm.  This is used by the
-MDict backend (@ref{MDict backend}) to decrypt MDict files
-with @samp{Encrypted}``2''= headers, which require RIPEMD-128 key derivation.
+MDict backend (@ref{MDict backend, , MDict backend}) to decrypt MDict files
+with @samp{Encrypted}``2''= headers@comma{} which require RIPEMD-128 key derivation.
 
 The function @code{johnson-ripemd128-hash} computes the RIPEMD-128 hash of a
 unibyte string and returns a 16-byte unibyte digest.
@@ -2134,13 +2134,13 @@ to UTF-8 first) and unibyte strings.
 @findex johnson-insert-audio-button
 The function @code{johnson-play-sound} plays an audio file using the
 configured player.  It respects @code{johnson-audio-player}
-(@ref{Audio playback}): when set to @code{auto}, it tries
-@code{play-sound-file} first, then falls back to external players in
+(@ref{Audio playback, , Audio playback}): when set to @code{auto}@comma{} it tries
+@code{play-sound-file} first@comma{} then falls back to external players in
 @code{johnson-audio-external-players}.
 
 The function @code{johnson-insert-audio-button} inserts a clickable play
 button (@samp{▶}) for an audio file at point.  The optional DICT-PATH
-argument identifies the dictionary file, which is used to locate a
+argument identifies the dictionary file@comma{} which is used to locate a
 companion zip archive for on-demand audio extraction.  This function
 is called by format renderers when they encounter audio references.
 
@@ -2155,19 +2155,19 @@ is called by format renderers when they encounter audio references.
 @findex johnson-epwing-render-entry
 @findex johnson-epwing-clear-caches
 The EPWING backend (@samp{johnson-epwing.el}) handles EPWING (JIS X 4081)
-and EB format electronic dictionaries (@ref{EPWING}).
+and EB format electronic dictionaries (@ref{EPWING, , EPWING}).
 
 The function @code{johnson-epwing-detect} checks whether a file is a valid
 EPWING HONMON data file.
 
 The function @code{johnson-epwing-parse-metadata} reads metadata from a
-HONMON file and returns a plist with the dictionary name, source
-language, and target language.
+HONMON file and returns a plist with the dictionary name@comma{} source
+language@comma{} and target language.
 
 The function @code{johnson-epwing-discover} scans
-@code{johnson-dictionary-directories} for @samp{CATALOGS} and @samp{CATALOG} files,
-parses each to enumerate subbooks, and returns a list of dictionary
-plists.  Unlike file-based backends, EPWING discovery is
+@code{johnson-dictionary-directories} for @samp{CATALOGS} and @samp{CATALOG} files@comma{}
+parses each to enumerate subbooks@comma{} and returns a list of dictionary
+plists.  Unlike file-based backends@comma{} EPWING discovery is
 directory-based: each subbook within a book becomes a separate
 dictionary entry.
 
@@ -2178,13 +2178,13 @@ is always 0 because entries are delimited by stop codes rather than
 fixed lengths.
 
 The function @code{johnson-epwing-retrieve-entry} reads an entry from the
-HONMON file at the given byte offset, decoding text until the stop
+HONMON file at the given byte offset@comma{} decoding text until the stop
 code.  Escape sequences are preserved as character-31 markers for later
 rendering.
 
 The function @code{johnson-epwing-render-entry} interprets the character-31
-escape markers to apply text formatting (bold, italic, emphasis,
-references, sub/superscript, indentation, and newlines) and inserts the
+escape markers to apply text formatting (bold@comma{} italic@comma{} emphasis@comma{}
+references@comma{} sub/superscript@comma{} indentation@comma{} and newlines) and inserts the
 result into the current buffer.
 
 The function @code{johnson-epwing-clear-caches} clears all EPWING-specific
@@ -2198,14 +2198,14 @@ caches.
 @findex johnson-ebzip-clear-caches
 The EBZIP module (@samp{johnson-ebzip.el}) provides random-access
 decompression for EBZIP-compressed EPWING files (@samp{.ebz}).  EBZIP is a
-compression format used by some EPWING distributions, similar in concept
+compression format used by some EPWING distributions@comma{} similar in concept
 to dictzip but specific to the EPWING ecosystem.  The module uses zlib
 decompression and caches decompressed slices for efficient repeated
 access.
 
 The function @code{johnson-ebzip-read} reads a specified number of
 uncompressed bytes from an EBZIP file at a given offset.  It
-decompresses only the slices that overlap the requested range,
+decompresses only the slices that overlap the requested range@comma{}
 caching results for subsequent reads.
 
 The function @code{johnson-ebzip-uncompressed-size} returns the
@@ -2249,7 +2249,7 @@ The face @code{johnson-underline-face} renders text enclosed in
 @samp{[u]...[/u]} tags.  It sets the @samp{:underline} attribute to @code{t}.
 
 The face @code{johnson-stress-face} renders stress marks enclosed in
-@samp{[']}@dots{}=[/']=  tags.  It inherits from @code{bold}, making accented
+@samp{[']}@dots{}=[/']=  tags.  It inherits from @code{bold}@comma{} making accented
 syllables visually prominent in pronunciation guides.
 
 @node Content type faces
@@ -2261,7 +2261,7 @@ syllables visually prominent in pronunciation guides.
 @vindex johnson-abbreviation-face
 The face @code{johnson-example-face} renders example sentences enclosed in
 @samp{[ex]...[/ex]} tags.  It inherits from @code{italic} with a @samp{dim gray}
-foreground, visually distinguishing examples from definitions.
+foreground@comma{} visually distinguishing examples from definitions.
 
 The face @code{johnson-optional-face} renders optional or secondary text
 enclosed in @samp{[*]...[/*]} tags.  It uses a muted gray foreground that
@@ -2269,14 +2269,14 @@ adapts to the background: @samp{gray50} on light backgrounds and @samp{gray60}
 on dark backgrounds.
 
 The face @code{johnson-comment-face} renders comment annotations enclosed in
-@samp{[com]...[/com]} tags.  It inherits from @code{font-lock-comment-face},
+@samp{[com]...[/com]} tags.  It inherits from @code{font-lock-comment-face}@comma{}
 giving comments a consistent appearance with the rest of Emacs.
 
 The face @code{johnson-abbreviation-face} renders abbreviation markers
 enclosed in @samp{[p]...[/p]} tags.  It uses a green foreground (@samp{dark
-green} on light backgrounds, @samp{green3} on dark backgrounds), matching
+green} on light backgrounds@comma{} @samp{green3} on dark backgrounds)@comma{} matching
 the default color face convention for DSL dictionaries.  Abbreviation
-markers typically contain short labels (e.g., ``noun'', ``verb'') that are
+markers typically contain short labels (e.g.@comma{} ``noun''@comma{} ``verb'') that are
 expanded from a companion @samp{_abrv.dsl} file when available.
 
 @node Link faces
@@ -2288,7 +2288,7 @@ The face @code{johnson-ref-face} renders cross-reference links enclosed in
 @samp{[ref]...[/ref]} tags or @samp{<<...>>} markers.  It inherits from @code{link}.
 Cross-references are rendered as clickable buttons that invoke
 @code{johnson-lookup} for the referenced word
-(@ref{Following cross-references}).
+(@ref{Following cross-references, , Following cross-references}).
 
 The face @code{johnson-url-face} renders external URL links enclosed in
 @samp{[url]...[/url]} tags.  It inherits from @code{link}.  URL links are rendered
@@ -2301,7 +2301,7 @@ as clickable buttons that open the URL via @code{browse-url}.
 The face @code{johnson-section-header-face} renders dictionary section
 headers in the results buffer (the lines using Unicode box-drawing
 character @samp{━}).  It inherits from @code{bold} with the @samp{:extend} attribute
-set to @code{t}, ensuring the face extends to the edge of the window.
+set to @code{t}@comma{} ensuring the face extends to the edge of the window.
 
 This face is defined in @samp{johnson.el} (for the results buffer headers)
 and also in @samp{johnson-dsl.el} (for DSL-specific section headers).
@@ -2323,25 +2323,25 @@ a fixed set of customizable Emacs faces.  All color faces define
 separate foreground colors for light and dark backgrounds.
 
 The face @code{johnson-color-default-face} is used when no color name is
-specified (i.e., a bare @samp{[c]} tag).  It defaults to green (@samp{dark green}
-on light backgrounds, @samp{green3} on dark backgrounds).
+specified (i.e.@comma{} a bare @samp{[c]} tag).  It defaults to green (@samp{dark green}
+on light backgrounds@comma{} @samp{green3} on dark backgrounds).
 
 The face @code{johnson-color-green-face} is used for the DSL color names
 @samp{green} and @samp{darkgreen}.
 
-The face @code{johnson-color-red-face} is used for @samp{red}, @samp{darkred}, and
+The face @code{johnson-color-red-face} is used for @samp{red}@comma{} @samp{darkred}@comma{} and
 @samp{crimson}.
 
-The face @code{johnson-color-blue-face} is used for @samp{blue}, @samp{darkblue}, and
+The face @code{johnson-color-blue-face} is used for @samp{blue}@comma{} @samp{darkblue}@comma{} and
 @samp{steelblue}.
 
-The face @code{johnson-color-gray-face} is used for @samp{gray}, @samp{darkgray}, and
+The face @code{johnson-color-gray-face} is used for @samp{gray}@comma{} @samp{darkgray}@comma{} and
 @samp{dimgray}.
 
 The face @code{johnson-color-brown-face} is used for @samp{brown} and
 @samp{saddlebrown}.
 
-The face @code{johnson-color-violet-face} is used for @samp{violet}, @samp{purple},
+The face @code{johnson-color-violet-face} is used for @samp{violet}@comma{} @samp{purple}@comma{}
 and @samp{darkviolet}.
 
 The face @code{johnson-color-orange-face} is used for @samp{orange} and
@@ -2360,12 +2360,12 @@ top of the results buffer.  TOC entries are clickable links that jump
 to the corresponding dictionary section.  It inherits from @code{link}.
 
 The face @code{johnson-audio-button-face} renders audio playback buttons
-(@samp{▶}) in dictionary entries (@ref{Audio playback}).  It
+(@samp{▶}) in dictionary entries (@ref{Audio playback, , Audio playback}).  It
 inherits from @code{link}.
 
 The face @code{johnson-reorder-unmatched-face} highlights dictionaries in
 the reorder buffer that could not be matched during a GoldenDict
-import (@ref{Importing GoldenDict order}).  It
+import (@ref{Importing GoldenDict order, , Importing GoldenDict order}).  It
 inherits from @code{warning}.
 
 @node Tips
@@ -2378,7 +2378,7 @@ inherits from @code{warning}.
 @node Looking up words in PDF documents
 @section Looking up words in PDF documents
 
-If you use @samp{pdf-tools} for reading PDFs, you can look up words by
+If you use @samp{pdf-tools} for reading PDFs@comma{} you can look up words by
 double-clicking them.  The following snippet defines a minor mode
 that binds @code{[double-mouse-1]} to a command that extracts the word
 under the mouse cursor and passes it to @code{johnson-lookup}:
@@ -2420,7 +2420,7 @@ under the mouse cursor and passes it to @code{johnson-lookup}:
 * Version 0.1 --- DSL: Version 01 --- DSL. 
 * Version 0.2 --- StarDict and compressed DSL: Version 02 --- StarDict and compressed DSL. 
 * Version 0.3 --- MDict and DSL abbreviations: Version 03 --- MDict and DSL abbreviations. 
-* Version 0.4 --- BGL, DICT, and more: Version 04 --- BGL DICT and more. 
+* Version 0.4 --- BGL@comma{} DICT@comma{} and more: Version 04 --- BGL DICT and more. 
 * Version 0.5 --- EPWING: Version 05 --- EPWING. 
 * Version 0.6 --- EPWING improvements and audits: Version 06 --- EPWING improvements and audits. 
 * Version 0.7 --- Progressive rendering: Version 07 --- Progressive rendering. 
@@ -2437,9 +2437,9 @@ under the mouse cursor and passes it to @code{johnson-lookup}:
 @item
 Auto-discovery and indexing of uncompressed DSL dictionaries.
 @item
-Encoding auto-detection (UTF-8, UTF-16LE, UTF-16BE).
+Encoding auto-detection (UTF-8@comma{} UTF-16LE@comma{} UTF-16BE).
 @item
-Headword alternation (@samp{@{/@}}), optional parts (@samp{(...)}), and
+Headword alternation (@samp{@{/@}})@comma{} optional parts (@samp{(...)})@comma{} and
 multi-headword entries.
 @item
 Case-insensitive and accent-insensitive search via NFKD
@@ -2451,7 +2451,7 @@ Full DSL markup rendering with text properties and faces.
 @item
 Cross-reference navigation with back/forward history.
 @item
-Dictionary groups by language pair, with configurable scope.
+Dictionary groups by language pair@comma{} with configurable scope.
 @item
 Collapsible dictionary sections in the results buffer.
 @item
@@ -2467,22 +2467,22 @@ Plain-text entry copying.
 
 @itemize
 @item
-@samp{johnson-stardict.el} backend for @samp{.ifo}, @samp{.idx}, @samp{.dict}, and
+@samp{johnson-stardict.el} backend for @samp{.ifo}@comma{} @samp{.idx}@comma{} @samp{.dict}@comma{} and
 @samp{.syn} files.
 @item
 Dictzip random-access support for compressed @samp{.dict.dz} and
 @samp{.dsl.dz} files.
 @item
-StarDict content types: plain text, HTML, Pango markup, phonetic.
+StarDict content types: plain text@comma{} HTML@comma{} Pango markup@comma{} phonetic.
 @item
 Include table of contents at the beginning of the buffer. Integrate it with ace-link for quick navigation.
 @item
-Allow collapsing all sections, not just individual ones (like org does).
+Allow collapsing all sections@comma{} not just individual ones (like org does).
 @item
-Display a buffer of all indexed dictionaries and allow the user to reorder them, so that the new order can be saved as the new order in @samp{johnson-dictionary-priorities}.
+Display a buffer of all indexed dictionaries and allow the user to reorder them@comma{} so that the new order can be saved as the new order in @samp{johnson-dictionary-priorities}.
 @itemize
 @item
-When saving, prompt the user whether they want to set the new value via defcustom, for the current session, or to set it manually in their init file; in the latter case, copy the new value to the kill ring and display instructions on how to use it.
+When saving@comma{} prompt the user whether they want to set the new value via defcustom@comma{} for the current session@comma{} or to set it manually in their init file; in the latter case@comma{} copy the new value to the kill ring and display instructions on how to use it.
 @end itemize
 @item
 Provide basic media support (audio pronunciation).
@@ -2502,18 +2502,18 @@ Support for MDict's HTML+CSS content.
 @end itemize
 
 @node Version 04 --- BGL DICT and more
-@section Version 0.4 --- BGL, DICT, and more
+@section Version 0.4 --- BGL@comma{} DICT@comma{} and more
 
 @itemize
 @item
-@samp{johnson-bgl.el} backend for @samp{.bgl} files, with automatic
+@samp{johnson-bgl.el} backend for @samp{.bgl} files@comma{} with automatic
 detection via file extension and magic bytes (@code{0x12 0x34}).
 @item
 @samp{johnson-dict.el} DICT protocol client (RFC 2229) for remote
 dictionary servers.
 @item
-Inline image support across all format backends (DSL @samp{[s]} tags,
-HTML @samp{<img>} tags in MDict, StarDict, and BGL).
+Inline image support across all format backends (DSL @samp{[s]} tags@comma{}
+HTML @samp{<img>} tags in MDict@comma{} StarDict@comma{} and BGL).
 @item
 Wildcard search using @samp{?} (single character) and @samp{*} (multiple
 characters) in lookups.
@@ -2552,8 +2552,8 @@ JIS X 0208 (EUC-JP) and ISO 8859-1 character encoding support.
 @item
 Fullwidth-to-ASCII normalization for readable output.
 @item
-Text rendering with bold, italic, emphasis, references,
-sub/superscript, indentation, and newlines.
+Text rendering with bold@comma{} italic@comma{} emphasis@comma{} references@comma{}
+sub/superscript@comma{} indentation@comma{} and newlines.
 @item
 @samp{johnson-ebzip.el} module for EBZIP decompression (compressed
 @samp{.ebz} files).
@@ -2604,39 +2604,39 @@ added.
 @node Version 08 (current) --- Robustness fixes
 @section Version 0.8 (current) --- Robustness fixes
 
-A code audit of every backend and of the worker, protocol and user
+A code audit of every backend and of the worker@comma{} protocol and user
 interface layers.  The fixes below each carry a regression test.
 
 
 @itemize
 @item
-BGL: dictionary title, languages and character sets are read
-from the real Babylon property layout, and headwords are decoded
-with the dictionary's source charset, so non-Latin and accented
+BGL: dictionary title@comma{} languages and character sets are read
+from the real Babylon property layout@comma{} and headwords are decoded
+with the dictionary's source charset@comma{} so non-Latin and accented
 headwords index and match correctly.
 @item
 BGL: a failed decompression no longer leaves an empty cache
 buffer that later attempts mistake for a populated one.
 @item
 EPWING: corrupt or revisited index pages no longer abort
-indexing with a @code{no-catch} error, and an entry ending exactly on a
+indexing with a @code{no-catch} error@comma{} and an entry ending exactly on a
 read boundary is no longer merged with the next entry.
 @item
 EPWING: gaiji (book-specific characters) render as 〓 instead of
 corrupting the surrounding text or dropping the headword.
 @item
-DSL: headword expansion is bounded during expansion, so a
+DSL: headword expansion is bounded during expansion@comma{} so a
 headword with many optional or alternative parts cannot hang
 indexing; lines inside multi-line @samp{@{@{ ... @}@}} comment blocks are no
 longer indexed as headwords.
 @item
-StarDict: a truncated @samp{.syn} file no longer prevents indexing,
+StarDict: a truncated @samp{.syn} file no longer prevents indexing@comma{}
 and a short read from a @samp{.dict.dz} file reports a clear error.
 
 @item
 dictzip: a truncated or corrupt @samp{.dict.dz} or @samp{.dsl.dz} file
 reports an error instead of silently yielding a cut-off definition;
-very large files (over about 32,000 chunks) now open, and a
+very large files (over about 32@comma{}000 chunks) now open@comma{} and a
 cut-off header reports a clear error.
 @item
 EBZIP and MDict: a forged size or block-count field can no longer
@@ -2647,12 +2647,12 @@ MDict: entries can no longer reference files outside the
 dictionary's own folder.
 
 @item
-Retrieval worker: when the worker crashes, its final output,
-including the error text it printed, now reaches the diagnostics
+Retrieval worker: when the worker crashes@comma{} its final output@comma{}
+including the error text it printed@comma{} now reaches the diagnostics
 buffer instead of being lost.
 @item
 DICT protocol: a lookup that times out or is interrupted drops
-its connection, so later lookups can no longer receive the previous
+its connection@comma{} so later lookups can no longer receive the previous
 word's definitions; a server that closes the connection fails the
 lookup at once instead of after the full timeout.
 @item
@@ -2665,7 +2665,7 @@ Eldoc mode shows dictionary definitions; previously the echo
 area was cleared immediately after the definition appeared.
 @item
 Headword completion keeps candidates that differ from the input
-only in case or accents, so typing @samp{cafe} offers @samp{Café}.
+only in case or accents@comma{} so typing @samp{cafe} offers @samp{Café}.
 @item
 Full-text indexing no longer fails for a whole dictionary when an
 entry contains an out-of-range numeric HTML entity.
@@ -2674,18 +2674,18 @@ The transient menu binds @strong{Reorder dictionaries} to @samp{O}; it
 previously shared @samp{r} with @strong{Forward} and was unreachable.
 @item
 @samp{j} (jump to section) and @samp{p} (previous section) work in
-single-dictionary results, whose only header starts at the top of
+single-dictionary results@comma{} whose only header starts at the top of
 the buffer.
 @item
 Enabling scan mode while it is already on no longer leaves an
 extra idle timer running.
 @item
 Full-text search results keep their query separate from the
-headword state: @samp{g} reruns the search, and bookmarking a search page
+headword state: @samp{g} reruns the search@comma{} and bookmarking a search page
 is refused instead of storing a bogus headword.
 @item
 Sound links and images in HTML dictionaries can no longer
-reference files outside the dictionary's folder, and companion-zip
+reference files outside the dictionary's folder@comma{} and companion-zip
 resource names are passed to @samp{unzip} literally.
 
 @item
@@ -2693,35 +2693,35 @@ DSL: dictionaries saved as UTF-16 without a byte-order mark are
 recognised and indexed correctly instead of being accepted as empty.
 @item
 StarDict: a dictionary whose @samp{.ifo} declares the wrong word count
-is indexed instead of rejected, with a message noting the mismatch.
+is indexed instead of rejected@comma{} with a message noting the mismatch.
 @item
 BGL: a truncated dictionary file produces a warning naming the
-file instead of silently dropping its last entry, while ordinary
-Babylon files, whose checksum is always zero, load without any
+file instead of silently dropping its last entry@comma{} while ordinary
+Babylon files@comma{} whose checksum is always zero@comma{} load without any
 message; lookups no longer copy the whole decompressed dictionary.
 
 @item
 MDict: images and sounds with the same file name in different
-folders of the resource archive, whether written with slashes or
-Windows-style backslashes, no longer overwrite each other in the
-cache, so each entry shows the correct file.
+folders of the resource archive@comma{} whether written with slashes or
+Windows-style backslashes@comma{} no longer overwrite each other in the
+cache@comma{} so each entry shows the correct file.
 
 @item
 History and bookmarks are saved atomically and merged across
-concurrent Emacs sessions, so a crash or a second Emacs no longer
+concurrent Emacs sessions@comma{} so a crash or a second Emacs no longer
 loses entries.
 @item
-@code{johnson-default-search-scope} governs the initial scope, and
+@code{johnson-default-search-scope} governs the initial scope@comma{} and
 @code{johnson-select-group} records its choice for the session instead of
 rewriting the option.
 @item
-@code{johnson-history-max} accepts only natural numbers, and @code{0}
+@code{johnson-history-max} accepts only natural numbers@comma{} and @code{0}
 disables history instead of keeping one entry.
 @item
 Removing a bookmark targets the dictionary section at point when
 the same headword is bookmarked in several dictionaries.
 @item
-With no dictionaries found, eldoc and scan mode no longer rescan
+With no dictionaries found@comma{} eldoc and scan mode no longer rescan
 the dictionary directories on every update.
 @item
 Indexing progress reports full-text results for dictionaries whose
@@ -2733,17 +2733,17 @@ file name in different folders.
 
 @item
 Headwords are stored with surrounding whitespace removed and blank
-headwords dropped, so padded variants such as =Lexicography = no
+headwords dropped@comma{} so padded variants such as =Lexicography = no
 longer appear as separate completion candidates.
 @item
 Indexes carry a format version; indexes built by an earlier
 version are detected on first use and rebuilt through the usual
-indexing prompt, so fixes that change what gets indexed apply
+indexing prompt@comma{} so fixes that change what gets indexed apply
 without manual reindexing.
 
 @item
-DSL: headword lines that carry formatting tags (part of speech,
-feminine endings, italics) are indexed as the clean headword, so
+DSL: headword lines that carry formatting tags (part of speech@comma{}
+feminine endings@comma{} italics) are indexed as the clean headword@comma{} so
 entries such as @samp{lexicógrafo} are found instead of being stored as
 fragments of the tags.
 @item
@@ -2753,13 +2753,13 @@ entry instead of being indexed as a multi-kilobyte headword;
 indexing reports how many such lines were reclassified.
 
 @item
-Headwords are stored without HTML markup for every format, so
+Headwords are stored without HTML markup for every format@comma{} so
 @samp{Belén<sup>1</sup>} indexes as @samp{Belén} and @samp{H<sub>2</sub>O} as
-@samp{H2O}, and markup-only keys are dropped.
+@samp{H2O}@comma{} and markup-only keys are dropped.
 
 @item
 MDict: @samp{@@@@@@LINK=} redirect targets are cleaned the same way as
-indexed headwords, so links to keys that carried markup still resolve.
+indexed headwords@comma{} so links to keys that carried markup still resolve.
 @end itemize
 
 @node Future features
@@ -2790,8 +2790,8 @@ Bug reports and patches can be sent to the @uref{https://github.com/benthamite/j
 @section AI assistance
 
 @samp{johnson} was written with substantial help from large language models
-(Claude and Codex), with the author reviewing all generated code.
-Following MELPA's contributor guidelines, every source file carries an
+(Claude and Codex)@comma{} with the author reviewing all generated code.
+Following MELPA's contributor guidelines@comma{} every source file carries an
 @samp{Assisted-by} line beneath its @samp{Author} line recording this.
 Contributors who use such tools for their own patches are asked to
 keep that line accurate.
@@ -2804,7 +2804,7 @@ make test     # run the full ERT suite
 make compile  # byte-compile with warnings-as-errors
 @end example
 
-Tests that require zlib (dictzip, mdict decompression) are automatically
+Tests that require zlib (dictzip@comma{} mdict decompression) are automatically
 skipped when Emacs is compiled without zlib support.
 
 @node Indices
